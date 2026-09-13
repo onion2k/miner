@@ -295,8 +295,20 @@ async function main() {
   // ---- the shop ----
 
   let shopOpen = false;
-  document.getElementById('reset')!.addEventListener('click', () => {
-    if (confirm('Start over? The bank and every upgrade go back to nothing.')) economy.reset();
+  // Two clicks, not a dialog: an embedded page may have its dialogs
+  // suppressed, and a confirm that returns false without ever being seen
+  // is a button that does nothing.
+  const resetButton = document.getElementById('reset') as HTMLButtonElement;
+  let resetArmed: number | null = null;
+  resetButton.addEventListener('click', () => {
+    if (resetArmed !== null) { economy.reset(); return; }
+    resetButton.textContent = 'really? click again to lose everything';
+    resetButton.classList.add('armed');
+    resetArmed = window.setTimeout(() => {
+      resetArmed = null;
+      resetButton.textContent = 'start over';
+      resetButton.classList.remove('armed');
+    }, 4000);
   });
   economy.onBuy((id) => {
     sound.chime();
