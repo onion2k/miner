@@ -86,11 +86,13 @@ export class Dozer {
     this.speed = Math.max(-reverseMax, Math.min(spec.maxSpeed, this.speed));
     if (Math.abs(this.speed) < 0.05 && !throttle) this.speed = 0;
 
-    // a tracked vehicle turns standing still, and a little faster moving;
-    // backing up, the stick means the other way, as it does in a car
+    // a tracked vehicle turns standing still, and a little faster moving.
+    // Left turns the nose left whichever way it is going: a car's reversed
+    // stick fights a view that holds the world still, and it lingered while
+    // the speed crept back up through zero, so steering was backwards for a
+    // moment after every reverse.
     const moving = Math.min(1, Math.abs(this.speed) / spec.maxSpeed);
-    const sign = this.speed < -0.3 ? -1 : 1;
-    const wantRate = steer * spec.turnRate * (0.55 + 0.45 * moving) * sign;
+    const wantRate = steer * spec.turnRate * (0.55 + 0.45 * moving);
     this.yawRate += (wantRate - this.yawRate) * Math.min(1, 10 * dt);
     this.yaw += this.yawRate * dt;
 
