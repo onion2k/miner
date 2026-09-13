@@ -74,6 +74,8 @@ export interface Offer {
 export class Economy {
   save: Save;
   private listeners: ((id: string) => void)[] = [];
+  /** Set by `reset`: nothing is saved again, so a coin banked while the page reloads cannot resurrect the old save. */
+  private wiped = false;
 
   constructor() {
     this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: [true, false, false], belts: [false, false, false], drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false };
@@ -198,11 +200,13 @@ export class Economy {
   }
 
   reset() {
+    this.wiped = true;
     try { localStorage.removeItem(KEY); } catch { /* nothing to remove */ }
     location.reload();
   }
 
   private persist() {
+    if (this.wiped) return;
     try { localStorage.setItem(KEY, JSON.stringify(this.save)); } catch { /* fine */ }
   }
 }
