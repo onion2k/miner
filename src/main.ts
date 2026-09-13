@@ -670,14 +670,13 @@ async function main() {
   if (touch) {
     input.tracks = new TrackSliders(document.getElementById('trackLeft')!, document.getElementById('trackRight')!);
     document.getElementById('tracks')!.hidden = false;
-    shopButton.hidden = false;
+    document.getElementById('pad')!.hidden = false;
     shopButton.addEventListener('click', () => input.toggleShop());
     // pointerdown, not click: a horn sounds when it is pressed, and a click waits for the lift
     hornButton.addEventListener('pointerdown', (e) => { e.preventDefault(); input.pressHorn(); });
     // straight to the sound, not through the input's once-a-frame flag: two taps inside
     // one frame would be one toggle there, and the button would say the wrong thing
     muteButton.addEventListener('click', () => { sound.toggleMute(); showMute(); });
-    muteButton.hidden = false;
     showMute();
     showHorn();
   }
