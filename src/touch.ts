@@ -22,6 +22,13 @@ export function isTouchDevice(): boolean {
 const DEAD_ZONE = 0.1;
 /** Where a slider is all the way, short of its end, so a thumb need not find the very edge. */
 const FULL_AT = 0.8;
+/**
+ * The steering's response: the lever's reach past the dead zone, to this power. A
+ * turn rate straight from a short slider lying across a phone was all or nothing
+ * under a thumb's wobble; squared, the first half of the travel is a gentle arc and
+ * the full turn is still at the end.
+ */
+const STEER_CURVE = 2;
 
 export type Scheme = 'tracks' | 'stick';
 const SCHEMES: Scheme[] = ['tracks', 'stick'];
@@ -38,7 +45,7 @@ export class TouchControls {
   constructor(leftEl: HTMLElement, private readonly rightEl: HTMLElement, private readonly acrossEl: HTMLElement) {
     this.bind(leftEl, 'up', (v) => { this.left = v; });
     this.bind(rightEl, 'up', (v) => { this.right = v; });
-    this.bind(acrossEl, 'across', (v) => { this.across = v; });
+    this.bind(acrossEl, 'across', (v) => { this.across = v; }, STEER_CURVE);
     try { const s = localStorage.getItem(KEY); if (SCHEMES.includes(s as Scheme)) this.scheme = s as Scheme; } catch { /* fine */ }
     this.show();
   }
@@ -70,7 +77,7 @@ export class TouchControls {
     return { throttle: clamp(this.left + this.right), steer: clamp(this.right - this.left) };
   }
 
-  private bind(slider: HTMLElement, axis: 'up' | 'across', set: (value: number) => void) {
+  private bind(slider: HTMLElement, axis: 'up' | 'across', set: (value: number) => void, curve = 1) {
     const thumb = slider.querySelector('.thumb') as HTMLElement;
     let finger: number | null = null;
 
@@ -88,7 +95,7 @@ export class TouchControls {
       }
       // past the dead zone, rescaled so the lever reaches a full 1 at FULL_AT of the way
       const past = Math.min(1, Math.max(0, Math.abs(raw) - DEAD_ZONE) / (FULL_AT - DEAD_ZONE));
-      set(Math.sign(raw) * past);
+      set(Math.sign(raw) * past ** curve);
     };
     const letGo = () => {
       finger = null;
