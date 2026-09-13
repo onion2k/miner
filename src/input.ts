@@ -7,6 +7,7 @@ export class Input {
   private recentre = false;
   private mute = false;
   private horn = false;
+  private camera = false;
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -17,6 +18,7 @@ export class Input {
       if (k === 'c') this.recentre = true;
       if (k === 'm') this.mute = true;
       if (k === 'h') this.horn = true;
+      if (k === 'v') this.camera = true;
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
     });
     addEventListener('keyup', (e) => this.down.delete(e.key.toLowerCase()));
@@ -35,4 +37,5 @@ export class Input {
   takeRecentre() { const v = this.recentre; this.recentre = false; return v; }
   takeMute() { const v = this.mute; this.mute = false; return v; }
   takeHorn() { const v = this.horn; this.horn = false; return v; }
+  takeCamera() { const v = this.camera; this.camera = false; return v; }
 }

@@ -349,7 +349,46 @@ async function main() {
     rotateSpeed: 0.4, zoomSpeed: 0.8, panSpeed: 0, inertia: 0.5,
   });
   orbit.setSpherical(CAMERA);
+  /**
+   * Three ways to hold the camera, cycled with V:
+   *
+   * - `fixed`: the world keeps its orientation and the camera slides. This
+   *   is what top-down games settle on, because the ground fills the frame
+   *   and turning the view turns everything: a dozer that spins on the spot
+   *   would spin the cave. The camera leads the dozer along its velocity
+   *   (Keren's projected focus) so the player sees where they are going,
+   *   and only moves once the dozer pushes past a window round the aim
+   *   (the camera-window), then eases after it (lerp-smoothing).
+   * - `chase`: swings round to sit behind the dozer, in two smoothed stages
+   *   so it settles without overshooting.
+   * - `free`: only the mouse moves it.
+   *
+   * A drag takes the camera in any mode for a few seconds; C gives it back.
+   */
+  type CameraMode = 'fixed' | 'chase' | 'free';
+  const MODES: CameraMode[] = ['fixed', 'chase', 'free'];
+  let cameraMode: CameraMode = 'fixed';
+  try { const m = localStorage.getItem('pushminer-camera'); if (MODES.includes(m as CameraMode)) cameraMode = m as CameraMode; } catch { /* fine */ }
+  /** Where the camera is aimed: the dozer plus a lead along its velocity, held within a window. */
+  const aim: [number, number] = [dozer.x, dozer.y];
   const follow: [number, number] = [dozer.x, dozer.y];
+  const lead: [number, number] = [0, 0];
+  const WINDOW = 4.5;
+  let chase = CAMERA.azimuth;
+  let manualUntil = 0;
+  canvas.addEventListener('pointerdown', () => { manualUntil = performance.now() / 1000 + 5; });
+  const wrap = (a: number) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+  function cycleCamera() {
+    cameraMode = MODES[(MODES.indexOf(cameraMode) + 1) % MODES.length];
+    try { localStorage.setItem('pushminer-camera', cameraMode); } catch { /* fine */ }
+    manualUntil = 0;
+    if (cameraMode === 'fixed') orbit.setSpherical({ azimuth: orbit.currentAzimuth + wrap(CAMERA.azimuth - orbit.currentAzimuth) });
+    cameraNote.textContent = `camera: ${cameraMode}`;
+    cameraNote.hidden = false;
+    cameraNoteIn = 2;
+  }
+  const cameraNote = document.getElementById('cameraNote')!;
+  let cameraNoteIn = 0;
 
   let width = 1, height = 1;
   const resize = () => {
@@ -519,7 +558,12 @@ async function main() {
         world.wx[i] += (Math.random() - 0.5) * 6; world.wy[i] += (Math.random() - 0.5) * 6;
       }
     }
-    if (input.takeRecentre()) orbit.setSpherical(CAMERA);
+    if (input.takeRecentre()) {
+      manualUntil = 0;
+      orbit.setSpherical({ polar: CAMERA.polar, radius: CAMERA.radius });
+      if (cameraMode !== 'chase') orbit.setSpherical({ azimuth: orbit.currentAzimuth + wrap(CAMERA.azimuth - orbit.currentAzimuth) });
+    }
+    if (input.takeCamera()) cycleCamera();
     if (input.takeMute()) sound.toggleMute();
 
     const spec = economy.spec();
@@ -556,11 +600,32 @@ async function main() {
     holePulse = Math.max(0, holePulse - dt * 1.8);
     flow = Math.max(0, flow - flow * Math.min(1, 2.5 * dt));
 
-    // the camera follows, a little behind
-    const k = Math.min(1, 4 * dt);
-    follow[0] += (dozer.x - follow[0]) * k; follow[1] += (dozer.y - follow[1]) * k;
+    // The lead: ahead along the velocity, further the faster, and eased so
+    // a change of direction swings the view rather than snapping it.
+    const leadLen = Math.min(11, Math.abs(dozer.speed) * 0.7);
+    const wantLead: [number, number] = [c * Math.sign(dozer.speed) * leadLen, s * Math.sign(dozer.speed) * leadLen];
+    const kl = Math.min(1, 2 * dt);
+    lead[0] += (wantLead[0] - lead[0]) * kl; lead[1] += (wantLead[1] - lead[1]) * kl;
+    // The window: the aim stays put until the led point leaves a box round
+    // it, so shuffling about does not move the view; then it is dragged.
+    const fx = dozer.x + lead[0], fy = dozer.y + lead[1];
+    aim[0] = Math.max(fx - WINDOW, Math.min(fx + WINDOW, aim[0]));
+    aim[1] = Math.max(fy - WINDOW, Math.min(fy + WINDOW, aim[1]));
+    const k = Math.min(1, 3 * dt);
+    follow[0] += (aim[0] - follow[0]) * k; follow[1] += (aim[1] - follow[1]) * k;
     cam.target = [follow[0], follow[1], 1.5];
+    if (performance.now() / 1000 < manualUntil || cameraMode !== 'chase') {
+      // the player has the camera, or the world holds still: the chase heading rests wherever the view is
+      chase = orbit.currentAzimuth;
+    } else {
+      // behind the nose, whichever way it is driving, by the shorter way round
+      const behind = dozer.yaw + Math.PI;
+      chase += wrap(behind - chase) * Math.min(1, 3.5 * dt);
+      const now = orbit.currentAzimuth;
+      orbit.setSpherical({ azimuth: now + wrap(chase - now) });
+    }
     orbit.update();
+    if (cameraNoteIn > 0 && (cameraNoteIn -= dt) <= 0) cameraNote.hidden = true;
     const reach = orbit.distance * 1.1 + 20;
     renderer.setSunShadow({ min: [follow[0] - reach, follow[1] - reach, -16], max: [follow[0] + reach, follow[1] + reach, 14] });
 
