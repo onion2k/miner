@@ -116,6 +116,24 @@ export class Sound {
     src.start(now);
   }
 
+  /** The air horn: two notes a fourth apart, through a resonant filter, held for half a second. */
+  horn() {
+    const ctx = this.ctx; if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    const filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 1400; filter.Q.value = 4;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.35, now + 0.04);
+    gain.gain.setValueAtTime(0.35, now + 0.45);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+    filter.connect(gain).connect(this.master);
+    for (const f of [311, 415]) {
+      const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = f;
+      osc.frequency.setValueAtTime(f * 0.97, now); osc.frequency.linearRampToValueAtTime(f, now + 0.06);
+      osc.connect(filter); osc.start(now); osc.stop(now + 0.75);
+    }
+  }
+
   private startEngine() {
     const ctx = this.ctx!;
     const osc = ctx.createOscillator(), osc2 = ctx.createOscillator();

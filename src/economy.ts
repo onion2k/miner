@@ -15,7 +15,25 @@ export interface Save {
   belts: boolean[];
   drones: number;
   magnet: number;
+  /** Which paint the dozer wears, and which it owns. */
+  paint: string;
+  paints: string[];
+  horn: boolean;
+  flag: boolean;
 }
+
+export interface Paint { id: string; name: string; colour: [number, number, number]; roughness: number; cost: number }
+export const PAINTS: Paint[] = [
+  { id: 'yellow', name: 'Works Yellow', colour: [0.96, 0.7, 0.12], roughness: 0.45, cost: 0 },
+  { id: 'red', name: 'Fire Engine', colour: [0.85, 0.12, 0.1], roughness: 0.4, cost: 150 },
+  { id: 'blue', name: 'Deep Sea', colour: [0.12, 0.35, 0.85], roughness: 0.4, cost: 150 },
+  { id: 'mint', name: 'Mint Choc', colour: [0.45, 0.85, 0.65], roughness: 0.5, cost: 200 },
+  { id: 'pink', name: 'Bubblegum', colour: [0.95, 0.45, 0.7], roughness: 0.5, cost: 200 },
+  { id: 'black', name: 'Midnight', colour: [0.08, 0.08, 0.1], roughness: 0.25, cost: 300 },
+  { id: 'chrome', name: 'Chrome', colour: [0.9, 0.9, 0.95], roughness: 0.05, cost: 800 },
+];
+export const HORN_COST = 80;
+export const FLAG_COST = 120;
 
 const KEY = 'pushminer-save-v1';
 
@@ -49,6 +67,8 @@ export interface Offer {
   owned: boolean;
   /** Whether it can be bought at all yet, apart from the money. */
   available: boolean;
+  /** For a thing that is worn: whether it is worn now. Owned and not active means clicking puts it on. */
+  active?: boolean;
 }
 
 export class Economy {
@@ -56,7 +76,7 @@ export class Economy {
   private listeners: ((id: string) => void)[] = [];
 
   constructor() {
-    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: [true, false, false], belts: [false, false, false], drones: 0, magnet: 0 };
+    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: [true, false, false], belts: [false, false, false], drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
@@ -131,15 +151,45 @@ export class Economy {
     return out;
   }
 
+  paint(): Paint {
+    return PAINTS.find((p) => p.id === this.save.paint) ?? PAINTS[0];
+  }
+
+  /** The things that change how the dozer looks and sounds, not what it does. */
+  cosmetics(): Offer[] {
+    const s = this.save;
+    const out: Offer[] = PAINTS.map((p) => ({
+      id: `paint:${p.id}`, title: p.name, sub: s.paint === p.id ? 'on the dozer now' : s.paints.includes(p.id) ? 'in the shed: click to wear it' : 'a coat of paint for the hull',
+      cost: p.cost, owned: s.paints.includes(p.id), available: true, active: s.paint === p.id,
+    }));
+    out.push({ id: 'horn', title: 'Air horn', sub: s.horn ? 'press H. The coins jump.' : 'press H to honk. Startles the coins.', cost: HORN_COST, owned: s.horn, available: true });
+    out.push({ id: 'flag', title: 'Pennant', sub: 'a little flag on a pole on the cab', cost: FLAG_COST, owned: s.flag, available: true });
+    return out;
+  }
+
   buy(id: string): boolean {
-    const offer = this.offers().find((o) => o.id === id);
-    if (!offer || offer.owned || !offer.available || this.save.bank < offer.cost) return false;
+    const offer = [...this.offers(), ...this.cosmetics()].find((o) => o.id === id);
+    if (!offer || !offer.available) return false;
+    if (offer.owned) {
+      // a paint already owned is put on, not bought again
+      if (id.startsWith('paint:') && !offer.active) {
+        this.save.paint = id.slice(6);
+        this.persist();
+        for (const fn of this.listeners) fn(id);
+        return true;
+      }
+      return false;
+    }
+    if (this.save.bank < offer.cost) return false;
     this.save.bank -= offer.cost;
     const s = this.save;
     if (id === 'engine') s.engine++;
     else if (id === 'blade') s.blade++;
     else if (id === 'drone') s.drones++;
     else if (id === 'magnet') s.magnet++;
+    else if (id === 'horn') s.horn = true;
+    else if (id === 'flag') s.flag = true;
+    else if (id.startsWith('paint:')) { s.paints.push(id.slice(6)); s.paint = id.slice(6); }
     else if (id.startsWith('area')) s.areas[+id.slice(4)] = true;
     else if (id.startsWith('belt')) s.belts[+id.slice(4)] = true;
     this.persist();
@@ -158,21 +208,21 @@ export class Economy {
 }
 
 /** The shop's rows, rebuilt into `rows` whenever the bank or the stock changes. */
-export function renderShop(rows: HTMLElement, economy: Economy) {
-  const offers = economy.offers();
+export function renderShop(rows: HTMLElement, economy: Economy, offers = economy.offers()) {
   const bank = economy.bank;
   const existing = Array.from(rows.children) as HTMLButtonElement[];
   offers.forEach((o, i) => {
     let btn = existing[i];
     if (!btn) {
       btn = document.createElement('button');
-      btn.addEventListener('click', () => { if (economy.buy(btn.dataset.id!)) renderShop(rows, economy); });
+      btn.addEventListener('click', () => { if (economy.buy(btn.dataset.id!)) renderShop(rows, economy, rows.classList.contains('cosmetics') ? economy.cosmetics() : undefined); });
       rows.appendChild(btn);
     }
     btn.dataset.id = o.id;
-    btn.disabled = o.owned || !o.available || bank < o.cost;
-    btn.className = o.owned ? 'owned' : '';
-    const cost = o.owned ? '✓' : !o.available ? 'locked' : `${o.cost}`;
+    const wearable = o.owned && o.active === false;
+    btn.disabled = !wearable && (o.owned || !o.available || bank < o.cost);
+    btn.className = o.active ? 'owned active' : o.owned ? 'owned' : '';
+    const cost = o.active ? 'worn' : o.owned ? (wearable ? 'wear' : '✓') : !o.available ? 'locked' : `${o.cost}`;
     btn.innerHTML = `<span>${o.title}<small>${o.sub}</small></span><span class="cost">${cost}</span>`;
   });
   while (rows.children.length > offers.length) rows.lastChild!.remove();

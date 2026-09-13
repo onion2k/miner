@@ -28,6 +28,8 @@ const GEM_CAPACITY = [0, 240, 200, 160, 80];
 const DRONE_CAPACITY = MAX_DRONES;
 const TREAD_BARS = 9;
 const STRIPE_CAPACITY = 80;
+/** The pennant: a pole and this many slats waving behind it. */
+const FLAG_SLATS = 5;
 
 const CAMERA = { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 };
 
@@ -42,6 +44,7 @@ const helpPanel = document.getElementById('help')!;
 const toast = document.getElementById('toast')!;
 const shopPanel = document.getElementById('shop')!;
 const shopRows = shopPanel.querySelector('.rows') as HTMLElement;
+const shopCosmetics = shopPanel.querySelector('.rows.cosmetics') as HTMLElement;
 
 main().catch((err) => { bootMsg.textContent = String(err?.message ?? err); console.error(err); });
 
@@ -149,13 +152,14 @@ async function main() {
 
   // ---- the dynamic half: coins, gems, the dozer, drones, belt stripes ----
 
-  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, DRONE_BODY = 9, ROTORS = 10, ARMS = 11, STRIPES = 12;
+  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, DRONE_BODY = 9, ROTORS = 10, ARMS = 11, STRIPES = 12, POLE = 13, FLAG = 14;
   const coinM = new Float32Array(BODY_CAPACITY * 16);
   const gemM = GEM_CAPACITY.map((n) => new Float32Array(Math.max(1, n) * 16));
   const hullM = new Float32Array(16), darkM = new Float32Array(16), bladeM = new Float32Array(16);
   const treadM = new Float32Array(TREAD_BARS * 2 * 16);
   const droneM = new Float32Array(DRONE_CAPACITY * 16), rotorM = new Float32Array(DRONE_CAPACITY * 4 * 16), armM = new Float32Array(DRONE_CAPACITY * 2 * 16);
   const stripeM = new Float32Array(STRIPE_CAPACITY * 16);
+  const poleM = new Float32Array(16), flagM = new Float32Array(FLAG_SLATS * 16);
 
   const hull = mergeMeshes([
     moved(box(5.4, 3.4, 1.7), 0, 0, 0.8),          // the body
@@ -191,7 +195,7 @@ async function main() {
     { mesh: gemMesh, matrices: gemM[2], count: 0, albedo: [0.12, 0.85, 0.42], roughness: 0.12 },
     { mesh: gemMesh, matrices: gemM[3], count: 0, albedo: [0.2, 0.38, 0.98], roughness: 0.12 },
     { mesh: gemMesh, matrices: gemM[4], count: 0, albedo: [0.9, 0.97, 1.0], roughness: 0.05 },
-    { mesh: hull, matrices: hullM, albedo: [0.96, 0.7, 0.12], roughness: 0.45 },
+    { mesh: hull, matrices: hullM, albedo: economy.paint().colour, roughness: economy.paint().roughness },
     { mesh: dark, matrices: darkM, albedo: [0.15, 0.15, 0.17], roughness: 0.75 },
     { mesh: bladeMesh(economy.spec().bladeWidth), matrices: bladeM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
     { mesh: box(0.55, 1.9, 0.35), matrices: treadM, albedo: [0.3, 0.3, 0.32], roughness: 0.8 },
@@ -199,7 +203,14 @@ async function main() {
     { mesh: disc(0.85, 10), matrices: rotorM, count: 0, albedo: [0.2, 0.2, 0.22], roughness: 0.6 },
     { mesh: box(3.6, 0.28, 0.2, true), matrices: armM, count: 0, albedo: [0.2, 0.2, 0.22], roughness: 0.6 },
     { mesh: box(0.5, 1, 0.15), matrices: stripeM, count: 0, albedo: [0.9, 0.78, 0.3], roughness: 0.5 },
+    { mesh: cylinder(0.09, 4.2, 6), matrices: poleM, count: 0, albedo: [0.3, 0.3, 0.32], roughness: 0.5 },
+    { mesh: box(0.4, 0.06, 0.9, true), matrices: flagM, count: 0, albedo: flagColour(), roughness: 0.6 },
   ];
+  /** The pennant is red, unless the hull is: then it is white, so it shows. */
+  function flagColour(): [number, number, number] {
+    const [r, g, b] = economy.paint().colour;
+    return r > 0.6 && g < 0.5 && b < 0.75 ? [0.95, 0.95, 0.95] : [0.9, 0.15, 0.15];
+  }
   renderer.setDynamic(dynamic);
 
   // ---- coins into the cave ----
@@ -308,6 +319,10 @@ async function main() {
     } else if (id === 'blade') {
       dynamic[BLADE].mesh = bladeMesh(economy.spec().bladeWidth);
       renderer.setDynamic(dynamic);
+    } else if (id.startsWith('paint:')) {
+      const p = economy.paint();
+      renderer.tint(HULL, new Float32Array([...p.colour, p.roughness]));
+      renderer.tint(FLAG, new Float32Array([...flagColour(), 0.6]));
     }
     world.wakeAll();
   });
@@ -447,6 +462,18 @@ async function main() {
       }
     }
     renderer.move(STRIPES, stripeM, n);
+
+    // the pennant: a pole on the cab's roof, and slats that wave behind it
+    if (economy.save.flag) {
+      placePart(poleM, 0, dozer.x, dozer.y, 0, dozer.yaw, -2.2, -1.1, 3.6);
+      const wind = 0.5 + Math.min(1, Math.abs(dozer.speed) / 10);
+      for (let k = 0; k < FLAG_SLATS; k++) {
+        const wave = Math.sin(t * 9 * wind - k * 1.1) * 0.12 * (k + 1);
+        placePart(flagM, k, dozer.x, dozer.y, 0, dozer.yaw, -2.2 - 0.2 - k * 0.38, -1.1 + wave, 7.3 - k * 0.03, Math.cos(t * 9 * wind - k * 1.1) * 0.3, 0, 1, 1, 1 - k * 0.12);
+      }
+    }
+    renderer.move(POLE, poleM, economy.save.flag ? 1 : 0);
+    renderer.move(FLAG, flagM, economy.save.flag ? FLAG_SLATS : 0);
   }
 
   // ---- go ----
@@ -466,7 +493,20 @@ async function main() {
     const dt = Math.min((now - last) / 1000, 1 / 20);
     last = now; t += dt;
 
-    if (input.takeShop()) { shopOpen = !shopOpen; shopPanel.hidden = !shopOpen; if (shopOpen) renderShop(shopRows, economy); }
+    if (input.takeShop()) { shopOpen = !shopOpen; shopPanel.hidden = !shopOpen; if (shopOpen) { renderShop(shopRows, economy); renderShop(shopCosmetics, economy, economy.cosmetics()); } }
+    if (input.takeHorn() && economy.save.horn) {
+      sound.horn();
+      // the coins jump: everything near enough hops, which is what a horn is for
+      const { x, y, z, vz, alive, asleep } = world;
+      for (let i = 0; i < world.count; i++) {
+        if (!alive[i]) continue;
+        const d = Math.hypot(x[i] - dozer.x, y[i] - dozer.y);
+        if (d > 14 || z[i] > 3) continue;
+        if (asleep[i]) world.wake(i);
+        vz[i] += 5 * (1 - d / 14) + Math.random() * 2;
+        world.wx[i] += (Math.random() - 0.5) * 6; world.wy[i] += (Math.random() - 0.5) * 6;
+      }
+    }
     if (input.takeRecentre()) orbit.setSpherical(CAMERA);
     if (input.takeMute()) sound.toggleMute();
 
@@ -529,7 +569,7 @@ async function main() {
       statsPanel.innerHTML = `<span>${smoothed.toFixed(1)}</span> ms · <span>${Math.round(1000 / smoothed)}</span> fps<br>`
         + `<span>${world.live}</span> bodies · <span>${awake}</span> awake · load <span>${world.load}</span>`;
     }
-    if (shopOpen && (shopIn -= dt) <= 0) { shopIn = 0.3; renderShop(shopRows, economy); }
+    if (shopOpen && (shopIn -= dt) <= 0) { shopIn = 0.3; renderShop(shopRows, economy); renderShop(shopCosmetics, economy, economy.cosmetics()); }
   };
   requestAnimationFrame(frame);
 }
