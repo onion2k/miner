@@ -17,94 +17,107 @@ export function beltOf(spec: BeltSpec): Belt {
   };
 }
 
-const DRONE_SPEED = 16;
-const HOVER = 9;
-const HANG = 1.7;
+import { Dozer, type DozerSpec } from './dozer';
+import type { Drive } from './input';
 
-type DroneState = 'seek' | 'descend' | 'carry' | 'rest';
+/** What a robo-dozer is: smaller and slower than the player's, and tireless. */
+export const BOT_SCALE = 0.68;
+export const BOT_SPEC: DozerSpec = { maxSpeed: 7.5, accel: 12, turnRate: 1.9, bladeWidth: 7, magnetRadius: 0, magnetStrength: 0 };
+/** How far from the hole's centre a bot stops pushing and backs away. */
+const STOP_AT = HOLE.radius + 5;
 
-export class Drone {
-  x: number; y: number; z = HOVER;
-  yaw = 0;
-  /** Rotor spin, for drawing. */
-  spin = 0;
-  state: DroneState = 'rest';
-  target = -1;
-  private rest = 0.5;
+type BotState = 'seek' | 'approach' | 'push' | 'retreat';
+
+/**
+ * A robo-dozer: it picks a heap, drives round to the far side of it, pushes
+ * a load toward the hole, backs off, and goes again. It steers like the
+ * player's machine — the same tank model, the same boxes — so what it does
+ * to the coins is what the player could have done.
+ */
+export class Bot {
+  readonly dozer: Dozer;
+  state: BotState = 'seek';
+  private target: [number, number] = [0, 0];
+  private timer = 0;
   private stuck = 0;
+  private lastX = 0; private lastY = 0;
 
-  constructor(x: number, y: number) { this.x = x; this.y = y; }
+  constructor(solid: Uint8Array, owner: number, x: number, y: number) {
+    this.dozer = new Dozer(solid, BOT_SCALE, owner);
+    this.dozer.x = x; this.dozer.y = y; this.dozer.yaw = Math.random() * Math.PI * 2;
+    this.lastX = x; this.lastY = y;
+  }
 
-  update(dt: number, world: World) {
-    this.spin += dt * 40;
+  get x() { return this.dozer.x; }
+  get y() { return this.dozer.y; }
+  get yaw() { return this.dozer.yaw; }
+
+  update(dt: number, world: World, load: number) {
+    const d = this.dozer;
+    let drive: Drive = { throttle: 0, steer: 0 };
+    this.timer -= dt;
     switch (this.state) {
-      case 'rest':
-        this.hover(dt);
-        if ((this.rest -= dt) <= 0) { this.state = 'seek'; this.target = this.pick(world); }
-        return;
       case 'seek': {
-        if (!this.valid(world)) { this.target = this.pick(world); if (this.target < 0) { this.state = 'rest'; this.rest = 1; return; } }
-        const i = this.target;
-        if (this.fly(dt, world.x[i], world.y[i], HOVER)) { this.state = 'descend'; this.stuck = 0; }
-        return;
+        const i = this.pick(world);
+        if (i < 0) { this.timer = 1; break; }
+        // the far side of the coin from the hole, a machine's length back
+        const bx = world.x[i], by = world.y[i];
+        const dx = bx - HOLE.x, dy = by - HOLE.y;
+        const len = Math.hypot(dx, dy) || 1;
+        this.target = [bx + (dx / len) * 6, by + (dy / len) * 6];
+        this.state = 'approach'; this.timer = 14; this.stuck = 0;
+        break;
       }
-      case 'descend': {
-        if (!this.valid(world)) { this.state = 'seek'; return; }
-        const i = this.target;
-        this.stuck += dt;
-        if (this.fly(dt, world.x[i], world.y[i], world.z[i] + HANG, 0.6) || this.stuck > 2.5) {
-          world.carried[i] = 1; world.wake(i);
-          world.vx[i] = world.vy[i] = world.vz[i] = 0;
-          this.state = 'carry';
-        }
-        return;
+      case 'approach': {
+        const [tx, ty] = this.target;
+        const dist = Math.hypot(tx - d.x, ty - d.y);
+        drive = this.toward(tx, ty);
+        if (dist < 2.5 || this.timer <= 0) { this.state = 'push'; this.timer = 16; this.stuck = 0; }
+        break;
       }
-      case 'carry': {
-        const i = this.target;
-        if (!world.alive[i]) { this.state = 'seek'; return; }
-        const arrived = this.fly(dt, HOLE.x, HOLE.y, HOVER, 1.2);
-        world.x[i] = this.x; world.y[i] = this.y; world.z[i] = this.z - HANG;
-        if (arrived) {
-          world.carried[i] = 0; world.vz[i] = -4;
-          this.target = -1; this.state = 'rest'; this.rest = 0.4;
-        }
-        return;
+      case 'push': {
+        const dist = Math.hypot(HOLE.x - d.x, HOLE.y - d.y);
+        drive = this.toward(HOLE.x, HOLE.y);
+        // a full blade is slow going, which is fine; an empty one has lost its load and should look again
+        if (dist < STOP_AT || this.timer <= 0 || (this.timer < 12 && load === 0 && dist > 20)) { this.state = 'retreat'; this.timer = 1.4; }
+        break;
       }
+      case 'retreat':
+        drive = { throttle: -1, steer: 0 };
+        if (this.timer <= 0) this.state = 'seek';
+        break;
     }
-  }
-
-  private valid(world: World) {
-    const i = this.target;
-    return i >= 0 && world.alive[i] === 1 && world.carried[i] === 0;
-  }
-
-  private hover(dt: number) { this.fly(dt, this.x, this.y, HOVER); }
-
-  /** Toward a point; true when there. */
-  private fly(dt: number, tx: number, ty: number, tz: number, within = 0.8): boolean {
-    const dx = tx - this.x, dy = ty - this.y, dz = tz - this.z;
-    const d = Math.hypot(dx, dy, dz);
-    if (d < within) return true;
-    const step = Math.min(d, DRONE_SPEED * dt);
-    this.x += (dx / d) * step; this.y += (dy / d) * step; this.z += (dz / d) * step;
-    if (Math.hypot(dx, dy) > 0.5) {
-      const want = Math.atan2(dy, dx);
-      let diff = want - this.yaw;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      this.yaw += diff * Math.min(1, 6 * dt);
+    // stuck against something: back off and think again
+    if (this.state !== 'retreat') {
+      const moved = Math.hypot(d.x - this.lastX, d.y - this.lastY);
+      this.stuck = moved < 0.25 * dt * 10 && drive.throttle > 0 ? this.stuck + dt : 0;
+      if (this.stuck > 2) { this.state = 'retreat'; this.timer = 1.2; this.stuck = 0; }
     }
-    return false;
+    this.lastX = d.x; this.lastY = d.y;
+    d.update(dt, drive, BOT_SPEC, load);
   }
 
-  /** The best of a handful of random bodies: value first, then nearness. */
+  /** Steer to face a point and drive at it, turning on the spot when it is well off the nose. */
+  private toward(tx: number, ty: number): Drive {
+    const d = this.dozer;
+    let diff = Math.atan2(ty - d.y, tx - d.x) - d.yaw;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const steer = Math.max(-1, Math.min(1, diff * 2.5));
+    const throttle = Math.abs(diff) < 0.5 ? 1 : Math.abs(diff) < 1.3 ? 0.4 : 0;
+    return { throttle, steer };
+  }
+
+  /** The best of a handful of random coins: the dearest, then the nearest, and never one already at the hole. */
   private pick(world: World): number {
     let best = -1, bestScore = -Infinity;
     for (let k = 0; k < 24; k++) {
       const i = (Math.random() * world.count) | 0;
       if (!world.alive[i] || world.carried[i]) continue;
-      const d = Math.hypot(world.x[i] - this.x, world.y[i] - this.y);
-      const score = KIND_VALUE[world.kind[i]] * 10 - d * 0.1;
+      const toHole = Math.hypot(world.x[i] - HOLE.x, world.y[i] - HOLE.y);
+      if (toHole < STOP_AT + 4) continue;
+      const dist = Math.hypot(world.x[i] - this.x, world.y[i] - this.y);
+      const score = KIND_VALUE[world.kind[i]] * 4 - dist * 0.3 - toHole * 0.1;
       if (score > bestScore) { bestScore = score; best = i; }
     }
     return best;

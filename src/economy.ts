@@ -146,8 +146,8 @@ export class Economy {
     }
     const d = s.drones < MAX_DRONES ? DRONE_COST[s.drones] : null;
     out.push({
-      id: 'drone', title: `Drone ${d ? s.drones + 1 : 'fleet complete'}`,
-      sub: d ? 'fetches the most valuable thing it can find and drops it in' : `${MAX_DRONES} drones, working`,
+      id: 'drone', title: `Robo-dozer ${d ? s.drones + 1 : 'fleet complete'}`,
+      sub: d ? 'a small bulldozer that drives itself: finds a heap, pushes it in, goes again' : `${MAX_DRONES} robo-dozers, working`,
       cost: d ?? 0, owned: !d, available: !!d,
     });
     return out;

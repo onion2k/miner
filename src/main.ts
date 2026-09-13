@@ -15,9 +15,9 @@ import { World, KIND_NAME, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, bladePieces } from './dozer';
 import { Input } from './input';
 import { Economy, MAX_DRONES, renderShop } from './economy';
-import { Drone, Fountain, beltOf } from './tools';
+import { Bot, BOT_SCALE, BOT_SPEC, Fountain, beltOf } from './tools';
 import { Sound } from './audio';
-import { ball, box, coin, collar, cylinder, disc, gem, moved, pit, tile, turned } from './meshes';
+import { ball, box, coin, collar, cylinder, gem, moved, pit, tile, turned } from './meshes';
 import { identity, hide, place, placePart, placeQuat, project } from './matrix';
 
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
@@ -25,7 +25,7 @@ const MM_PER_UNIT = 100;
 const LIGHT_CAPACITY = 64;
 const EFFECT_CAPACITY = 32;
 const GEM_CAPACITY = [0, 240, 200, 160, 80];
-const DRONE_CAPACITY = MAX_DRONES;
+const BOT_CAPACITY = MAX_DRONES;
 const TREAD_BARS = 9;
 const STRIPE_CAPACITY = 80;
 /** The pennant: a pole and this many slats waving behind it. */
@@ -85,8 +85,8 @@ async function main() {
   const sound = new Sound();
   const fountains: Fountain[] = [];
   for (let a = 0; a < AREAS.length; a++) if (economy.save.areas[a]) fountains.push(new Fountain(AREAS[a]));
-  const drones: Drone[] = [];
-  for (let i = 0; i < economy.save.drones; i++) drones.push(new Drone(HOLE.x + i * 3 - 3, HOLE.y - 6));
+  const bots: Bot[] = [];
+  for (let i = 0; i < economy.save.drones; i++) bots.push(new Bot(world.solid, i + 1, HOLE.x + 14 + i * 6, HOLE.y + 10));
   for (let a = 1; a < AREAS.length; a++) if (economy.save.belts[a]) world.belts.push(beltOf(AREAS[a].belt!.spec));
 
   // ---- the static half: floor, walls, hole, gates, chutes, belts ----
@@ -152,12 +152,12 @@ async function main() {
 
   // ---- the dynamic half: coins, gems, the dozer, drones, belt stripes ----
 
-  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, DRONE_BODY = 9, ROTORS = 10, ARMS = 11, STRIPES = 12, POLE = 13, FLAG = 14;
+  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, BOT_HULL = 9, BOT_DARK = 10, BOT_BLADE = 11, STRIPES = 12, POLE = 13, FLAG = 14;
   const coinM = new Float32Array(BODY_CAPACITY * 16);
   const gemM = GEM_CAPACITY.map((n) => new Float32Array(Math.max(1, n) * 16));
   const hullM = new Float32Array(16), darkM = new Float32Array(16), bladeM = new Float32Array(16);
   const treadM = new Float32Array(TREAD_BARS * 2 * 16);
-  const droneM = new Float32Array(DRONE_CAPACITY * 16), rotorM = new Float32Array(DRONE_CAPACITY * 4 * 16), armM = new Float32Array(DRONE_CAPACITY * 2 * 16);
+  const botHullM = new Float32Array(BOT_CAPACITY * 16), botDarkM = new Float32Array(BOT_CAPACITY * 16), botBladeM = new Float32Array(BOT_CAPACITY * 16);
   const stripeM = new Float32Array(STRIPE_CAPACITY * 16);
   const poleM = new Float32Array(16), flagM = new Float32Array(FLAG_SLATS * 16);
 
@@ -187,7 +187,8 @@ async function main() {
       moved(box(0.6, p.length, 0.18, true), 0.12, 0, -BLADE_HEIGHT / 2 + 0.09),
     ]), p.turn), p.x, p.y, BLADE_HEIGHT / 2)));
   }
-  const droneBody = mergeMeshes([box(1.7, 1.7, 0.6, true), moved(ball(0.55, 5, 8), 0, 0, 0.5)]);
+  // the robo-dozer's beacon, on the cab roof, so it reads as a machine and not a second player
+  const botExtras = mergeMeshes([moved(ball(0.45, 5, 8), -1.5, 0, 4.2), moved(cylinder(0.12, 0.6, 6), -1.5, 0, 3.6)]);
   const gemMesh = gem(1.05, 2.3);
   const dynamic: GameGroup[] = [
     { mesh: coin(0.52, 0.26), matrices: coinM, count: 0, albedo: [1.0, 0.76, 0.22], roughness: 0.32 },
@@ -199,9 +200,9 @@ async function main() {
     { mesh: dark, matrices: darkM, albedo: [0.15, 0.15, 0.17], roughness: 0.75 },
     { mesh: bladeMesh(economy.spec().bladeWidth), matrices: bladeM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
     { mesh: box(0.55, 1.9, 0.35), matrices: treadM, albedo: [0.3, 0.3, 0.32], roughness: 0.8 },
-    { mesh: droneBody, matrices: droneM, count: 0, albedo: [0.92, 0.92, 0.95], roughness: 0.4 },
-    { mesh: disc(0.85, 10), matrices: rotorM, count: 0, albedo: [0.2, 0.2, 0.22], roughness: 0.6 },
-    { mesh: box(3.6, 0.28, 0.2, true), matrices: armM, count: 0, albedo: [0.2, 0.2, 0.22], roughness: 0.6 },
+    { mesh: mergeMeshes([hull, botExtras]), matrices: botHullM, count: 0, albedo: [0.88, 0.9, 0.92], roughness: 0.45 },
+    { mesh: dark, matrices: botDarkM, count: 0, albedo: [0.95, 0.45, 0.1], roughness: 0.6 },
+    { mesh: bladeMesh(BOT_SPEC.bladeWidth), matrices: botBladeM, count: 0, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
     { mesh: box(0.5, 1, 0.15), matrices: stripeM, count: 0, albedo: [0.9, 0.78, 0.3], roughness: 0.5 },
     { mesh: cylinder(0.09, 4.2, 6), matrices: poleM, count: 0, albedo: [0.3, 0.3, 0.32], roughness: 0.5 },
     { mesh: box(0.4, 0.06, 0.9, true), matrices: flagM, count: 0, albedo: flagColour(), roughness: 0.6 },
@@ -316,6 +317,7 @@ async function main() {
       const a = +id.slice(4);
       world.solid = cave.solid(economy.save.areas);
       dozer.solid = world.solid;
+      for (const b of bots) b.dozer.solid = world.solid;
       AREAS[a].heaps.forEach(spawnHeap);
       fountains.push(new Fountain(AREAS[a]));
       buildStatic();
@@ -327,7 +329,7 @@ async function main() {
       world.belts.push(beltOf(AREAS[+id.slice(4)].belt!.spec));
       buildStatic();
     } else if (id === 'drone') {
-      drones.push(new Drone(HOLE.x, HOLE.y - 6));
+      bots.push(new Bot(world.solid, bots.length + 1, HOLE.x + 14, HOLE.y + 10));
     } else if (id === 'blade') {
       dynamic[BLADE].mesh = bladeMesh(economy.spec().bladeWidth);
       renderer.setDynamic(dynamic);
@@ -426,7 +428,13 @@ async function main() {
       const v = AREAS[a].vein;
       lights.add({ position: [v.x, v.y, 5.5], radius: 12, colour: [1.0, 0.7, 0.3], intensity: 1.6 + 0.4 * Math.sin(t * 7 + a) });
     }
-    for (const d of drones) lights.add({ position: [d.x, d.y, d.z - 0.6], radius: 12, colour: [0.7, 0.85, 1.0], intensity: 3, direction: [0, 0, -1], cone: [30, 55] });
+    for (const b of bots) {
+      const bc = Math.cos(b.yaw), bs = Math.sin(b.yaw);
+      lights.add({ position: [b.x + bc * 1.8, b.y + bs * 1.8, 2.2], radius: 26, colour: [1.0, 0.92, 0.7], intensity: 4, direction: [bc, bs, -0.35], cone: [22, 40] });
+      // the beacon, turning
+      const beat = 0.5 + 0.5 * Math.sin(t * 6 + b.x);
+      lights.add({ position: [b.x - bc * 1.0, b.y - bs * 1.0, 3.2], radius: 9, colour: [1.0, 0.45, 0.1], intensity: 1 + 2 * beat });
+    }
     for (const f of fountains) {
       if (f.glow <= 0) continue;
       const flicker = f.state === 'warn' ? 0.7 + 0.3 * Math.sin(t * 30) : 1;
@@ -487,18 +495,14 @@ async function main() {
     }
     renderer.move(TREADS, treadM);
 
-    drones.forEach((d, i) => {
-      place(droneM, i, d.x, d.y, d.z, d.yaw);
-      placePart(armM, i * 2, d.x, d.y, d.z, d.yaw, 0, 0, 0.35, Math.PI / 4);
-      placePart(armM, i * 2 + 1, d.x, d.y, d.z, d.yaw, 0, 0, 0.35, -Math.PI / 4);
-      for (let r = 0; r < 4; r++) {
-        const a = Math.PI / 4 + (r * Math.PI) / 2;
-        placePart(rotorM, i * 4 + r, d.x, d.y, d.z, d.yaw, Math.cos(a) * 1.6, Math.sin(a) * 1.6, 0.5, d.spin * (r % 2 ? 1 : -1));
-      }
+    bots.forEach((b, i) => {
+      placePart(botHullM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, BOT_SCALE, BOT_SCALE, BOT_SCALE);
+      placePart(botDarkM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, BOT_SCALE, BOT_SCALE, BOT_SCALE);
+      placePart(botBladeM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, BOT_SCALE, BOT_SCALE, BOT_SCALE);
     });
-    renderer.move(DRONE_BODY, droneM, drones.length);
-    renderer.move(ARMS, armM, drones.length * 2);
-    renderer.move(ROTORS, rotorM, drones.length * 4);
+    renderer.move(BOT_HULL, botHullM, bots.length);
+    renderer.move(BOT_DARK, botDarkM, bots.length);
+    renderer.move(BOT_BLADE, botBladeM, bots.length);
 
     let n = 0;
     for (let a = 1; a < AREAS.length; a++) {
@@ -531,7 +535,7 @@ async function main() {
 
   boot.classList.add('gone');
   bankPanel.hidden = false; statsPanel.hidden = false; helpPanel.hidden = false;
-  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, drones, fountains, sound });
+  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, bots, fountains, sound });
 
   let last = performance.now();
   let t = 0;
@@ -570,6 +574,14 @@ async function main() {
     const drive = input.read();
     dozer.update(dt, drive, spec, world.load);
     dozer.pushers(spec, pushers);
+    const botPushers: Pusher[] = [];
+    for (const b of bots) {
+      b.update(dt, world, world.loads[b.dozer.owner] ?? 0);
+      b.dozer.pushers(BOT_SPEC, botPushers);
+      pushers.push(...botPushers);
+      const bc = Math.cos(b.yaw), bs = Math.sin(b.yaw);
+      if (Math.abs(b.dozer.speed) > 0.5) world.wakeNear(b.x + bc * BLADE_AT * BOT_SCALE, b.y + bs * BLADE_AT * BOT_SCALE, BOT_SPEC.bladeWidth * BOT_SCALE * 0.75 + 1.5);
+    }
     world.pushers = pushers;
     // the heap ahead of the blade wakes before the blade arrives
     const c = Math.cos(dozer.yaw), s = Math.sin(dozer.yaw);
@@ -579,7 +591,6 @@ async function main() {
     world.magnet = { x: mx, y: my, radius: spec.magnetRadius, strength: spec.magnetStrength };
     world.wakeNear(mx, my, spec.magnetRadius);
     trickle(dt);
-    for (const d of drones) d.update(dt, world);
     let shaking = 0;
     for (const f of fountains) {
       f.update(dt, spawn, () => sound.crack());

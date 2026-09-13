@@ -38,6 +38,8 @@ export interface Pusher {
   /** Turn rate, for the velocity of a point out along the blade, about the pivot. */
   spin: number;
   px: number; py: number;
+  /** Whose box it is: 0 the player, then the robo-dozers. Each has its own load count. */
+  owner: number;
 }
 
 /** A strip of floor that carries what rests on it. */
@@ -75,9 +77,11 @@ export class World {
   belts: Belt[] = [];
   /** How many bodies the pushers were shoving on the last step: the blade's load. */
   load = 0;
+  /** The same, per owner: the player at 0, then each robo-dozer. */
+  loads: number[] = [];
   /** A pull toward a point, on whatever lies within `radius` of it on the floor. */
   magnet: { x: number; y: number; radius: number; strength: number } | null = null;
-  private loadNow = 0;
+  private loadNow: number[] = [];
   /** Which tiles are rock right now; the game rewrites it when a gate opens. */
   solid: Uint8Array;
 
@@ -171,7 +175,7 @@ export class World {
     const n = this.count;
     const { x, y, z, vx, vy, vz, alive, asleep, carried } = this;
     const window = ++this.steps % SLEEP_STEPS === 0;
-    this.loadNow = 0;
+    this.loadNow.length = 0;
     // integrate
     for (let i = 0; i < n; i++) {
       if (!alive[i] || asleep[i] || carried[i]) continue;
@@ -205,7 +209,8 @@ export class World {
       }
       this.turn(i);
     }
-    this.load = this.loadNow;
+    this.loads = this.loadNow.slice();
+    this.load = this.loads[0] ?? 0;
   }
 
   private cellOf(px: number, py: number): number {
@@ -361,7 +366,7 @@ export class World {
       }
       // dragged along with the face a little, which is how a blade carries a load
       vx[i] += (pvx - vx[i]) * 0.15; vy[i] += (pvy - vy[i]) * 0.15;
-      if (Math.abs(wnz) < 0.5) this.loadNow++;
+      if (Math.abs(wnz) < 0.5) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
     }
   }
 

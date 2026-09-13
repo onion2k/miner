@@ -62,7 +62,12 @@ export class Dozer {
   odometer = 0;
   solid: Uint8Array;
 
-  constructor(solid: Uint8Array) { this.solid = solid; }
+  /**
+   * `scale` is the whole machine's size against the player's: the robo-dozers
+   * are the same shape, smaller. `owner` names its boxes to the physics, so
+   * each machine is slowed by its own load and not another's.
+   */
+  constructor(solid: Uint8Array, readonly scale = 1, readonly owner = 0) { this.solid = solid; }
 
   /**
    * `load` is how many coins the blade is shoving: a heap in front of the
@@ -107,9 +112,10 @@ export class Dozer {
         const cx = Math.max(x0, Math.min(x0 + TILE, this.x)), cy = Math.max(y0, Math.min(y0 + TILE, this.y));
         let dx = this.x - cx, dy = this.y - cy;
         const d = Math.hypot(dx, dy);
-        if (d >= BODY_RADIUS || d < 1e-4) continue;
+        const reach = BODY_RADIUS * this.scale;
+        if (d >= reach || d < 1e-4) continue;
         dx /= d; dy /= d;
-        this.x += dx * (BODY_RADIUS - d); this.y += dy * (BODY_RADIUS - d);
+        this.x += dx * (reach - d); this.y += dy * (reach - d);
         // the speed along the heading is what carried it in: take that back
         const head = Math.cos(this.yaw) * dx + Math.sin(this.yaw) * dy;
         if (head * this.speed < 0) this.speed *= 0.2;
@@ -117,22 +123,23 @@ export class Dozer {
     }
   }
 
-  /** The two boxes the coins feel: the blade and the hull. */
+  /** The boxes the coins feel: the blade's pieces and the hull, scaled to the machine. */
   pushers(spec: DozerSpec, out: Pusher[]): Pusher[] {
     const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
     const vx = c * this.speed, vy = s * this.speed;
+    const k = this.scale, owner = this.owner;
     out.length = 0;
     for (const piece of bladePieces(spec.bladeWidth)) {
       out.push({
-        x: this.x + c * piece.x - s * piece.y, y: this.y + s * piece.x + c * piece.y, z: BLADE_HEIGHT / 2,
-        yaw: this.yaw + piece.turn, hx: 0.3, hy: piece.length / 2, hz: BLADE_HEIGHT / 2,
-        vx, vy, spin: this.yawRate, px: this.x, py: this.y,
+        x: this.x + (c * piece.x - s * piece.y) * k, y: this.y + (s * piece.x + c * piece.y) * k, z: (BLADE_HEIGHT / 2) * k,
+        yaw: this.yaw + piece.turn, hx: 0.3 * k, hy: (piece.length / 2) * k, hz: (BLADE_HEIGHT / 2) * k,
+        vx, vy, spin: this.yawRate, px: this.x, py: this.y, owner,
       });
     }
     out.push({
-      x: this.x, y: this.y, z: HULL_HALF[2],
-      yaw: this.yaw, hx: HULL_HALF[0], hy: HULL_HALF[1], hz: HULL_HALF[2],
-      vx, vy, spin: this.yawRate, px: this.x, py: this.y,
+      x: this.x, y: this.y, z: HULL_HALF[2] * k,
+      yaw: this.yaw, hx: HULL_HALF[0] * k, hy: HULL_HALF[1] * k, hz: HULL_HALF[2] * k,
+      vx, vy, spin: this.yawRate, px: this.x, py: this.y, owner,
     });
     return out;
   }
