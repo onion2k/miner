@@ -33,10 +33,14 @@ export class Input {
     const throttle = (this.is('w', 'arrowup') ? 1 : 0) - (this.is('s', 'arrowdown') ? 1 : 0);
     const steer = (this.is('a', 'arrowleft') ? 1 : 0) - (this.is('d', 'arrowright') ? 1 : 0);
     if (throttle || steer || !this.tracks) return { throttle, steer };
-    // two tracks to one drive: what they share is the throttle, and the difference
-    // turns it, to the left when the right track runs ahead
+    // Two tracks to one drive: what they share is the throttle, and the difference turns
+    // it, to the left when the right track runs ahead. Summed, not averaged, so the levers
+    // reach what the keys do: both pushed is W at full speed, one pushed is W with A or D,
+    // opposite ways is a spin. Averaged, an arc was three quarters of the speed and a
+    // lever short of its end was slower still.
     const { left, right } = this.tracks;
-    return { throttle: (left + right) / 2, steer: (right - left) / 2 };
+    const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+    return { throttle: clamp(left + right), steer: clamp(right - left) };
   }
 
   /** The shop, asked for by something other than the B key: the phone's button. */

@@ -13,6 +13,8 @@ export function isTouchDevice(): boolean {
 
 /** How far from the middle a slider has to go before the track moves, as a fraction of its travel. */
 const DEAD_ZONE = 0.1;
+/** Where a slider is all the way, short of its end, so a thumb need not find the very edge. */
+const FULL_AT = 0.8;
 
 export class TrackSliders {
   /** Each track's lever, -1 full back to 1 full forward. */
@@ -33,8 +35,8 @@ export class TrackSliders {
       const travel = (r.height - thumb.offsetHeight) / 2;
       const raw = Math.max(-1, Math.min(1, (r.top + r.height / 2 - e.clientY) / Math.max(travel, 1)));
       thumb.style.transform = `translateY(${-raw * travel}px)`;
-      // past the dead zone, rescaled so the lever still reaches a full 1 at the end
-      const past = Math.max(0, Math.abs(raw) - DEAD_ZONE) / (1 - DEAD_ZONE);
+      // past the dead zone, rescaled so the lever reaches a full 1 at FULL_AT of the way
+      const past = Math.min(1, Math.max(0, Math.abs(raw) - DEAD_ZONE) / (FULL_AT - DEAD_ZONE));
       set(Math.sign(raw) * past);
     };
     const release = (e: PointerEvent) => {

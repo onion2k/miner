@@ -50,7 +50,8 @@
      nearly half the cave. A slider's hit area is wider than what is drawn of it. ---- */
   #pad, #tracks { display: none; }
   body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-  body.touch #help, body.touch .keys { display: none; }
+  /* the counters at the top and the keyboard help: on a phone the cave gets the screen */
+  body.touch #help, body.touch .keys, body.touch #bank, body.touch #stats { display: none; }
   body.touch #tracks:not([hidden]) { display: block; }
   body.touch #pad:not([hidden]) { display: flex; }
   /* the buttons, in one row at the bottom between the sliders: mute, shop, and the horn once it is bought */
@@ -64,25 +65,27 @@
   #hornButton { border-color: rgba(242, 193, 78, 0.45); }
   #shopButton { padding: 0 14px; border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em;
                 text-transform: uppercase; color: var(--gold); border-color: rgba(242, 193, 78, 0.45); }
-  .track { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); width: 64px; height: clamp(110px, 26vh, 200px);
+  /* A slider is sized from the screen: 8% of its short side across, a quarter of the height
+     standing up and the whole height lying down. What is drawn is the rail; ::before reaches
+     past it either side, invisibly, so a thumb need not land on a bar that thin. */
+  .track { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); width: 8vmin; height: 26vh;
+           border-radius: 4vmin; background: rgba(14, 12, 20, 0.32); border: 1px solid rgba(255, 255, 255, 0.12);
            touch-action: none; }
-  #trackLeft { left: calc(4px + env(safe-area-inset-left)); }
-  #trackRight { right: calc(4px + env(safe-area-inset-right)); }
-  /* the rail, narrower than the hit area, and the tick at its middle where the lever rests */
-  .track::before { content: ''; position: absolute; left: 14px; right: 14px; top: 0; bottom: 0; border-radius: 18px;
-                   background: rgba(14, 12, 20, 0.32); border: 1px solid rgba(255, 255, 255, 0.12); }
-  .track::after { content: ''; position: absolute; left: 20px; right: 20px; top: 50%; height: 2px; background: rgba(255, 255, 255, 0.25); }
-  .track .thumb { position: absolute; left: 16px; right: 16px; top: calc(50% - 18px); height: 36px; border-radius: 16px; z-index: 1;
+  @media (orientation: landscape) {
+    .track { top: calc(8px + env(safe-area-inset-top)); bottom: calc(8px + env(safe-area-inset-bottom)); height: auto; }
+  }
+  #trackLeft { left: calc(3vmin + env(safe-area-inset-left)); }
+  #trackRight { right: calc(3vmin + env(safe-area-inset-right)); }
+  .track::before { content: ''; position: absolute; top: 0; bottom: 0; left: -3vmin; right: -3vmin; }
+  /* the tick at the middle, where the lever rests */
+  .track::after { content: ''; position: absolute; left: 20%; right: 20%; top: 50%; height: 2px; background: rgba(255, 255, 255, 0.25); }
+  .track .thumb { position: absolute; left: 2px; right: 2px; top: calc(50% - 4vmin); height: 8vmin; border-radius: 4vmin; z-index: 1;
                   background: rgba(242, 193, 78, 0.6); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4); transition: transform .18s ease-out; }
   .track.held .thumb { transition: none; background: var(--gold); }
   body.touch #shop { right: 50%; width: min(340px, calc(100vw - 24px)); z-index: 5; }
   /* clear of the counters above and the buttons below, so the button that closes it is never under it */
   body.touch #shop .rows { touch-action: pan-y; max-height: 28vh; }
   body.touch #shop { top: auto; bottom: calc(66px + env(safe-area-inset-bottom)); transform: translateX(50%); }
-  body.touch #stats { font-size: 9px; line-height: 1.35; top: calc(8px + env(safe-area-inset-top)); right: 8px; padding: 4px 8px; }
-  body.touch #bank { top: calc(8px + env(safe-area-inset-top)); left: 8px; padding: 4px 10px; font-size: 11px; }
-  body.touch #bank b { font-size: 20px; }
-  body.touch #bank .sub { font-size: 10px; }
   body.touch #toast { bottom: calc(66px + env(safe-area-inset-bottom)); }
   #boot { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center;
           background: #0b0a10; transition: opacity .5s; z-index: 10; }
