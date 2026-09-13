@@ -20,8 +20,11 @@
   #stats span { color: var(--ink); font-variant-numeric: tabular-nums; }
   #help { bottom: 16px; left: 16px; color: var(--dim); font-size: 13px; }
   #help span { color: var(--ink); background: rgba(255,255,255,0.1); border-radius: 5px; padding: 0 6px; }
-  #toast { bottom: 84px; left: 50%; transform: translateX(-50%); color: var(--gold); font-weight: 600;
-           font-size: 16px; transition: opacity .3s; text-align: center; }
+  /* the combo tally: grows with the run, and fades when the run is over */
+  #toast { bottom: 84px; left: 50%; transform: translateX(-50%); color: var(--gold); font-weight: 800;
+           font-size: 18px; transition: opacity .5s, font-size .15s; text-align: center; line-height: 1.1;
+           font-variant-numeric: tabular-nums; padding: 8px 18px; }
+  #toast small { display: block; font-size: 12px; font-weight: 500; color: var(--dim); margin-top: 4px; }
   #toast.gone { opacity: 0; }
   #shop { top: 50%; right: 16px; transform: translateY(-50%); pointer-events: auto; width: 320px; }
   #shop[hidden] { display: none; }
@@ -48,7 +51,7 @@
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="toast" hidden></div>
 <div class="panel" id="help" hidden>
-  drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom · <span>C</span> reset camera<br>
+  drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom · <span>C</span> reset camera · <span>M</span> mute<br>
   push the coins and gems into the hole to bank them
 </div>
 <div class="panel" id="shop" hidden><h2>Workshop</h2><div class="rows"></div><div class="foot">press <b>B</b> to close · <button id="reset" type="button">start over</button></div></div>

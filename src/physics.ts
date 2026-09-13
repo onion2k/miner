@@ -75,6 +75,8 @@ export class World {
   belts: Belt[] = [];
   /** How many bodies the pushers were shoving on the last step: the blade's load. */
   load = 0;
+  /** A pull toward a point, on whatever lies within `radius` of it on the floor. */
+  magnet: { x: number; y: number; radius: number; strength: number } | null = null;
   private loadNow = 0;
   /** Which tiles are rock right now; the game rewrites it when a gate opens. */
   solid: Uint8Array;
@@ -185,6 +187,7 @@ export class World {
       this.walls(i);
       this.push(i);
       this.belt(i);
+      this.pull(i);
       this.floor(i, collect);
       if (!alive[i]) continue;
       // A slow body is slowed further, which takes the fizz out of a
@@ -360,6 +363,17 @@ export class World {
       vx[i] += (pvx - vx[i]) * 0.15; vy[i] += (pvy - vy[i]) * 0.15;
       if (Math.abs(wnz) < 0.5) this.loadNow++;
     }
+  }
+
+  /** The magnet: a pull that grows toward the point, on things low enough to be on the floor. */
+  private pull(i: number) {
+    const m = this.magnet;
+    if (!m || this.z[i] > this.r[i] + 1.5) return;
+    const dx = m.x - this.x[i], dy = m.y - this.y[i];
+    const d = Math.hypot(dx, dy);
+    if (d >= m.radius || d < 0.5) return;
+    const k = (m.strength * (1 - d / m.radius) * STEP) / d;
+    this.vx[i] += dx * k; this.vy[i] += dy * k;
   }
 
   private belt(i: number) {

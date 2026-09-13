@@ -5,6 +5,7 @@ export class Input {
   private down = new Set<string>();
   private shop = false;
   private recentre = false;
+  private mute = false;
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -13,6 +14,7 @@ export class Input {
       this.down.add(k);
       if (k === 'b') this.shop = true;
       if (k === 'c') this.recentre = true;
+      if (k === 'm') this.mute = true;
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
     });
     addEventListener('keyup', (e) => this.down.delete(e.key.toLowerCase()));
@@ -29,4 +31,5 @@ export class Input {
 
   takeShop() { const v = this.shop; this.shop = false; return v; }
   takeRecentre() { const v = this.recentre; this.recentre = false; return v; }
+  takeMute() { const v = this.mute; this.mute = false; return v; }
 }

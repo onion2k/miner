@@ -14,6 +14,7 @@ export interface Save {
   areas: boolean[];
   belts: boolean[];
   drones: number;
+  magnet: number;
 }
 
 const KEY = 'pushminer-save-v1';
@@ -28,6 +29,14 @@ const ENGINE: { maxSpeed: number; accel: number; turnRate: number; cost: number 
 ];
 const BLADE: { width: number; cost: number }[] = [
   { width: 6.5, cost: 0 }, { width: 8, cost: 90 }, { width: 10, cost: 350 }, { width: 12.5, cost: 1100 },
+];
+const MAGNET: { radius: number; strength: number; cost: number }[] = [
+  { radius: 4, strength: 5, cost: 0 },
+  { radius: 6, strength: 9, cost: 120 },
+  { radius: 8.5, strength: 14, cost: 380 },
+  { radius: 11, strength: 20, cost: 950 },
+  { radius: 14, strength: 28, cost: 2200 },
+  { radius: 18, strength: 38, cost: 5000 },
 ];
 export const MAX_DRONES = 3;
 const DRONE_COST = [500, 1300, 3000];
@@ -47,7 +56,7 @@ export class Economy {
   private listeners: ((id: string) => void)[] = [];
 
   constructor() {
-    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: [true, false, false], belts: [false, false, false], drones: 0 };
+    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: [true, false, false], belts: [false, false, false], drones: 0, magnet: 0 };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
@@ -69,7 +78,8 @@ export class Economy {
 
   spec(): DozerSpec {
     const e = ENGINE[this.save.engine];
-    return { maxSpeed: e.maxSpeed, accel: e.accel, turnRate: e.turnRate, bladeWidth: BLADE[this.save.blade].width };
+    const m = MAGNET[this.save.magnet];
+    return { maxSpeed: e.maxSpeed, accel: e.accel, turnRate: e.turnRate, bladeWidth: BLADE[this.save.blade].width, magnetRadius: m.radius, magnetStrength: m.strength };
   }
 
   /** Something to do when a purchase lands: the game rebuilds what changed. */
@@ -89,6 +99,12 @@ export class Economy {
       id: 'blade', title: `Wider blade${b ? '' : ' (maxed)'}`,
       sub: b ? `${b.width} across, up from ${BLADE[s.blade].width}` : `${BLADE[s.blade].width} across: the widest made`,
       cost: b?.cost ?? 0, owned: !b, available: !!b,
+    });
+    const m = s.magnet + 1 < MAGNET.length ? MAGNET[s.magnet + 1] : null;
+    out.push({
+      id: 'magnet', title: `Magnet ${m ? `Mk ${s.magnet + 2}` : 'maxed'}`,
+      sub: m ? `pulls coins from ${m.radius} away, up from ${MAGNET[s.magnet].radius}` : `reaches ${MAGNET[s.magnet].radius}: nothing escapes it`,
+      cost: m?.cost ?? 0, owned: !m, available: !!m,
     });
     for (let a = 1; a < AREAS.length; a++) {
       const area = AREAS[a];
@@ -123,6 +139,7 @@ export class Economy {
     if (id === 'engine') s.engine++;
     else if (id === 'blade') s.blade++;
     else if (id === 'drone') s.drones++;
+    else if (id === 'magnet') s.magnet++;
     else if (id.startsWith('area')) s.areas[+id.slice(4)] = true;
     else if (id.startsWith('belt')) s.belts[+id.slice(4)] = true;
     this.persist();

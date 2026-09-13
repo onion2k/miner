@@ -50,6 +50,8 @@ export interface Area {
   cost: number;
   heaps: Heap[];
   vein: Vein;
+  /** Where the floor cracks and fountains of coins come up, now and then. */
+  cracks: [number, number][];
   belt: { spec: BeltSpec; cost: number } | null;
 }
 
@@ -67,6 +69,7 @@ export const AREAS: Area[] = [
       { x: 6, y: 22, coins: 320, gems: [] },
     ],
     vein: { x: -36, y: -6, every: 1.2, coins: 1, gems: [[1, 0.04]] },
+    cracks: [[-10, -14], [18, 12], [-28, -12], [34, 4]],
     belt: null,
   },
   {
@@ -76,6 +79,7 @@ export const AREAS: Area[] = [
       { x: 22, y: -54, coins: 960, gems: [[1, 10], [2, 8]] },
     ],
     vein: { x: 40, y: -50, every: 0.9, coins: 1, gems: [[1, 0.08], [2, 0.03]] },
+    cracks: [[0, -56], [-40, -50], [36, -58]],
     belt: { spec: { x0: -2, y0: -46, x1: -2, y1: -8, width: 7, speed: 9 }, cost: 450 },
   },
   {
@@ -85,6 +89,7 @@ export const AREAS: Area[] = [
       { x: 24, y: 54, coins: 1000, gems: [[2, 8], [3, 10], [4, 4]] },
     ],
     vein: { x: -44, y: 54, every: 0.7, coins: 1, gems: [[2, 0.08], [3, 0.05], [4, 0.015]] },
+    cracks: [[0, 56], [-44, 50], [40, 52]],
     belt: { spec: { x0: -2, y0: 46, x1: -2, y1: 8, width: 7, speed: 9 }, cost: 900 },
   },
 ];

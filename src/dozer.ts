@@ -13,6 +13,8 @@ export interface DozerSpec {
   accel: number;
   turnRate: number;
   bladeWidth: number;
+  magnetRadius: number;
+  magnetStrength: number;
 }
 
 /** The hull's footprint, from the pivot: half-length along and half-width across. */

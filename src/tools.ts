@@ -2,7 +2,7 @@
  * The help you can buy: conveyor belts that carry what lands on them to the
  * hole, and drones that go and fetch things.
  */
-import type { BeltSpec } from './cave';
+import type { BeltSpec, Area } from './cave';
 import { HOLE } from './cave';
 import { KIND_VALUE, type Belt, type World } from './physics';
 
@@ -108,5 +108,58 @@ export class Drone {
       if (score > bestScore) { bestScore = score; best = i; }
     }
     return best;
+  }
+}
+
+/**
+ * A fountain: now and then the floor of a room cracks, glows for a moment,
+ * and throws up a spray of coins for a few seconds. Nothing to react to,
+ * just somewhere to wander over to.
+ */
+export class Fountain {
+  state: 'idle' | 'warn' | 'spray' = 'idle';
+  x = 0; y = 0;
+  /** How bright the crack is, 0 to 1, for the light and the glow. */
+  glow = 0;
+  private timer: number;
+  private spill = 0;
+
+  constructor(private area: Area) {
+    this.timer = 12 + Math.random() * 18;
+  }
+
+  /** Steps the fountain; `spawn` is asked for each coin, and `crack` once when the floor goes. */
+  update(dt: number, spawn: (kind: number, x: number, y: number, z: number, vx: number, vy: number, vz: number) => boolean, crack: () => void) {
+    this.timer -= dt;
+    switch (this.state) {
+      case 'idle':
+        this.glow = Math.max(0, this.glow - dt);
+        if (this.timer <= 0) {
+          const [x, y] = this.area.cracks[(Math.random() * this.area.cracks.length) | 0];
+          this.x = x; this.y = y;
+          this.state = 'warn'; this.timer = 2.6;
+          crack();
+        }
+        return;
+      case 'warn':
+        this.glow = Math.min(1, this.glow + dt / 2);
+        if (this.timer <= 0) { this.state = 'spray'; this.timer = 3.5; }
+        return;
+      case 'spray': {
+        this.glow = 1;
+        this.spill += dt * 22;
+        while (this.spill >= 1) {
+          this.spill--;
+          let kind = 0;
+          const roll = Math.random();
+          let acc = 0;
+          for (const [k, p] of this.area.vein.gems) { acc += p * 2; if (roll < acc) { kind = k; break; } }
+          const a = Math.random() * Math.PI * 2, spread = 3 + Math.random() * 5;
+          if (!spawn(kind, this.x, this.y, 0.8, Math.cos(a) * spread, Math.sin(a) * spread, 18 + Math.random() * 10)) { this.timer = 0; break; }
+        }
+        if (this.timer <= 0) { this.state = 'idle'; this.timer = 28 + Math.random() * 22; }
+        return;
+      }
+    }
   }
 }

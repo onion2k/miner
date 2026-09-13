@@ -15,7 +15,8 @@ import { World, KIND_NAME, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, bladePieces } from './dozer';
 import { Input } from './input';
 import { Economy, MAX_DRONES, renderShop } from './economy';
-import { Drone, beltOf } from './tools';
+import { Drone, Fountain, beltOf } from './tools';
+import { Sound } from './audio';
 import { ball, box, coin, collar, cylinder, disc, gem, moved, pit, tile, turned } from './meshes';
 import { identity, hide, place, placePart, placeQuat, project } from './matrix';
 
@@ -78,6 +79,9 @@ async function main() {
   const world = new World(BODY_CAPACITY, cave.solid(economy.save.areas));
   const dozer = new Dozer(world.solid);
   const input = new Input();
+  const sound = new Sound();
+  const fountains: Fountain[] = [];
+  for (let a = 0; a < AREAS.length; a++) if (economy.save.areas[a]) fountains.push(new Fountain(AREAS[a]));
   const drones: Drone[] = [];
   for (let i = 0; i < economy.save.drones; i++) drones.push(new Drone(HOLE.x + i * 3 - 3, HOLE.y - 6));
   for (let a = 1; a < AREAS.length; a++) if (economy.save.belts[a]) world.belts.push(beltOf(AREAS[a].belt!.spec));
@@ -240,32 +244,41 @@ async function main() {
     }
   }
 
-  // ---- the bank ----
+  // ---- the bank, and the run ----
 
+  /** A run: everything that has gone in without a pause longer than a moment. */
   let holePulse = 0;
+  let runValue = 0, runCount = 0, runTimer = 0;
   const gained: number[] = [0, 0, 0, 0, 0];
-  let toastIn = 0;
+  /** How fast value is arriving, in coins a second, smoothed: what the cascade scales by. */
+  let flow = 0;
   function collect(kind: number, x: number, y: number) {
     if (kind > 0) gemCount[kind]--;
-    economy.deposit(KIND_VALUE[kind]);
+    const value = KIND_VALUE[kind];
+    economy.deposit(value);
     gained[kind]++;
-    holePulse = Math.min(2, holePulse + 0.35 + (kind > 0 ? 0.6 : 0));
-    toastIn = 1.4;
+    runValue += value; runCount++; runTimer = 1.3;
+    flow += 1;
+    const heat = Math.min(1, flow / 25);
+    holePulse = Math.min(3, holePulse + 0.2 + heat * 0.5 + (kind > 0 ? 0.7 : 0));
+    if (kind > 0) sound.thunk(value); else sound.clink(runCount);
     const gold: [number, number, number] = kind === 0 ? [1.6, 1.2, 0.4] : (dynamic[kind].albedo as [number, number, number]).map((c) => c * 2) as [number, number, number];
     renderer.emit({
-      position: [x, y, 0.5], velocity: [0, 0, 14], spread: 7, count: kind > 0 ? 40 : 10,
-      life: 0.9, lifeSpread: 0.4, size: kind > 0 ? 0.45 : 0.3, growth: -0.2, colour: gold, alpha: 0, gravity: 0.8, floor: -30,
+      position: [x, y, 0.5], velocity: [0, 0, 12 + heat * 10], spread: 6 + heat * 6, count: (kind > 0 ? 40 : 8) + Math.round(heat * 30),
+      life: 0.9 + heat * 0.5, lifeSpread: 0.4, size: (kind > 0 ? 0.45 : 0.3) + heat * 0.15, growth: -0.2, colour: gold, alpha: 0, gravity: 0.8, floor: -30,
     });
   }
-  function showToast() {
+  function showRun() {
     const parts: string[] = [];
     for (let k = 0; k < 5; k++) {
       if (!gained[k]) continue;
-      parts.push(`+${gained[k] * KIND_VALUE[k]} <small>${gained[k]} ${KIND_NAME[k]}${gained[k] > 1 ? 's' : ''}</small>`);
+      parts.push(`${gained[k]} ${KIND_NAME[k]}${gained[k] > 1 ? 's' : ''}`);
     }
-    toast.innerHTML = parts.join(' · ');
-    toast.hidden = !parts.length;
-    toast.classList.toggle('gone', toastIn <= 0);
+    toast.innerHTML = `+${runValue}<small>${parts.join(' · ')}</small>`;
+    toast.hidden = !runCount;
+    // the tally grows with the run, up to a shout
+    toast.style.fontSize = `${Math.min(64, 18 + Math.sqrt(runValue) * 2.4)}px`;
+    toast.classList.toggle('gone', runTimer <= 0);
   }
 
   // ---- the shop ----
@@ -275,11 +288,13 @@ async function main() {
     if (confirm('Start over? The bank and every upgrade go back to nothing.')) economy.reset();
   });
   economy.onBuy((id) => {
+    sound.chime();
     if (id.startsWith('area')) {
       const a = +id.slice(4);
       world.solid = cave.solid(economy.save.areas);
       dozer.solid = world.solid;
       AREAS[a].heaps.forEach(spawnHeap);
+      fountains.push(new Fountain(AREAS[a]));
       buildStatic();
       // the rock came down: a cloud of it, at each gate tile
       for (const [x, y] of gateTiles(cave, a)) {
@@ -346,14 +361,31 @@ async function main() {
       lights.add({ position: [v.x, v.y, 5.5], radius: 12, colour: [1.0, 0.7, 0.3], intensity: 1.6 + 0.4 * Math.sin(t * 7 + a) });
     }
     for (const d of drones) lights.add({ position: [d.x, d.y, d.z - 0.6], radius: 12, colour: [0.7, 0.85, 1.0], intensity: 3, direction: [0, 0, -1], cone: [30, 55] });
+    for (const f of fountains) {
+      if (f.glow <= 0) continue;
+      const flicker = f.state === 'warn' ? 0.7 + 0.3 * Math.sin(t * 30) : 1;
+      lights.add({ position: [f.x, f.y, 2], radius: 10 + f.glow * 14, colour: [1.0, 0.55, 0.2], intensity: f.glow * 5 * flicker });
+    }
+    const m = world.magnet;
+    if (m) lights.add({ position: [m.x, m.y, 1.2], radius: m.radius * 0.8, colour: [0.45, 0.7, 1.0], intensity: 0.6 + m.strength * 0.03 });
     renderer.setLights(lights, shadowed);
 
-    // the hole's glow, as a screen-space layer over it
+    // the glows, as screen-space layers: the hole, each cracking floor, the magnet's reach
     let n = 0;
     const p = project(cam.viewProjection, HOLE.x, HOLE.y, 0);
     if (p) {
       const size = (HOLE.radius * 2.2 / p[2]) * (1 + holePulse * 0.5);
       quads.set([p[0], p[1], size, 0.35 + holePulse * 0.9, 0.4, 1.0, 0.65, 1.6], n * EFFECT_STRIDE); n++;
+    }
+    for (const f of fountains) {
+      if (f.glow <= 0) continue;
+      const q = project(cam.viewProjection, f.x, f.y, 0.2);
+      if (!q || n >= EFFECT_CAPACITY) continue;
+      quads.set([q[0], q[1], (6 / q[2]) * (0.6 + f.glow * 0.6), f.glow * (f.state === 'warn' ? 0.5 + 0.3 * Math.sin(t * 30) : 1.2), 1.0, 0.5, 0.15, 2.2], n * EFFECT_STRIDE); n++;
+    }
+    if (m && n < EFFECT_CAPACITY) {
+      const q = project(cam.viewProjection, m.x, m.y, 0.2);
+      if (q) { quads.set([q[0], q[1], (m.radius * 1.1) / q[2], 0.08 + m.strength * 0.004 + 0.03 * Math.sin(t * 5), 0.45, 0.7, 1.0, 1.0], n * EFFECT_STRIDE); n++; }
     }
     renderer.setEffects(quads, n);
     return shadowed;
@@ -421,7 +453,7 @@ async function main() {
 
   boot.classList.add('gone');
   bankPanel.hidden = false; statsPanel.hidden = false; helpPanel.hidden = false;
-  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, drones });
+  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, drones, fountains, sound });
 
   let last = performance.now();
   let t = 0;
@@ -436,18 +468,41 @@ async function main() {
 
     if (input.takeShop()) { shopOpen = !shopOpen; shopPanel.hidden = !shopOpen; if (shopOpen) renderShop(shopRows, economy); }
     if (input.takeRecentre()) orbit.setSpherical(CAMERA);
+    if (input.takeMute()) sound.toggleMute();
 
     const spec = economy.spec();
-    dozer.update(dt, input.read(), spec, world.load);
+    const drive = input.read();
+    dozer.update(dt, drive, spec, world.load);
     dozer.pushers(spec, pushers);
     world.pushers = pushers;
     // the heap ahead of the blade wakes before the blade arrives
     const c = Math.cos(dozer.yaw), s = Math.sin(dozer.yaw);
     if (Math.abs(dozer.speed) > 0.5 || Math.abs(dozer.yawRate) > 0.2) world.wakeNear(dozer.x + c * BLADE_AT, dozer.y + s * BLADE_AT, spec.bladeWidth * 0.75 + 1.5);
+    // the magnet sits a little ahead of the blade's face, and reaches out from there
+    const mx = dozer.x + c * (BLADE_AT + 1.2), my = dozer.y + s * (BLADE_AT + 1.2);
+    world.magnet = { x: mx, y: my, radius: spec.magnetRadius, strength: spec.magnetStrength };
+    world.wakeNear(mx, my, spec.magnetRadius);
     trickle(dt);
     for (const d of drones) d.update(dt, world);
+    let shaking = 0;
+    for (const f of fountains) {
+      f.update(dt, spawn, () => sound.crack());
+      if (f.state === 'idle') continue;
+      const near = Math.max(0, 1 - Math.hypot(f.x - follow[0], f.y - follow[1]) / 90);
+      shaking = Math.max(shaking, f.glow * near * (f.state === 'spray' ? 1 : 0.5));
+      // dust off the crack while it glows, and a plume while it sprays
+      if (Math.random() < (f.state === 'spray' ? 0.9 : 0.35)) {
+        renderer.emit({
+          position: [f.x, f.y, 0.3], velocity: [0, 0, f.state === 'spray' ? 9 : 2], spread: 3, count: 4,
+          life: 1.2, lifeSpread: 0.5, size: 0.8, growth: 1.2, colour: [0.6, 0.45, 0.3], alpha: 0.5, gravity: 0.05, floor: 0,
+        });
+      }
+    }
+    sound.shake(shaking);
+    sound.drive(drive.throttle, dozer.speed, world.load);
     world.step(dt, collect);
     holePulse = Math.max(0, holePulse - dt * 1.8);
+    flow = Math.max(0, flow - flow * Math.min(1, 2.5 * dt));
 
     // the camera follows, a little behind
     const k = Math.min(1, 4 * dt);
@@ -461,8 +516,12 @@ async function main() {
     upload(t);
     renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
 
-    if (toastIn > 0) { toastIn -= dt; if (toastIn <= 0) { gained.fill(0); showToast(); } }
-    if (economy.bank !== lastBank) { lastBank = economy.bank; bankValue.textContent = `${economy.bank}`; showToast(); }
+    if (runTimer > 0) {
+      runTimer -= dt;
+      // the run is over: the tally fades, and the next coin starts a new one
+      if (runTimer <= 0) { showRun(); runValue = 0; runCount = 0; gained.fill(0); }
+    }
+    if (economy.bank !== lastBank) { lastBank = economy.bank; bankValue.textContent = `${economy.bank}`; showRun(); }
     smoothed += (dt * 1000 - smoothed) * 0.08;
     if ((statsIn -= dt) <= 0) {
       statsIn = 0.25;
