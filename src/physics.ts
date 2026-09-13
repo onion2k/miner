@@ -89,6 +89,8 @@ export class World {
   private readonly head: Int32Array;
   private readonly next: Int32Array;
   private accumulator = 0;
+  /** How far behind their frame's end the pushers are this step, in seconds. */
+  private lag = 0;
 
   constructor(capacity: number, solid: Uint8Array) {
     this.capacity = capacity;
@@ -165,10 +167,17 @@ export class World {
   /** Advance by `dt` seconds in fixed steps, reporting what fell in the hole. */
   step(dt: number, collect: (kind: number, x: number, y: number) => void) {
     this.accumulator = Math.min(this.accumulator + dt, STEP * 4);
-    while (this.accumulator >= STEP) {
+    const steps = Math.floor(this.accumulator / STEP + 1e-6);
+    // The machines moved the whole frame at once; the blade is swept there
+    // across the steps rather than jumping. A jump of more than the blade's
+    // thickness and a coin's radius — a fast engine at a phone's frame rate —
+    // puts a coin's centre past the blade's middle, and out the back it goes.
+    for (let k = 0; k < steps; k++) {
       this.accumulator -= STEP;
+      this.lag = dt * (1 - (k + 1) / steps);
       this.substep(collect);
     }
+    this.lag = 0;
   }
 
   private substep(collect: (kind: number, x: number, y: number) => void) {
@@ -333,9 +342,16 @@ export class World {
   /** The blade and the hull: oriented boxes that shove. */
   private push(i: number) {
     const { x, y, z, vx, vy, vz, r } = this;
+    const lag = this.lag;
     for (const p of this.pushers) {
-      const dx = x[i] - p.x, dy = y[i] - p.y, dz = z[i] - p.z;
-      const c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+      // where the box was `lag` ago: back along its velocity, and back round its turn
+      const ta = -p.spin * lag, tc = Math.cos(ta), ts = Math.sin(ta);
+      const rx = p.x - p.px, ry = p.y - p.py;
+      const bx = p.px + tc * rx - ts * ry - p.vx * lag, by = p.py + ts * rx + tc * ry - p.vy * lag;
+      const pivotX = p.px - p.vx * lag, pivotY = p.py - p.vy * lag;
+      const yaw = p.yaw + ta;
+      const dx = x[i] - bx, dy = y[i] - by, dz = z[i] - p.z;
+      const c = Math.cos(yaw), s = Math.sin(yaw);
       const lx = c * dx + s * dy, ly = -s * dx + c * dy, lz = dz;
       const rad = r[i];
       if (Math.abs(lx) > p.hx + rad || Math.abs(ly) > p.hy + rad || Math.abs(lz) > p.hz + rad) continue;
@@ -346,7 +362,12 @@ export class World {
       if (d < 1e-4) {
         // centre inside the box: leave by the nearest face, never downward
         const ex = p.hx - Math.abs(lx), ey = p.hy - Math.abs(ly), ez = p.hz - lz;
-        if (ex <= ey && ex <= ez) { nx = Math.sign(lx) || 1; ny = 0; nz = 0; d = -ex; }
+        // a plate thinner than the coin leaves it on the side it is moving toward,
+        // which is the side the coin was on before the plate got into it
+        const ox = x[i] - pivotX, oy = y[i] - pivotY;
+        const lvx = c * (p.vx - p.spin * oy) + s * (p.vy + p.spin * ox);
+        if (p.hx < rad && Math.abs(lvx) > 0.5 && ex <= ey && ex <= ez) { nx = Math.sign(lvx); ny = 0; nz = 0; d = Math.sign(lvx) * lx - p.hx; }
+        else if (ex <= ey && ex <= ez) { nx = Math.sign(lx) || 1; ny = 0; nz = 0; d = -ex; }
         else if (ey <= ez) { nx = 0; ny = Math.sign(ly) || 1; nz = 0; d = -ey; }
         else { nx = 0; ny = 0; nz = 1; d = -ez; }
       } else { nx /= d; ny /= d; nz /= d; }
@@ -356,7 +377,7 @@ export class World {
       if (this.asleep[i]) this.wake(i);
       x[i] += wnx * pen; y[i] += wny * pen; z[i] += wnz * pen;
       // the box's velocity at the point of contact: its own, plus the turn
-      const ox = x[i] - p.px, oy = y[i] - p.py;
+      const ox = x[i] - pivotX, oy = y[i] - pivotY;
       const pvx = p.vx - p.spin * oy, pvy = p.vy + p.spin * ox;
       const vn = vx[i] * wnx + vy[i] * wny + vz[i] * wnz;
       const pvn = pvx * wnx + pvy * wny;
