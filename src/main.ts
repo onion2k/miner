@@ -51,6 +51,7 @@ const boot = document.getElementById('boot')!;
 const bootMsg = document.getElementById('bootMsg')!;
 const bankPanel = document.getElementById('bank')!;
 const bankValue = bankPanel.querySelector('b')!;
+const shopBalance = document.getElementById('shopBalance')!;
 const coinCount = document.getElementById('coinCount')!;
 const statsPanel = document.getElementById('stats')!;
 const helpPanel = document.getElementById('help')!;
@@ -800,7 +801,7 @@ async function main() {
       // the run is over: the tally fades, and the next coin starts a new one
       if (runTimer <= 0) { showRun(); runValue = 0; runCount = 0; gained.fill(0); }
     }
-    if (economy.bank !== lastBank) { lastBank = economy.bank; bankValue.textContent = `${economy.bank}`; showRun(); }
+    if (economy.bank !== lastBank) { lastBank = economy.bank; bankValue.textContent = shopBalance.textContent = `${economy.bank}`; showRun(); }
     smoothed += (dt * 1000 - smoothed) * 0.08;
     if ((statsIn -= dt) <= 0) {
       statsIn = 0.25;

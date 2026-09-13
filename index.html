@@ -30,6 +30,10 @@
   #shop { top: 50%; right: 16px; transform: translateY(-50%); pointer-events: auto; width: 320px; }
   #shop[hidden] { display: none; }
   #shop h2 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--dim); }
+  /* the bank, in the shop's heading: only on a phone, where the counter in the corner is hidden */
+  #shop h2 .balance { display: none; float: right; letter-spacing: 0.08em; }
+  #shop h2 .balance b { color: var(--gold); font-size: 16px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  body.touch #shop h2 .balance { display: inline; }
   #shop .rows { display: grid; gap: 6px; max-height: 70vh; overflow: auto; }
   #shop button { font: inherit; text-align: left; color: var(--ink); background: rgba(255,255,255,0.07);
                  border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; padding: 6px 10px; cursor: pointer;
@@ -102,7 +106,7 @@
   drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom · <span>V</span> camera mode · <span>C</span> reset camera · <span>M</span> mute · <span>H</span> horn<br>
   push the coins and gems into the hole to bank them
 </div>
-<div class="panel" id="shop" hidden><h2>Workshop</h2><div class="rows"></div><h2 class="later">Paint shop</h2><div class="rows cosmetics"></div><div class="foot"><span class="keys">press <b>B</b> to close</span> <button id="reset" type="button">start over</button></div></div>
+<div class="panel" id="shop" hidden><h2>Workshop<span class="balance">balance <b id="shopBalance">0</b></span></h2><div class="rows"></div><h2 class="later">Paint shop</h2><div class="rows cosmetics"></div><div class="foot"><span class="keys">press <b>B</b> to close</span> <button id="reset" type="button">start over</button></div></div>
 <div id="pad" hidden>
   <button id="muteButton" type="button" aria-label="mute">🔊</button>
   <button id="shopButton" type="button">shop</button>
