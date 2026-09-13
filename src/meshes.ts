@@ -50,14 +50,40 @@ export function box(w: number, d: number, h: number, centred = false): Mesh {
 }
 
 /**
- * A chunky coin: a short cylinder centred on the origin with its axis up Z,
- * its rim chamfered so the edge catches a highlight, and a raised disc on
- * each face so it reads as a coin and not a washer.
+ * The coin's rungs, finest first: what a slower machine steps down to. Every
+ * rung keeps a straight edge, which is what makes a coin read as a coin; the
+ * rim, the sunk field and the emblem go first, then the roundness.
  */
-export function coin(radius: number, thickness: number, segments = 14): Mesh {
+export const COIN_LADDER = [
+  { name: 'full', segments: 18, relief: true },     // 428 triangles
+  { name: 'medium', segments: 12, relief: true },   // 284
+  { name: 'simple', segments: 12, bevel: true },    // 92
+  { name: 'minimal', segments: 8 },                 // 28
+] as const satisfies readonly { name: string; segments: number; relief?: boolean; bevel?: boolean }[];
+
+/**
+ * A chunky coin, centred on the origin with its axis up Z, turned from one
+ * profile. At its finest: a straight milled edge nearly the full thickness
+ * with only a thin bevel each side, a flat rim, the field sunk inside it,
+ * and a raised emblem standing about as high as the rim. The edge is what
+ * makes a coin on its side read as a coin rather than a lozenge, and the rim
+ * and emblem are flat faces a light can flash off. `detail` is a rung of
+ * `COIN_LADDER`.
+ */
+export function coin(radius: number, thickness: number, detail = 0): Mesh {
+  const rung: { segments: number; relief?: boolean; bevel?: boolean } = COIN_LADDER[Math.max(0, Math.min(COIN_LADDER.length - 1, detail))];
+  const { segments } = rung;
   const b = new MeshBuilder();
-  const h = thickness / 2, ch = thickness * 0.22, cr = radius * 0.86;
-  const er = radius * 0.62, eh = h + thickness * 0.12; // the raised emblem
+  const h = thickness / 2;
+  const bevel = thickness * 0.1, sink = thickness * 0.14;
+  const rimIn = radius * 0.8, emblem = radius * 0.5, emblemTop = h - thickness * 0.02;
+  // the top half of the outside, from the edge in to the middle
+  const top: [number, number][] = rung.relief
+    ? [[radius, h - bevel], [radius - bevel, h], [rimIn, h], [rimIn, h - sink], [emblem, h - sink], [emblem, emblemTop]]
+    : rung.bevel ? [[radius, h - bevel], [radius - bevel, h]] : [[radius, h]];
+  // the outside of the solid from the bottom middle round to the top one: with each
+  // band wound the same way along it, every face's normal points out
+  const profile = [...top.map(([r, z]) => [r, -z] as [number, number]).reverse(), ...top];
   const ring = (r: number, z: number): V3[] => {
     const out: V3[] = [];
     for (let i = 0; i < segments; i++) {
@@ -66,25 +92,18 @@ export function coin(radius: number, thickness: number, segments = 14): Mesh {
     }
     return out;
   };
-  const bands: [V3[], V3[]][] = [
-    [ring(cr, -h), ring(radius, -h + ch)],
-    [ring(radius, -h + ch), ring(radius, h - ch)],
-    [ring(radius, h - ch), ring(cr, h)],
-    [ring(cr, h), ring(er, eh)],
-    [ring(cr, -h), ring(er, -eh)],
-  ];
-  for (const [lo, hi] of bands) {
+  const rings = profile.map(([r, z]) => ring(r, z));
+  for (let k = 0; k + 1 < rings.length; k++) {
+    const lo = rings[k], hi = rings[k + 1];
     for (let i = 0; i < segments; i++) {
       const j = (i + 1) % segments;
-      // the underside band winds the other way so its normal points down
-      if (lo === bands[4][0]) face(b, lo[j], lo[i], hi[i], hi[j]);
-      else face(b, lo[i], lo[j], hi[j], hi[i]);
+      face(b, lo[i], lo[j], hi[j], hi[i]);
     }
   }
-  const top = ring(er, eh), bottom = ring(er, -eh);
+  const up = rings[rings.length - 1], down = rings[0];
   for (let i = 1; i < segments - 1; i++) {
-    tri(b, top[0], top[i], top[i + 1]);
-    tri(b, bottom[0], bottom[i + 1], bottom[i]);
+    tri(b, up[0], up[i], up[i + 1]);
+    tri(b, down[0], down[i + 1], down[i]);
   }
   return b.build();
 }

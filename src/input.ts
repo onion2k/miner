@@ -1,4 +1,4 @@
-/** The keyboard: WASD or arrows to drive, and a few one-shot keys. */
+/** The keyboard: WASD or arrows to drive, and a few one-shot keys. On a phone, the track sliders. */
 export interface Drive { throttle: number; steer: number }
 
 export class Input {
@@ -8,6 +8,8 @@ export class Input {
   private mute = false;
   private horn = false;
   private camera = false;
+  /** The phone's track levers, when there are any: read when no drive key is down. */
+  tracks: { left: number; right: number } | null = null;
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -30,8 +32,17 @@ export class Input {
   read(): Drive {
     const throttle = (this.is('w', 'arrowup') ? 1 : 0) - (this.is('s', 'arrowdown') ? 1 : 0);
     const steer = (this.is('a', 'arrowleft') ? 1 : 0) - (this.is('d', 'arrowright') ? 1 : 0);
-    return { throttle, steer };
+    if (throttle || steer || !this.tracks) return { throttle, steer };
+    // two tracks to one drive: what they share is the throttle, and the difference
+    // turns it, to the left when the right track runs ahead
+    const { left, right } = this.tracks;
+    return { throttle: (left + right) / 2, steer: (right - left) / 2 };
   }
+
+  /** The shop, asked for by something other than the B key: the phone's button. */
+  toggleShop() { this.shop = true; }
+  /** The horn, from the phone's button. */
+  pressHorn() { this.horn = true; }
 
   takeShop() { const v = this.shop; this.shop = false; return v; }
   takeRecentre() { const v = this.recentre; this.recentre = false; return v; }

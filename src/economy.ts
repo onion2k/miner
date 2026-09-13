@@ -1,5 +1,5 @@
 /**
- * The bank and what it buys: engine, blade, the two locked rooms, a belt
+ * The bank and what it buys: engine, blade, the four locked rooms, a belt
  * for each, and drones. Saved in the browser, so the cave is where you
  * left it.
  */
@@ -78,14 +78,15 @@ export class Economy {
   private wiped = false;
 
   constructor() {
-    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: [true, false, false], belts: [false, false, false], drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false };
+    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const s = JSON.parse(raw) as Partial<Save>;
         this.save = { ...this.save, ...s, areas: [true, ...(s.areas ?? []).slice(1)], belts: s.belts ?? this.save.belts };
-        while (this.save.areas.length < 3) this.save.areas.push(false);
-        while (this.save.belts.length < 3) this.save.belts.push(false);
+        // a save from before an area existed has it shut
+        while (this.save.areas.length < AREAS.length) this.save.areas.push(false);
+        while (this.save.belts.length < AREAS.length) this.save.belts.push(false);
       }
     } catch { /* a browser with no storage plays from the start */ }
   }
@@ -132,8 +133,8 @@ export class Economy {
       const area = AREAS[a];
       out.push({
         id: `area${a}`, title: `Open the ${area.name}`,
-        sub: a === 1 ? 'blast the rock south of the hollow: rubies and emeralds' : 'blast the rock to the north: emeralds, sapphires, diamonds',
-        cost: area.cost, owned: s.areas[a], available: s.areas[a - 1],
+        sub: area.blurb,
+        cost: area.cost, owned: s.areas[a], available: s.areas[area.after],
       });
     }
     for (let a = 1; a < AREAS.length; a++) {

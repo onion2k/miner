@@ -12,24 +12,37 @@ import { LightPool } from 'artshape-render/game/lights';
 import { mergeMeshes } from 'artshape-render/mesh/types';
 import { AREAS, BODY_CAPACITY, HOLE, TILE, buildCave, floorTiles, gateTiles, hash, wallInstances, type Heap, type Vein } from './cave';
 import { World, KIND_NAME, KIND_VALUE, type Pusher } from './physics';
-import { Dozer, BLADE_AT, BLADE_HEIGHT, bladePieces } from './dozer';
+import { Dozer, BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces, separate } from './dozer';
 import { Input } from './input';
+import { TrackSliders, isTouchDevice } from './touch';
 import { Economy, MAX_DRONES, renderShop } from './economy';
 import { Bot, BOT_SCALE, BOT_SPEC, Fountain, beltOf } from './tools';
 import { Sound } from './audio';
-import { ball, box, coin, collar, cylinder, gem, moved, pit, tile, turned } from './meshes';
+import { COIN_LADDER, ball, box, coin, collar, cylinder, gem, moved, pit, tile, turned } from './meshes';
 import { identity, hide, place, placePart, placeQuat, project } from './matrix';
 
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
 const MM_PER_UNIT = 100;
 const LIGHT_CAPACITY = 64;
 const EFFECT_CAPACITY = 32;
-const GEM_CAPACITY = [0, 240, 200, 160, 80];
+const GEM_CAPACITY = [0, 320, 240, 260, 160];
 const BOT_CAPACITY = MAX_DRONES;
 const TREAD_BARS = 9;
 const STRIPE_CAPACITY = 80;
 /** The pennant: a pole and this many slats waving behind it. */
 const FLAG_SLATS = 5;
+
+/**
+ * What drawing one frame may cost at load, CPU and GPU together, before the
+ * coins step down a rung: half a 60 Hz frame, leaving the rest for the
+ * physics and the browser. `?coins=0`…`3` skips the measuring and picks one.
+ */
+const RENDER_BUDGET_MS = 8;
+const CALIBRATE_WARMUP = 4;
+const CALIBRATE_SAMPLES = 24;
+
+/** The eye lamp's strength: enough to make coins flash, not to light the cave. */
+const GLINT = 2.5;
 
 const CAMERA = { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 };
 
@@ -58,18 +71,26 @@ async function main() {
     ...renderer.look,
     albedo: [0.8, 0.8, 0.8],
     roughness: 0.6,
-    // no daylight underground: a cold trace from above, and an ambient barely off
-    // zero, so the shapes of the rooms read and what you see by is what you bring.
-    // The tonemap lifts the darks hard, so even 0.02 here reads as a lit room.
-    sunDir: [0.28, -0.34, 0.9],
-    sunColour: [0.004, 0.005, 0.009],
+    // No daylight underground, but a cool light from high above, as if through a
+    // shaft: it gives the walls lit tops and shadowed sides, and the sun map throws
+    // their shadows across the floor. The tonemap lifts the darks hard, so these
+    // read far brighter than the numbers look.
+    sunDir: [0.3, -0.22, 0.93],
+    sunColour: [0.06, 0.065, 0.085],
     exposure: 1.15,
     falloffHalf: 9,
-    ambient: 0.004,
+    // the fill the cave had before it went dark, with the occlusion darkening
+    // what it cannot reach: wall bases, the gaps in a heap, under the dozer
+    ambient: 0.42,
+    occlusion: 2,
+    occlusionRadius: 2.5,
+    occlusionDirect: 0.3,
     spotSoftness: 0.004,
     background: [0.012, 0.01, 0.018],
   };
-  renderer.post = { bloom: 0.28, threshold: 1.1, knee: 0.5, vignette: 0.32, grain: 0.02 };
+  // bloom on what is past white, so lamps, the hole and coin glints spill light; any
+  // lower and a run of coins into the hole, each throwing gold sparkles, is a white blob
+  renderer.post = { bloom: 0.45, threshold: 1.25, knee: 0.5, vignette: 0.32, grain: 0.02 };
   const env = bakeEnvironment(ctx, 'studio', { size: 128, mips: 6 });
   renderer.setEnvironment(env.specular, env.brdf, env.mips);
   renderer.camera.fov = 42;
@@ -95,7 +116,9 @@ async function main() {
 
   const meshes = {
     tile: tile(TILE * 1.01), wall: box(TILE * 1.02, TILE * 1.02, 1), gate: box(3.4, 3.4, 1, false),
-    collar: collar(TILE * 4, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth), chute: box(4, 4, 1),
+    // the three tiles each way the floor leaves out, and a little more so no seam shows
+    // between them; see where it is placed for why that overlap does not flicker
+    collar: collar(TILE * 3 + 0.2, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth), chute: box(4, 4, 1),
     beltBase: box(1, 1, 1), rail: box(1, 1, 1),
   };
 
@@ -106,7 +129,7 @@ async function main() {
     floor.forEach(([x, y], i) => {
       place(floorM, i, x, y, 0);
       const h = hash(x, y, 3), warm = hash(x, y, 5);
-      floorMat.set([0.40 + h * 0.08 + warm * 0.04, 0.31 + h * 0.06, 0.22 + h * 0.05, 0.92], i * MATERIAL_STRIDE);
+      floorMat.set([0.3 + h * 0.06 + warm * 0.04, 0.21 + h * 0.04, 0.13 + h * 0.03, 0.95], i * MATERIAL_STRIDE);
     });
     const walls = wallInstances(cave);
     const wallM = new Float32Array(walls.length * 16);
@@ -114,7 +137,7 @@ async function main() {
     walls.forEach((w, i) => {
       placePart(wallM, i, w.x, w.y, -0.5, 0, 0, 0, 0, 0, 0, 1, 1, w.height + 0.5);
       const s = 0.8 + w.shade * 0.35, dim = w.ring ? 0.8 : 1;
-      wallMat.set([0.30 * s * dim, 0.28 * s * dim, 0.36 * s * dim, 0.85], i * MATERIAL_STRIDE);
+      wallMat.set([0.15 * s * dim, 0.16 * s * dim, 0.21 * s * dim, 0.88], i * MATERIAL_STRIDE);
     });
     const gates: [number, number, number][] = [];
     for (let a = 1; a < AREAS.length; a++) {
@@ -140,9 +163,14 @@ async function main() {
       belts.push({ mesh: meshes.beltBase, matrices: base, albedo: [0.12, 0.12, 0.14], roughness: 0.7 });
       belts.push({ mesh: meshes.rail, matrices: rails, albedo: [0.75, 0.55, 0.2], roughness: 0.4 });
     }
+    const collarM = new Float32Array(16);
+    place(collarM, 0, HOLE.x, HOLE.y, -0.01);
     renderer.setStatic([
       { mesh: meshes.tile, matrices: floorM, materials: floorMat },
-      { mesh: meshes.collar, matrices: identity(), albedo: [0.42, 0.32, 0.23], roughness: 0.92 },
+      // A hundredth under the floor: where it overlaps the tiles they win the depth test
+      // outright. It was four tiles across at the tiles' own height, under the next ring
+      // of them, and the two fought over which was drawn.
+      { mesh: meshes.collar, matrices: collarM, albedo: [0.33, 0.23, 0.145], roughness: 0.95 },
       { mesh: meshes.pit, matrices: identity(), albedo: [0.04, 0.035, 0.05], roughness: 0.95 },
       { mesh: meshes.wall, matrices: wallM, materials: wallMat },
       { mesh: meshes.gate, matrices: gateM, count: gates.length, albedo: [0.62, 0.32, 0.72], roughness: 0.35 },
@@ -158,7 +186,7 @@ async function main() {
   const coinM = new Float32Array(BODY_CAPACITY * 16);
   const gemM = GEM_CAPACITY.map((n) => new Float32Array(Math.max(1, n) * 16));
   const hullM = new Float32Array(16), darkM = new Float32Array(16), bladeM = new Float32Array(16);
-  const treadM = new Float32Array(TREAD_BARS * 2 * 16);
+  const treadM = new Float32Array((1 + BOT_CAPACITY) * TREAD_BARS * 2 * 16);
   const botHullM = new Float32Array(BOT_CAPACITY * 16), botDarkM = new Float32Array(BOT_CAPACITY * 16), botBladeM = new Float32Array(BOT_CAPACITY * 16);
   const stripeM = new Float32Array(STRIPE_CAPACITY * 16);
   const poleM = new Float32Array(16), flagM = new Float32Array(FLAG_SLATS * 16);
@@ -192,16 +220,17 @@ async function main() {
   // the robo-dozer's beacon, on the cab roof, so it reads as a machine and not a second player
   const botExtras = mergeMeshes([moved(ball(0.45, 5, 8), -1.5, 0, 4.2), moved(cylinder(0.12, 0.6, 6), -1.5, 0, 3.6)]);
   const gemMesh = gem(1.05, 2.3);
+  let coinDetail = 0;
   const dynamic: GameGroup[] = [
-    { mesh: coin(0.52, 0.26), matrices: coinM, count: 0, albedo: [1.0, 0.76, 0.22], roughness: 0.32 },
-    { mesh: gemMesh, matrices: gemM[1], count: 0, albedo: [0.92, 0.12, 0.2], roughness: 0.12 },
-    { mesh: gemMesh, matrices: gemM[2], count: 0, albedo: [0.12, 0.85, 0.42], roughness: 0.12 },
-    { mesh: gemMesh, matrices: gemM[3], count: 0, albedo: [0.2, 0.38, 0.98], roughness: 0.12 },
-    { mesh: gemMesh, matrices: gemM[4], count: 0, albedo: [0.9, 0.97, 1.0], roughness: 0.05 },
+    { mesh: coin(0.52, 0.26, coinDetail), matrices: coinM, count: 0, albedo: [1.0, 0.56, 0.08], roughness: 0.26 },
+    { mesh: gemMesh, matrices: gemM[1], count: 0, albedo: [1.0, 0.06, 0.12], roughness: 0.28 },
+    { mesh: gemMesh, matrices: gemM[2], count: 0, albedo: [0.08, 0.95, 0.35], roughness: 0.28 },
+    { mesh: gemMesh, matrices: gemM[3], count: 0, albedo: [0.12, 0.35, 1.0], roughness: 0.28 },
+    { mesh: gemMesh, matrices: gemM[4], count: 0, albedo: [0.9, 0.97, 1.0], roughness: 0.15 },
     { mesh: hull, matrices: hullM, albedo: economy.paint().colour, roughness: economy.paint().roughness },
     { mesh: dark, matrices: darkM, albedo: [0.15, 0.15, 0.17], roughness: 0.75 },
     { mesh: bladeMesh(economy.spec().bladeWidth), matrices: bladeM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
-    { mesh: box(0.55, 1.9, 0.35), matrices: treadM, albedo: [0.3, 0.3, 0.32], roughness: 0.8 },
+    { mesh: box(0.55, 1.9, 0.35), matrices: treadM, count: TREAD_BARS * 2, albedo: [0.3, 0.3, 0.32], roughness: 0.8 },
     { mesh: mergeMeshes([hull, botExtras]), matrices: botHullM, count: 0, albedo: [0.88, 0.9, 0.92], roughness: 0.45 },
     { mesh: dark, matrices: botDarkM, count: 0, albedo: [0.95, 0.45, 0.1], roughness: 0.6 },
     { mesh: bladeMesh(BOT_SPEC.bladeWidth), matrices: botBladeM, count: 0, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
@@ -348,6 +377,14 @@ async function main() {
   const cam = renderer.camera;
   cam.target = [dozer.x, dozer.y, 0];
   cam.position = [dozer.x, dozer.y - CAMERA.radius * Math.sin(CAMERA.polar), CAMERA.radius * Math.cos(CAMERA.polar)];
+  // On a phone a finger on the screen is a finger on a slider or the shop, and a stray
+  // touch on the cave must not swing the camera: the canvas takes no pointers at all.
+  // The orbit stays enabled, because enabled is also what moves the camera after the dozer.
+  const touch = isTouchDevice();
+  if (touch) {
+    document.body.classList.add('touch');
+    canvas.style.pointerEvents = 'none';
+  }
   const orbit = new Orbit(cam, {
     element: canvas, minPolar: 0.1, maxPolar: 1.25, minDistance: 28, maxDistance: 170,
     rotateSpeed: 0.4, zoomSpeed: 0.8, panSpeed: 0, inertia: 0.5,
@@ -425,8 +462,21 @@ async function main() {
     }
     // a dim work lamp on the cab, so the ground just round the machine is not black
     lights.add({ position: [dozer.x - c * 0.5, dozer.y - s * 0.5, 6], radius: 12, colour: [1.0, 0.85, 0.65], intensity: 0.35 });
+    // A glint lamp, high and to the left of the eye. With no environment to reflect, a
+    // metal only shines where a light's highlight lands, and the dozers' low beams bounce
+    // off flat coins away from a camera looking down. Near the eye, the highlight lands on
+    // whatever faces the viewer, so tilted coins flash; not at it, because a light from
+    // the eye lights every face the eye sees alike, and the rock goes flat and grey.
+    {
+      const [px, py, pz] = cam.position, [tx, ty] = cam.target;
+      const fx = tx - px, fy = ty - py, fl = Math.hypot(fx, fy) || 1;
+      const reach = Math.hypot(px - tx, py - ty, pz);
+      // the view's right, flat on the floor, and the lamp that far to its left and above
+      const rx = fy / fl, ry = -fx / fl;
+      lights.add({ position: [px - rx * reach * 0.55, py - ry * reach * 0.55, pz + reach * 0.35], radius: 500, colour: [1.0, 0.72, 0.42], intensity: GLINT });
+    }
     const pulse = 1 + holePulse * 1.6;
-    lights.add({ position: [HOLE.x, HOLE.y, 1.5], radius: 18 + holePulse * 6, colour: [0.35, 1.0, 0.6], intensity: 2.2 * pulse });
+    lights.add({ position: [HOLE.x, HOLE.y, 1.5], radius: 14 + holePulse * 6, colour: [0.45, 1.0, 0.3], intensity: 2.0 * pulse });
     for (let a = 0; a < AREAS.length; a++) {
       if (!economy.save.areas[a]) continue;
       const v = AREAS[a].vein;
@@ -434,7 +484,7 @@ async function main() {
     }
     for (const b of bots) {
       const bc = Math.cos(b.yaw), bs = Math.sin(b.yaw);
-      lights.add({ position: [b.x + bc * 1.8, b.y + bs * 1.8, 2.2], radius: 26, colour: [1.0, 0.92, 0.7], intensity: 4, direction: [bc, bs, -0.35], cone: [22, 40] });
+      lights.add({ position: [b.x + bc * 1.8, b.y + bs * 1.8, 2.2], radius: 44, colour: [1.0, 0.92, 0.7], intensity: 10, direction: [bc, bs, -0.24], cone: [20, 36] });
       // the beacon, turning
       const beat = 0.5 + 0.5 * Math.sin(t * 6 + b.x);
       lights.add({ position: [b.x - bc * 1.0, b.y - bs * 1.0, 3.2], radius: 9, colour: [1.0, 0.45, 0.1], intensity: 1 + 2 * beat });
@@ -453,7 +503,7 @@ async function main() {
     const p = project(cam.viewProjection, HOLE.x, HOLE.y, 0);
     if (p) {
       const size = (HOLE.radius * 2.2 / p[2]) * (1 + holePulse * 0.5);
-      quads.set([p[0], p[1], size, 0.35 + holePulse * 0.9, 0.4, 1.0, 0.65, 1.6], n * EFFECT_STRIDE); n++;
+      quads.set([p[0], p[1], size * 0.9, 0.4 + holePulse * 0.9, 0.5, 1.0, 0.35, 1.8], n * EFFECT_STRIDE); n++;
     }
     for (const f of fountains) {
       if (f.glow <= 0) continue;
@@ -493,11 +543,22 @@ async function main() {
     renderer.move(HULL, hullM); renderer.move(DARK, darkM); renderer.move(BLADE, bladeM);
     const pitch = 6.4 / TREAD_BARS;
     for (let i = 0; i < TREAD_BARS; i++) {
-      const along = ((((i * pitch + dozer.odometer) % 6.4) + 6.4) % 6.4) - 3.2;
-      placePart(treadM, i * 2, dozer.x, dozer.y, 0, dozer.yaw, along, 2.15, 1.9);
-      placePart(treadM, i * 2 + 1, dozer.x, dozer.y, 0, dozer.yaw, along, -2.15, 1.9);
+      const along = (run: number) => ((((i * pitch + run) % 6.4) + 6.4) % 6.4) - 3.2;
+      placePart(treadM, i * 2, dozer.x, dozer.y, 0, dozer.yaw, along(dozer.trackLeft), TRACK_GAUGE, 1.9);
+      placePart(treadM, i * 2 + 1, dozer.x, dozer.y, 0, dozer.yaw, along(dozer.trackRight), -TRACK_GAUGE, 1.9);
     }
-    renderer.move(TREADS, treadM);
+    // the robo-dozers' bars, after the player's: the same bars at their scale, each
+    // track's run measured in the player's lengths so a bar laps a smaller track as often
+    bots.forEach((b, j) => {
+      const k = BOT_SCALE, d = b.dozer;
+      for (let i = 0; i < TREAD_BARS; i++) {
+        const along = (run: number) => (((((i * pitch + run / k) % 6.4) + 6.4) % 6.4) - 3.2) * k;
+        const o = (1 + j) * TREAD_BARS * 2 + i * 2;
+        placePart(treadM, o, d.x, d.y, 0, d.yaw, along(d.trackLeft), TRACK_GAUGE * k, 1.9 * k, 0, 0, k, k, k);
+        placePart(treadM, o + 1, d.x, d.y, 0, d.yaw, along(d.trackRight), -TRACK_GAUGE * k, 1.9 * k, 0, 0, k, k, k);
+      }
+    });
+    renderer.move(TREADS, treadM, (1 + bots.length) * TREAD_BARS * 2);
 
     bots.forEach((b, i) => {
       placePart(botHullM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, BOT_SCALE, BOT_SCALE, BOT_SCALE);
@@ -535,11 +596,92 @@ async function main() {
     renderer.move(FLAG, flagM, economy.save.flag ? FLAG_SLATS : 0);
   }
 
+  // ---- how much coin this machine can draw ----
+
+  function setCoinDetail(level: number) {
+    coinDetail = Math.max(0, Math.min(COIN_LADDER.length - 1, level));
+    dynamic[COINS].mesh = coin(0.52, 0.26, coinDetail);
+    renderer.setDynamic(dynamic);
+  }
+
+  /**
+   * What a frame of the real scene costs, from placing the lights to the GPU
+   * finishing. Not the time between frames, which the display holds to its
+   * refresh, so a fast machine would look no faster than 60 Hz; and drawn to
+   * a texture of our own rather than the canvas, so no wait to be shown is
+   * counted. Scheduling only ever adds time, so the lower quartile is the
+   * frame's own cost. Timed through the canvas with pauses between frames,
+   * one rung's median wandered from 4 to 13 ms between runs; this way it
+   * repeats to a tenth or two.
+   */
+  async function measureFrame(): Promise<number> {
+    const target = ctx.device.createTexture({
+      label: 'calibration target', size: [width, height], format: ctx.format, usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    const view = target.createView();
+    const times: number[] = [];
+    for (let i = 0; i < CALIBRATE_WARMUP + CALIBRATE_SAMPLES; i++) {
+      // yield, but not to an animation frame: a hidden tab gets none, and a GPU left
+      // idle between samples drops to a slower power state than a game keeps it in
+      await new Promise((r) => setTimeout(r, 0));
+      const start = performance.now();
+      lightUp(0);
+      upload(0);
+      const drew = renderer.frame(view, 'redraw', 1 / 60);
+      await ctx.device.queue.onSubmittedWorkDone();
+      if (drew && i >= CALIBRATE_WARMUP) times.push(performance.now() - start);
+    }
+    target.destroy();
+    if (!times.length) return 0;
+    times.sort((a, b) => a - b);
+    return times[times.length >> 2];
+  }
+
+  /** Down the ladder until a frame fits the budget, or there is no rung left. */
+  async function calibrate(): Promise<number[]> {
+    const forced = new URLSearchParams(location.search).get('coins');
+    if (forced !== null && Number.isFinite(+forced)) { setCoinDetail(+forced); return []; }
+    bootMsg.textContent = 'measuring this machine…';
+    await renderer.ready;
+    const costs: number[] = [];
+    for (let level = 0; level < COIN_LADDER.length; level++) {
+      setCoinDetail(level);
+      costs.push(await measureFrame());
+      if (costs[level] <= RENDER_BUDGET_MS) break;
+    }
+    return costs;
+  }
+  const calibration = await calibrate();
+  console.info(`coins: ${COIN_LADDER[coinDetail].name}`, calibration.length
+    ? `(frame cost per rung, ms: ${calibration.map((ms) => ms.toFixed(1)).join(', ')}; budget ${RENDER_BUDGET_MS})`
+    : '(chosen by ?coins=)');
+
   // ---- go ----
 
   boot.classList.add('gone');
   bankPanel.hidden = false; statsPanel.hidden = false; helpPanel.hidden = false;
-  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, bots, fountains, sound });
+  const shopButton = document.getElementById('shopButton') as HTMLButtonElement;
+  const hornButton = document.getElementById('hornButton') as HTMLButtonElement;
+  const muteButton = document.getElementById('muteButton') as HTMLButtonElement;
+  /** The horn's button is there once the horn is bought, and the mute's says which way it is. */
+  const showHorn = () => { hornButton.hidden = !(touch && economy.save.horn); };
+  const showMute = () => { muteButton.textContent = sound.muted ? '🔇' : '🔊'; muteButton.setAttribute('aria-label', sound.muted ? 'unmute' : 'mute'); };
+  economy.onBuy((id) => { if (id === 'horn') showHorn(); });
+  if (touch) {
+    input.tracks = new TrackSliders(document.getElementById('trackLeft')!, document.getElementById('trackRight')!);
+    document.getElementById('tracks')!.hidden = false;
+    shopButton.hidden = false;
+    shopButton.addEventListener('click', () => input.toggleShop());
+    // pointerdown, not click: a horn sounds when it is pressed, and a click waits for the lift
+    hornButton.addEventListener('pointerdown', (e) => { e.preventDefault(); input.pressHorn(); });
+    // straight to the sound, not through the input's once-a-frame flag: two taps inside
+    // one frame would be one toggle there, and the button would say the wrong thing
+    muteButton.addEventListener('click', () => { sound.toggleMute(); showMute(); });
+    muteButton.hidden = false;
+    showMute();
+    showHorn();
+  }
+  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, bots, fountains, sound, setCoinDetail, calibration });
 
   let last = performance.now();
   let t = 0;
@@ -552,7 +694,7 @@ async function main() {
     const dt = Math.min((now - last) / 1000, 1 / 20);
     last = now; t += dt;
 
-    if (input.takeShop()) { shopOpen = !shopOpen; shopPanel.hidden = !shopOpen; if (shopOpen) { renderShop(shopRows, economy); renderShop(shopCosmetics, economy, economy.cosmetics()); } }
+    if (input.takeShop()) { shopOpen = !shopOpen; shopPanel.hidden = !shopOpen; shopButton.textContent = shopOpen ? 'close' : 'shop'; if (shopOpen) { renderShop(shopRows, economy); renderShop(shopCosmetics, economy, economy.cosmetics()); } }
     if (input.takeHorn() && economy.save.horn) {
       sound.horn();
       // the coins jump: everything near enough hops, which is what a horn is for
@@ -572,15 +714,21 @@ async function main() {
       if (cameraMode !== 'chase') orbit.setSpherical({ azimuth: orbit.currentAzimuth + wrap(CAMERA.azimuth - orbit.currentAzimuth) });
     }
     if (input.takeCamera()) cycleCamera();
-    if (input.takeMute()) sound.toggleMute();
+    if (input.takeMute()) { sound.toggleMute(); showMute(); }
 
     const spec = economy.spec();
     const drive = input.read();
     dozer.update(dt, drive, spec, world.load);
+    for (const b of bots) b.update(dt, world, world.loads[b.dozer.owner] ?? 0);
+    // no machine drives through another: every pair, twice, so a push out of one
+    // that shoves into a third is settled in the same frame
+    const machines = [dozer, ...bots.map((b) => b.dozer)];
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < machines.length; i++) for (let j = i + 1; j < machines.length; j++) separate(machines[i], machines[j]);
+    }
     dozer.pushers(spec, pushers);
     const botPushers: Pusher[] = [];
     for (const b of bots) {
-      b.update(dt, world, world.loads[b.dozer.owner] ?? 0);
       b.dozer.pushers(BOT_SPEC, botPushers);
       pushers.push(...botPushers);
       const bc = Math.cos(b.yaw), bs = Math.sin(b.yaw);
@@ -659,7 +807,8 @@ async function main() {
       statsIn = 0.25;
       coinCount.textContent = `${world.live}`;
       statsPanel.innerHTML = `<span>${smoothed.toFixed(1)}</span> ms · <span>${Math.round(1000 / smoothed)}</span> fps<br>`
-        + `<span>${world.live}</span> bodies · <span>${awake}</span> awake · load <span>${world.load}</span>`;
+        + `<span>${world.live}</span> bodies · <span>${awake}</span> awake · load <span>${world.load}</span><br>`
+        + `coins <span>${COIN_LADDER[coinDetail].name}</span>`;
     }
     if (shopOpen && (shopIn -= dt) <= 0) { shopIn = 0.3; renderShop(shopRows, economy); renderShop(shopCosmetics, economy, economy.cosmetics()); }
   };

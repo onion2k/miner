@@ -27,8 +27,18 @@ export const BLADE_FLAT = 0.6;
 /** Pieces per wing, and how far forward a wing's tip sweeps, as a fraction of the blade's width. */
 export const WING_PIECES = 4;
 export const WING_SWEEP = 0.24;
+/** How far each track's middle is from the pivot, across. */
+export const TRACK_GAUGE = 2.15;
 /** The circle the hull is kept off the rock by. */
 const BODY_RADIUS = 3.6;
+/**
+ * The capsule one machine is kept out of another by, in its own frame: a
+ * segment along the heading from BODY_BACK to BODY_FRONT, fattened by
+ * BODY_ROUND. It reaches the rear step behind and the blade's face in front,
+ * and the tracks either side; the blade's wings stick out past it, which
+ * lets two machines lock blades a little rather than bounce off air.
+ */
+const BODY_BACK = -0.9, BODY_FRONT = 1.8, BODY_ROUND = 2.8;
 
 /**
  * Where each piece of the blade sits in the dozer's own frame: along the
@@ -58,8 +68,13 @@ export class Dozer {
   x = 0; y = -14; yaw = Math.PI / 2;
   speed = 0;
   yawRate = 0;
-  /** Distance travelled, for the treads. */
-  odometer = 0;
+  /**
+   * How far each track's belt has run, left then right, for the tread bars.
+   * Not the distance travelled: turning on the spot runs one track forward
+   * and the other back while the machine goes nowhere.
+   */
+  trackLeft = 0;
+  trackRight = 0;
   solid: Uint8Array;
 
   /**
@@ -79,10 +94,18 @@ export class Dozer {
     const heavy = 1 + load * 0.014;
     const maxSpeed = spec.maxSpeed / heavy, accel = spec.accel / heavy;
     const reverseMax = spec.maxSpeed * 0.55;
-    if (throttle > 0) this.speed += accel * dt;
-    else if (throttle < 0) this.speed -= spec.accel * (this.speed > 0 ? 1.6 : 1) * dt;
-    else this.speed *= Math.max(0, 1 - 5 * dt);
-    if (this.speed > maxSpeed) this.speed += (maxSpeed - this.speed) * Math.min(1, 6 * dt);
+    // The throttle is how far the lever is pushed, and sets the speed it drives up
+    // to: a key is all the way, a slider on a phone anywhere between. Above that
+    // speed, it eases back down to it.
+    if (throttle > 0) {
+      const top = maxSpeed * Math.min(1, throttle);
+      if (this.speed < top) this.speed = Math.min(top, this.speed + accel * dt);
+      else this.speed += (top - this.speed) * Math.min(1, 6 * dt);
+    } else if (throttle < 0) {
+      const top = -reverseMax * Math.min(1, -throttle);
+      if (this.speed > top) this.speed = Math.max(top, this.speed - spec.accel * (this.speed > 0 ? 1.6 : 1) * dt);
+      else this.speed += (top - this.speed) * Math.min(1, 6 * dt);
+    } else this.speed *= Math.max(0, 1 - 5 * dt);
     this.speed = Math.max(-reverseMax, Math.min(spec.maxSpeed, this.speed));
     if (Math.abs(this.speed) < 0.05 && !throttle) this.speed = 0;
 
@@ -99,11 +122,15 @@ export class Dozer {
     const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
     this.x += c * this.speed * dt;
     this.y += s * this.speed * dt;
-    this.odometer += this.speed * dt;
+    // a point on the left track, TRACK_GAUGE out along +y, moves at the speed less
+    // the turn's share; the right track's gains it
+    const turn = this.yawRate * TRACK_GAUGE * this.scale;
+    this.trackLeft += (this.speed - turn) * dt;
+    this.trackRight += (this.speed + turn) * dt;
     this.keepOffRock();
   }
 
-  private keepOffRock() {
+  keepOffRock() {
     const tx = Math.floor((this.x - ORIGIN_X) / TILE), ty = Math.floor((this.y - ORIGIN_Y) / TILE);
     for (let oy = -1; oy <= 1; oy++) {
       for (let ox = -1; ox <= 1; ox++) {
@@ -145,4 +172,57 @@ export class Dozer {
     });
     return out;
   }
+}
+
+/** Where along each of two segments, 0 to 1, their closest points are. */
+function closestOnSegments(
+  ax: number, ay: number, bx: number, by: number,
+  cx: number, cy: number, dx: number, dy: number,
+): [number, number] {
+  const ux = bx - ax, uy = by - ay, vx = dx - cx, vy = dy - cy, wx = ax - cx, wy = ay - cy;
+  const a = ux * ux + uy * uy, b = ux * vx + uy * vy, c = vx * vx + vy * vy;
+  const d = ux * wx + uy * wy, e = vx * wx + vy * wy;
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  const denom = a * c - b * b;
+  // parallel segments have no one closest pair: any s will do, so take the middle
+  let s = denom > 1e-8 ? clamp((b * e - c * d) / denom) : 0.5;
+  let t = c > 1e-8 ? (b * s + e) / c : 0;
+  if (t < 0) { t = 0; s = a > 1e-8 ? clamp(-d / a) : 0; }
+  else if (t > 1) { t = 1; s = a > 1e-8 ? clamp((b - d) / a) : 0; }
+  return [s, t];
+}
+
+/**
+ * Two machines, pushed out of each other. Both are kinematic, so neither
+ * gives way to the other by mass: each takes half the overlap, loses most of
+ * whatever speed was carrying it in, and is put back off the rock, which the
+ * push may have shoved it into.
+ */
+export function separate(a: Dozer, b: Dozer) {
+  const ends = (m: Dozer) => {
+    const c = Math.cos(m.yaw), s = Math.sin(m.yaw), k = m.scale;
+    return [m.x + c * BODY_BACK * k, m.y + s * BODY_BACK * k, m.x + c * BODY_FRONT * k, m.y + s * BODY_FRONT * k];
+  };
+  const [a0x, a0y, a1x, a1y] = ends(a), [b0x, b0y, b1x, b1y] = ends(b);
+  const [sa, sb] = closestOnSegments(a0x, a0y, a1x, a1y, b0x, b0y, b1x, b1y);
+  const pax = a0x + (a1x - a0x) * sa, pay = a0y + (a1y - a0y) * sa;
+  const pbx = b0x + (b1x - b0x) * sb, pby = b0y + (b1y - b0y) * sb;
+  let nx = pax - pbx, ny = pay - pby;
+  let d = Math.hypot(nx, ny);
+  const reach = BODY_ROUND * (a.scale + b.scale);
+  if (d >= reach) return;
+  if (d < 1e-4) {
+    // one's spine lies across the other's: push apart along the line between their pivots
+    nx = a.x - b.x; ny = a.y - b.y; d = Math.hypot(nx, ny);
+    if (d < 1e-4) { nx = 1; ny = 0; d = 1; }
+  }
+  nx /= d; ny /= d;
+  const push = (reach - Math.min(d, reach)) / 2;
+  a.x += nx * push; a.y += ny * push;
+  b.x -= nx * push; b.y -= ny * push;
+  // what was driving each into the other: its heading against the way it is pushed
+  if ((Math.cos(a.yaw) * nx + Math.sin(a.yaw) * ny) * a.speed < 0) a.speed *= 0.2;
+  if ((Math.cos(b.yaw) * -nx + Math.sin(b.yaw) * -ny) * b.speed < 0) b.speed *= 0.2;
+  a.keepOffRock();
+  b.keepOffRock();
 }

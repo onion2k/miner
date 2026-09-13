@@ -1,17 +1,18 @@
 /**
  * The cave: a grid of tiles, each rock or open, carved as a few wobbly
- * ellipses joined by corridors. Two of the corridors are blocked by gates —
+ * ellipses joined by corridors. Four of the corridors are blocked by gates —
  * rock the player buys their way through — and each room has heaps of coins,
  * a vein that trickles more in, and somewhere a conveyor could run.
  *
  * World units: a coin is about two across, a bulldozer about six, the whole
- * cave a couple of hundred. Z is up and the floor is z = 0.
+ * cave a couple of hundred across and more than that wide. Z is up and the
+ * floor is z = 0.
  */
 
 export const TILE = 4;
-export const COLS = 48;
+export const COLS = 72;
 export const ROWS = 36;
-/** World position of the grid's corner, chosen so tile (24, 18) is centred on the origin. */
+/** World position of the grid's corner, chosen so tile (COLS / 2, ROWS / 2) is centred on the origin. */
 export const ORIGIN_X = -(COLS / 2 + 0.5) * TILE;
 export const ORIGIN_Y = -(ROWS / 2 + 0.5) * TILE;
 
@@ -48,6 +49,10 @@ export interface Area {
   name: string;
   /** What opening it costs; the first area is open from the start. */
   cost: number;
+  /** The area that has to be open before this one can be bought. */
+  after: number;
+  /** What the shop says about it. */
+  blurb: string;
   heaps: Heap[];
   vein: Vein;
   /** Where the floor cracks and fountains of coins come up, now and then. */
@@ -62,7 +67,7 @@ export function tileCentre(tx: number, ty: number): [number, number] {
 
 export const AREAS: Area[] = [
   {
-    name: 'The Hollow', cost: 0,
+    name: 'The Hollow', cost: 0, after: 0, blurb: '',
     heaps: [
       { x: -30, y: 8, coins: 840, gems: [[1, 6]] },
       { x: 26, y: -8, coins: 840, gems: [[1, 6]] },
@@ -73,7 +78,8 @@ export const AREAS: Area[] = [
     belt: null,
   },
   {
-    name: 'South Gallery', cost: 300,
+    name: 'South Gallery', cost: 300, after: 0,
+    blurb: 'blast the rock south of the hollow: rubies and emeralds',
     heaps: [
       { x: -24, y: -52, coins: 960, gems: [[1, 14], [2, 6]] },
       { x: 22, y: -54, coins: 960, gems: [[1, 10], [2, 8]] },
@@ -83,7 +89,8 @@ export const AREAS: Area[] = [
     belt: { spec: { x0: -2, y0: -46, x1: -2, y1: -8, width: 7, speed: 9 }, cost: 450 },
   },
   {
-    name: 'North Vault', cost: 1500,
+    name: 'North Vault', cost: 1500, after: 1,
+    blurb: 'blast the rock to the north: emeralds, sapphires, diamonds',
     heaps: [
       { x: -28, y: 52, coins: 1000, gems: [[2, 12], [3, 8], [4, 3]] },
       { x: 24, y: 54, coins: 1000, gems: [[2, 8], [3, 10], [4, 4]] },
@@ -92,10 +99,34 @@ export const AREAS: Area[] = [
     cracks: [[0, 56], [-44, 50], [40, 52]],
     belt: { spec: { x0: -2, y0: 46, x1: -2, y1: 8, width: 7, speed: 9 }, cost: 900 },
   },
+  // The two galleries either side: long rooms running north and south, reached through
+  // the alcoves off the hollow. Added after the vault, so a save's areas keep their places.
+  {
+    name: 'East Gallery', cost: 800, after: 1,
+    blurb: 'blast through the east alcove: rubies and sapphires',
+    heaps: [
+      { x: 104, y: 22, coins: 700, gems: [[1, 12], [3, 6]] },
+      { x: 110, y: -14, coins: 700, gems: [[1, 8], [3, 8]] },
+    ],
+    vein: { x: 100, y: -26, every: 0.85, coins: 1, gems: [[1, 0.07], [3, 0.03]] },
+    cracks: [[108, 4], [102, 32], [112, -24]],
+    belt: { spec: { x0: 58, y0: 2, x1: 8, y1: 2, width: 7, speed: 10 }, cost: 650 },
+  },
+  {
+    name: 'West Gallery', cost: 3000, after: 2,
+    blurb: 'blast through the west alcove: sapphires and diamonds',
+    heaps: [
+      { x: -104, y: -22, coins: 700, gems: [[3, 12], [4, 5]] },
+      { x: -110, y: 14, coins: 700, gems: [[3, 8], [4, 6]] },
+    ],
+    vein: { x: -100, y: 26, every: 0.65, coins: 1, gems: [[3, 0.07], [4, 0.025]] },
+    cracks: [[-108, -4], [-102, -32], [-112, 24]],
+    belt: { spec: { x0: -58, y0: -2, x1: -8, y1: -2, width: 7, speed: 10 }, cost: 1200 },
+  },
 ];
 
 /** The most bodies the cave can hold: every heap plus what the veins add. */
-export const BODY_CAPACITY = 7000;
+export const BODY_CAPACITY = 10000;
 
 /** A small deterministic hash in 0..1, for the jitter on rocks. */
 export function hash(a: number, b: number, c = 0): number {
@@ -127,18 +158,28 @@ function carveRect(cells: Uint8Array, x0: number, y0: number, x1: number, y1: nu
 
 export function buildCave(): Cave {
   const cells = new Uint8Array(COLS * ROWS).fill(ROCK);
+  // tiles counted from the middle of the grid, which is the hole
+  const C = COLS / 2, R = ROWS / 2;
   // the hollow, with an alcove each side
-  carveEllipse(cells, 24, 18, 12, 7, 1.7);
-  carveEllipse(cells, 10, 17, 4.5, 4, 4.1);
-  carveEllipse(cells, 38, 19, 4.5, 4, 2.9);
+  carveEllipse(cells, C, R, 12, 7, 1.7);
+  carveEllipse(cells, C - 14, R - 1, 4.5, 4, 4.1);
+  carveEllipse(cells, C + 14, R + 1, 4.5, 4, 2.9);
   // the south gallery and its corridor, gated
-  carveEllipse(cells, 24, 5, 14, 4, 0.4);
-  carveRect(cells, 22, 8, 25, 12);
-  carveRect(cells, 22, 10, 25, 10, GATE + 1);
+  carveEllipse(cells, C, R - 13, 14, 4, 0.4);
+  carveRect(cells, C - 2, R - 10, C + 1, R - 6);
+  carveRect(cells, C - 2, R - 8, C + 1, R - 8, GATE + 1);
   // the north vault and its corridor, gated
-  carveEllipse(cells, 24, 31, 15, 4, 3.3);
-  carveRect(cells, 22, 24, 25, 28);
-  carveRect(cells, 22, 26, 25, 26, GATE + 2);
+  carveEllipse(cells, C, R + 13, 15, 4, 3.3);
+  carveRect(cells, C - 2, R + 6, C + 1, R + 10);
+  carveRect(cells, C - 2, R + 8, C + 1, R + 8, GATE + 2);
+  // the east gallery, out through the east alcove, gated
+  carveEllipse(cells, C + 27, R + 1, 5, 9, 5.2);
+  carveRect(cells, C + 17, R - 1, C + 22, R + 2);
+  carveRect(cells, C + 19, R - 1, C + 19, R + 2, GATE + 3);
+  // the west gallery, out through the west alcove, gated
+  carveEllipse(cells, C - 27, R - 1, 5, 9, 2.2);
+  carveRect(cells, C - 22, R - 2, C - 17, R + 1);
+  carveRect(cells, C - 19, R - 2, C - 19, R + 1, GATE + 4);
   return {
     cells,
     solid(unlocked) {
@@ -210,7 +251,7 @@ export function floorTiles(cave: Cave): [number, number][] {
   return out;
 }
 
-/** Which area a world point is in, by the room's rough extent: 1 south, 2 north, 0 otherwise. */
-export function areaAt(y: number): number {
-  return y < -34 ? 1 : y > 34 ? 2 : 0;
+/** Which area a world point is in, by the room's rough extent: 1 south, 2 north, 3 east, 4 west, 0 otherwise. */
+export function areaAt(x: number, y: number): number {
+  return x > 70 ? 3 : x < -70 ? 4 : y < -34 ? 1 : y > 34 ? 2 : 0;
 }
