@@ -88,8 +88,15 @@
   .track.held .thumb { transition: none; background: var(--gold); }
   body.touch #shop { right: 50%; width: min(340px, calc(100vw - 24px)); z-index: 5; }
   /* clear of the counters above and the buttons below, so the button that closes it is never under it */
-  body.touch #shop .rows { touch-action: pan-y; max-height: 28vh; }
-  body.touch #shop { top: auto; bottom: calc(66px + env(safe-area-inset-bottom)); transform: translateX(50%); }
+  /* It stands on the buttons and grows upward, so it is held to the height left above them and scrolls
+     as one list, the heading with the balance staying put: two lists each a share of the screen grew
+     past the top of a short phone and took the workshop with them. */
+  body.touch #shop { top: auto; bottom: calc(66px + env(safe-area-inset-bottom)); transform: translateX(50%);
+                     max-height: calc(100vh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+                     max-height: calc(100dvh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+                     overflow: auto; touch-action: pan-y; padding-top: 0; }
+  body.touch #shop .rows { max-height: none; overflow: visible; }
+  body.touch #shop h2:first-child { position: sticky; top: 0; z-index: 1; margin: 0; padding: 10px 0 8px; background: rgb(22, 20, 28); }
   body.touch #toast { bottom: calc(66px + env(safe-area-inset-bottom)); }
   #boot { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center;
           background: #0b0a10; transition: opacity .5s; z-index: 10; }
