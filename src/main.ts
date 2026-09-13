@@ -58,12 +58,14 @@ async function main() {
     ...renderer.look,
     albedo: [0.8, 0.8, 0.8],
     roughness: 0.6,
-    // high and a little to the south-west, so the walls throw shadows into the rooms
+    // no daylight underground: a cold trace from above, and an ambient barely off
+    // zero, so the shapes of the rooms read and what you see by is what you bring.
+    // The tonemap lifts the darks hard, so even 0.02 here reads as a lit room.
     sunDir: [0.28, -0.34, 0.9],
-    sunColour: [1.0, 0.95, 0.86],
+    sunColour: [0.004, 0.005, 0.009],
     exposure: 1.15,
     falloffHalf: 9,
-    ambient: 0.42,
+    ambient: 0.004,
     spotSoftness: 0.004,
     background: [0.012, 0.01, 0.018],
   };
@@ -416,11 +418,13 @@ async function main() {
     for (const side of [1, -1]) {
       const i = lights.add({
         position: [dozer.x + c * 2.6 - s * side * 0.9, dozer.y + s * 2.6 + c * side * 0.9, 3.0],
-        radius: 46, colour: [1.0, 0.92, 0.7], intensity: 9,
-        direction: [c, s, -0.32], cone: [22, 40],
+        radius: 64, colour: [1.0, 0.92, 0.7], intensity: 16,
+        direction: [c, s, -0.2], cone: [20, 36],
       });
       if (side === 1) shadowed.push(i);
     }
+    // a dim work lamp on the cab, so the ground just round the machine is not black
+    lights.add({ position: [dozer.x - c * 0.5, dozer.y - s * 0.5, 6], radius: 12, colour: [1.0, 0.85, 0.65], intensity: 0.35 });
     const pulse = 1 + holePulse * 1.6;
     lights.add({ position: [HOLE.x, HOLE.y, 1.5], radius: 18 + holePulse * 6, colour: [0.35, 1.0, 0.6], intensity: 2.2 * pulse });
     for (let a = 0; a < AREAS.length; a++) {
