@@ -1,0 +1,476 @@
+/**
+ * Pushminer: a bulldozer in a cave full of coins, and a hole to push them
+ * into. Drawn on the game path of artshape-render — a forward renderer that
+ * redraws everything every frame and instances the thousands of coins as
+ * one draw each.
+ */
+import { createContext } from 'artshape-render/gpu/context';
+import { Orbit } from 'artshape-render/gpu/camera';
+import { bakeEnvironment } from 'artshape-render/render/env';
+import { GameRenderer, EFFECT_STRIDE, MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
+import { LightPool } from 'artshape-render/game/lights';
+import { mergeMeshes } from 'artshape-render/mesh/types';
+import { AREAS, BODY_CAPACITY, HOLE, TILE, buildCave, floorTiles, gateTiles, hash, wallInstances, type Heap, type Vein } from './cave';
+import { World, KIND_NAME, KIND_VALUE, type Pusher } from './physics';
+import { Dozer, BLADE_AT, BLADE_HEIGHT, bladePieces } from './dozer';
+import { Input } from './input';
+import { Economy, MAX_DRONES, renderShop } from './economy';
+import { Drone, beltOf } from './tools';
+import { ball, box, coin, collar, cylinder, disc, gem, moved, pit, tile, turned } from './meshes';
+import { identity, hide, place, placePart, placeQuat, project } from './matrix';
+
+/** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
+const MM_PER_UNIT = 100;
+const LIGHT_CAPACITY = 64;
+const EFFECT_CAPACITY = 32;
+const GEM_CAPACITY = [0, 240, 200, 160, 80];
+const DRONE_CAPACITY = MAX_DRONES;
+const TREAD_BARS = 9;
+const STRIPE_CAPACITY = 80;
+
+const CAMERA = { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 };
+
+const canvas = document.getElementById('view') as HTMLCanvasElement;
+const boot = document.getElementById('boot')!;
+const bootMsg = document.getElementById('bootMsg')!;
+const bankPanel = document.getElementById('bank')!;
+const bankValue = bankPanel.querySelector('b')!;
+const coinCount = document.getElementById('coinCount')!;
+const statsPanel = document.getElementById('stats')!;
+const helpPanel = document.getElementById('help')!;
+const toast = document.getElementById('toast')!;
+const shopPanel = document.getElementById('shop')!;
+const shopRows = shopPanel.querySelector('.rows') as HTMLElement;
+
+main().catch((err) => { bootMsg.textContent = String(err?.message ?? err); console.error(err); });
+
+async function main() {
+  const ctx = await createContext(canvas);
+  bootMsg.textContent = 'compiling shaders…';
+  const renderer = new GameRenderer(ctx, LIGHT_CAPACITY, EFFECT_CAPACITY, 8192, MM_PER_UNIT);
+  // the particles' fall, in world units: slower than the earth's, for sparkles that hang
+  renderer.gravity = 30;
+  renderer.look = {
+    ...renderer.look,
+    albedo: [0.8, 0.8, 0.8],
+    roughness: 0.6,
+    // high and a little to the south-west, so the walls throw shadows into the rooms
+    sunDir: [0.28, -0.34, 0.9],
+    sunColour: [1.0, 0.95, 0.86],
+    exposure: 1.15,
+    falloffHalf: 9,
+    ambient: 0.42,
+    spotSoftness: 0.004,
+    background: [0.012, 0.01, 0.018],
+  };
+  renderer.post = { bloom: 0.28, threshold: 1.1, knee: 0.5, vignette: 0.32, grain: 0.02 };
+  const env = bakeEnvironment(ctx, 'studio', { size: 128, mips: 6 });
+  renderer.setEnvironment(env.specular, env.brdf, env.mips);
+  renderer.camera.fov = 42;
+  renderer.camera.near = 2;
+  renderer.camera.far = 700;
+
+  bootMsg.textContent = 'digging the cave…';
+  await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); });
+
+  const economy = new Economy();
+  const cave = buildCave();
+  const world = new World(BODY_CAPACITY, cave.solid(economy.save.areas));
+  const dozer = new Dozer(world.solid);
+  const input = new Input();
+  const drones: Drone[] = [];
+  for (let i = 0; i < economy.save.drones; i++) drones.push(new Drone(HOLE.x + i * 3 - 3, HOLE.y - 6));
+  for (let a = 1; a < AREAS.length; a++) if (economy.save.belts[a]) world.belts.push(beltOf(AREAS[a].belt!.spec));
+
+  // ---- the static half: floor, walls, hole, gates, chutes, belts ----
+
+  const meshes = {
+    tile: tile(TILE * 1.01), wall: box(TILE * 1.02, TILE * 1.02, 1), gate: box(3.4, 3.4, 1, false),
+    collar: collar(TILE * 4, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth), chute: box(4, 4, 1),
+    beltBase: box(1, 1, 1), rail: box(1, 1, 1),
+  };
+
+  function buildStatic() {
+    const floor = floorTiles(cave);
+    const floorM = new Float32Array(floor.length * 16);
+    const floorMat = new Float32Array(floor.length * MATERIAL_STRIDE);
+    floor.forEach(([x, y], i) => {
+      place(floorM, i, x, y, 0);
+      const h = hash(x, y, 3), warm = hash(x, y, 5);
+      floorMat.set([0.40 + h * 0.08 + warm * 0.04, 0.31 + h * 0.06, 0.22 + h * 0.05, 0.92], i * MATERIAL_STRIDE);
+    });
+    const walls = wallInstances(cave);
+    const wallM = new Float32Array(walls.length * 16);
+    const wallMat = new Float32Array(walls.length * MATERIAL_STRIDE);
+    walls.forEach((w, i) => {
+      placePart(wallM, i, w.x, w.y, -0.5, 0, 0, 0, 0, 0, 0, 1, 1, w.height + 0.5);
+      const s = 0.8 + w.shade * 0.35, dim = w.ring ? 0.8 : 1;
+      wallMat.set([0.30 * s * dim, 0.28 * s * dim, 0.36 * s * dim, 0.85], i * MATERIAL_STRIDE);
+    });
+    const gates: [number, number, number][] = [];
+    for (let a = 1; a < AREAS.length; a++) {
+      if (economy.save.areas[a]) continue;
+      for (const [x, y] of gateTiles(cave, a)) gates.push([x, y, a]);
+    }
+    const gateM = new Float32Array(Math.max(1, gates.length) * 16);
+    gates.forEach(([x, y, a], i) => placePart(gateM, i, x, y, 0, hash(x, y, a) * 0.5 - 0.25, 0, 0, 0, 0, 0, 1, 1, 2.6 + hash(x, y) * 1.2));
+    if (!gates.length) hide(gateM, 0);
+    const chuteM = new Float32Array(AREAS.length * 16);
+    AREAS.forEach((a, i) => placePart(chuteM, i, a.vein.x, a.vein.y, 7, 0, 0, 0, 0, 0, 0.35, 1, 1, 2));
+    const belts: GameGroup[] = [];
+    for (let a = 1; a < AREAS.length; a++) {
+      if (!economy.save.belts[a]) continue;
+      const s = AREAS[a].belt!.spec;
+      const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0), yaw = Math.atan2(s.y1 - s.y0, s.x1 - s.x0);
+      const cx = (s.x0 + s.x1) / 2, cy = (s.y0 + s.y1) / 2;
+      const base = new Float32Array(16);
+      placePart(base, 0, cx, cy, 0, yaw, 0, 0, 0, 0, 0, len, s.width, 0.35);
+      const rails = new Float32Array(32);
+      placePart(rails, 0, cx, cy, 0, yaw, 0, s.width / 2 + 0.3, 0, 0, 0, len, 0.6, 0.9);
+      placePart(rails, 1, cx, cy, 0, yaw, 0, -s.width / 2 - 0.3, 0, 0, 0, len, 0.6, 0.9);
+      belts.push({ mesh: meshes.beltBase, matrices: base, albedo: [0.12, 0.12, 0.14], roughness: 0.7 });
+      belts.push({ mesh: meshes.rail, matrices: rails, albedo: [0.75, 0.55, 0.2], roughness: 0.4 });
+    }
+    renderer.setStatic([
+      { mesh: meshes.tile, matrices: floorM, materials: floorMat },
+      { mesh: meshes.collar, matrices: identity(), albedo: [0.42, 0.32, 0.23], roughness: 0.92 },
+      { mesh: meshes.pit, matrices: identity(), albedo: [0.04, 0.035, 0.05], roughness: 0.95 },
+      { mesh: meshes.wall, matrices: wallM, materials: wallMat },
+      { mesh: meshes.gate, matrices: gateM, count: gates.length, albedo: [0.62, 0.32, 0.72], roughness: 0.35 },
+      { mesh: meshes.chute, matrices: chuteM, albedo: [0.2, 0.2, 0.22], roughness: 0.6 },
+      ...belts,
+    ]);
+  }
+  buildStatic();
+
+  // ---- the dynamic half: coins, gems, the dozer, drones, belt stripes ----
+
+  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, DRONE_BODY = 9, ROTORS = 10, ARMS = 11, STRIPES = 12;
+  const coinM = new Float32Array(BODY_CAPACITY * 16);
+  const gemM = GEM_CAPACITY.map((n) => new Float32Array(Math.max(1, n) * 16));
+  const hullM = new Float32Array(16), darkM = new Float32Array(16), bladeM = new Float32Array(16);
+  const treadM = new Float32Array(TREAD_BARS * 2 * 16);
+  const droneM = new Float32Array(DRONE_CAPACITY * 16), rotorM = new Float32Array(DRONE_CAPACITY * 4 * 16), armM = new Float32Array(DRONE_CAPACITY * 2 * 16);
+  const stripeM = new Float32Array(STRIPE_CAPACITY * 16);
+
+  const hull = mergeMeshes([
+    moved(box(5.4, 3.4, 1.7), 0, 0, 0.8),          // the body
+    moved(box(2.8, 2.8, 1.1), 1.1, 0, 2.5),          // the hood
+    moved(box(2.3, 3.0, 2.3), -1.5, 0, 2.5),         // the cab
+    moved(box(0.7, 0.5, 0.4), 2.5, 0.9, 2.9),        // a headlamp each side
+    moved(box(0.7, 0.5, 0.4), 2.5, -0.9, 2.9),
+  ]);
+  const dark = mergeMeshes([
+    moved(box(6.6, 1.7, 1.9), 0, 2.15, 0),           // the tracks
+    moved(box(6.6, 1.7, 1.9), 0, -2.15, 0),
+    moved(box(2.4, 3.1, 1.1), -1.5, 0, 3.2),         // the glass, a band round the cab
+    moved(cylinder(0.26, 1.7, 8), 1.7, 0.9, 3.5),    // the exhaust
+    moved(box(3.4, 0.45, 0.45), 2.6, 2.4, 1.7),      // the blade's arms
+    moved(box(3.4, 0.45, 0.45), 2.6, -2.4, 1.7),
+    moved(box(0.9, 3.6, 0.4), -3.2, 0, 1.9),         // a rear step
+  ]);
+  // The blade, in the dozer's own frame: its pieces along the arc, each a
+  // plate with a lip along the top and a cutting edge along the bottom.
+  // Rebuilt when a wider one is bought.
+  function bladeMesh(width: number) {
+    return mergeMeshes(bladePieces(width).map((p) => moved(turned(mergeMeshes([
+      box(0.35, p.length, BLADE_HEIGHT, true),
+      moved(box(0.7, p.length, 0.22, true), 0.17, 0, BLADE_HEIGHT / 2 - 0.11),
+      moved(box(0.6, p.length, 0.18, true), 0.12, 0, -BLADE_HEIGHT / 2 + 0.09),
+    ]), p.turn), p.x, p.y, BLADE_HEIGHT / 2)));
+  }
+  const droneBody = mergeMeshes([box(1.7, 1.7, 0.6, true), moved(ball(0.55, 5, 8), 0, 0, 0.5)]);
+  const gemMesh = gem(1.05, 2.3);
+  const dynamic: GameGroup[] = [
+    { mesh: coin(0.52, 0.26), matrices: coinM, count: 0, albedo: [1.0, 0.76, 0.22], roughness: 0.32 },
+    { mesh: gemMesh, matrices: gemM[1], count: 0, albedo: [0.92, 0.12, 0.2], roughness: 0.12 },
+    { mesh: gemMesh, matrices: gemM[2], count: 0, albedo: [0.12, 0.85, 0.42], roughness: 0.12 },
+    { mesh: gemMesh, matrices: gemM[3], count: 0, albedo: [0.2, 0.38, 0.98], roughness: 0.12 },
+    { mesh: gemMesh, matrices: gemM[4], count: 0, albedo: [0.9, 0.97, 1.0], roughness: 0.05 },
+    { mesh: hull, matrices: hullM, albedo: [0.96, 0.7, 0.12], roughness: 0.45 },
+    { mesh: dark, matrices: darkM, albedo: [0.15, 0.15, 0.17], roughness: 0.75 },
+    { mesh: bladeMesh(economy.spec().bladeWidth), matrices: bladeM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
+    { mesh: box(0.55, 1.9, 0.35), matrices: treadM, albedo: [0.3, 0.3, 0.32], roughness: 0.8 },
+    { mesh: droneBody, matrices: droneM, count: 0, albedo: [0.92, 0.92, 0.95], roughness: 0.4 },
+    { mesh: disc(0.85, 10), matrices: rotorM, count: 0, albedo: [0.2, 0.2, 0.22], roughness: 0.6 },
+    { mesh: box(3.6, 0.28, 0.2, true), matrices: armM, count: 0, albedo: [0.2, 0.2, 0.22], roughness: 0.6 },
+    { mesh: box(0.5, 1, 0.15), matrices: stripeM, count: 0, albedo: [0.9, 0.78, 0.3], roughness: 0.5 },
+  ];
+  renderer.setDynamic(dynamic);
+
+  // ---- coins into the cave ----
+
+  const gemCount = [0, 0, 0, 0, 0];
+  function spawn(kind: number, x: number, y: number, z: number, vx = 0, vy = 0, vz = 0): boolean {
+    if (kind > 0 && gemCount[kind] >= GEM_CAPACITY[kind]) return false;
+    const i = world.spawn(kind, x, y, z, vx, vy, vz);
+    if (i < 0) return false;
+    if (kind > 0) gemCount[kind]++;
+    return true;
+  }
+  function spawnHeap(h: Heap) {
+    const R = Math.sqrt(h.coins) * 0.36 + 1.5, H = Math.sqrt(h.coins) * 0.3 + 1.5;
+    const drop = (kind: number) => {
+      const z = 1 + Math.random() * H;
+      const rr = R * (1 - z / (H + 2)) * Math.sqrt(Math.random()), a = Math.random() * Math.PI * 2;
+      spawn(kind, h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr, z);
+    };
+    for (let k = 0; k < h.coins; k++) drop(0);
+    for (const [kind, n] of h.gems) for (let k = 0; k < n; k++) drop(kind);
+  }
+  for (let a = 0; a < AREAS.length; a++) if (economy.save.areas[a]) AREAS[a].heaps.forEach(spawnHeap);
+  // a moment of settling before anyone sees it, so the heaps are heaps
+  for (let i = 0; i < 90; i++) world.step(1 / 60, () => {});
+
+  const veinTimers = AREAS.map(() => Math.random());
+  function trickle(dt: number) {
+    if (world.live > BODY_CAPACITY - 60) return;
+    for (let a = 0; a < AREAS.length; a++) {
+      if (!economy.save.areas[a]) continue;
+      const v: Vein = AREAS[a].vein;
+      veinTimers[a] -= dt;
+      if (veinTimers[a] > 0) continue;
+      veinTimers[a] = v.every * (0.7 + Math.random() * 0.6);
+      let kind = 0;
+      const roll = Math.random();
+      let acc = 0;
+      for (const [k, p] of v.gems) { acc += p; if (roll < acc) { kind = k; break; } }
+      const a2 = Math.random() * Math.PI * 2;
+      spawn(kind, v.x + Math.cos(a2) * 0.6, v.y + Math.sin(a2) * 0.6, 6.5, Math.cos(a2) * 3, Math.sin(a2) * 3, 1);
+    }
+  }
+
+  // ---- the bank ----
+
+  let holePulse = 0;
+  const gained: number[] = [0, 0, 0, 0, 0];
+  let toastIn = 0;
+  function collect(kind: number, x: number, y: number) {
+    if (kind > 0) gemCount[kind]--;
+    economy.deposit(KIND_VALUE[kind]);
+    gained[kind]++;
+    holePulse = Math.min(2, holePulse + 0.35 + (kind > 0 ? 0.6 : 0));
+    toastIn = 1.4;
+    const gold: [number, number, number] = kind === 0 ? [1.6, 1.2, 0.4] : (dynamic[kind].albedo as [number, number, number]).map((c) => c * 2) as [number, number, number];
+    renderer.emit({
+      position: [x, y, 0.5], velocity: [0, 0, 14], spread: 7, count: kind > 0 ? 40 : 10,
+      life: 0.9, lifeSpread: 0.4, size: kind > 0 ? 0.45 : 0.3, growth: -0.2, colour: gold, alpha: 0, gravity: 0.8, floor: -30,
+    });
+  }
+  function showToast() {
+    const parts: string[] = [];
+    for (let k = 0; k < 5; k++) {
+      if (!gained[k]) continue;
+      parts.push(`+${gained[k] * KIND_VALUE[k]} <small>${gained[k]} ${KIND_NAME[k]}${gained[k] > 1 ? 's' : ''}</small>`);
+    }
+    toast.innerHTML = parts.join(' · ');
+    toast.hidden = !parts.length;
+    toast.classList.toggle('gone', toastIn <= 0);
+  }
+
+  // ---- the shop ----
+
+  let shopOpen = false;
+  document.getElementById('reset')!.addEventListener('click', () => {
+    if (confirm('Start over? The bank and every upgrade go back to nothing.')) economy.reset();
+  });
+  economy.onBuy((id) => {
+    if (id.startsWith('area')) {
+      const a = +id.slice(4);
+      world.solid = cave.solid(economy.save.areas);
+      dozer.solid = world.solid;
+      AREAS[a].heaps.forEach(spawnHeap);
+      buildStatic();
+      // the rock came down: a cloud of it, at each gate tile
+      for (const [x, y] of gateTiles(cave, a)) {
+        renderer.emit({ position: [x, y, 1.5], velocity: [0, 0, 5], spread: 6, count: 60, life: 1.6, lifeSpread: 0.5, size: 1.2, growth: 1.5, colour: [0.45, 0.4, 0.5], alpha: 0.8, gravity: 0.15, floor: 0 });
+      }
+    } else if (id.startsWith('belt')) {
+      world.belts.push(beltOf(AREAS[+id.slice(4)].belt!.spec));
+      buildStatic();
+    } else if (id === 'drone') {
+      drones.push(new Drone(HOLE.x, HOLE.y - 6));
+    } else if (id === 'blade') {
+      dynamic[BLADE].mesh = bladeMesh(economy.spec().bladeWidth);
+      renderer.setDynamic(dynamic);
+    }
+    world.wakeAll();
+  });
+
+  // ---- the camera ----
+
+  const cam = renderer.camera;
+  cam.target = [dozer.x, dozer.y, 0];
+  cam.position = [dozer.x, dozer.y - CAMERA.radius * Math.sin(CAMERA.polar), CAMERA.radius * Math.cos(CAMERA.polar)];
+  const orbit = new Orbit(cam, {
+    element: canvas, minPolar: 0.1, maxPolar: 1.25, minDistance: 28, maxDistance: 170,
+    rotateSpeed: 0.4, zoomSpeed: 0.8, panSpeed: 0, inertia: 0.5,
+  });
+  orbit.setSpherical(CAMERA);
+  const follow: [number, number] = [dozer.x, dozer.y];
+
+  let width = 1, height = 1;
+  const resize = () => {
+    const dpr = Math.min(devicePixelRatio || 1, 1.5);
+    width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+    height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+    canvas.width = width; canvas.height = height;
+    renderer.resize(width, height);
+  };
+  addEventListener('resize', resize);
+  resize();
+
+  // ---- lights and glows ----
+
+  const lights = new LightPool(LIGHT_CAPACITY);
+  const quads = new Float32Array(EFFECT_CAPACITY * EFFECT_STRIDE);
+  const pushers: Pusher[] = [];
+
+  function lightUp(t: number): number[] {
+    lights.clear();
+    const c = Math.cos(dozer.yaw), s = Math.sin(dozer.yaw);
+    const shadowed: number[] = [];
+    for (const side of [1, -1]) {
+      const i = lights.add({
+        position: [dozer.x + c * 2.6 - s * side * 0.9, dozer.y + s * 2.6 + c * side * 0.9, 3.0],
+        radius: 46, colour: [1.0, 0.92, 0.7], intensity: 9,
+        direction: [c, s, -0.32], cone: [22, 40],
+      });
+      if (side === 1) shadowed.push(i);
+    }
+    const pulse = 1 + holePulse * 1.6;
+    lights.add({ position: [HOLE.x, HOLE.y, 1.5], radius: 18 + holePulse * 6, colour: [0.35, 1.0, 0.6], intensity: 2.2 * pulse });
+    for (let a = 0; a < AREAS.length; a++) {
+      if (!economy.save.areas[a]) continue;
+      const v = AREAS[a].vein;
+      lights.add({ position: [v.x, v.y, 5.5], radius: 12, colour: [1.0, 0.7, 0.3], intensity: 1.6 + 0.4 * Math.sin(t * 7 + a) });
+    }
+    for (const d of drones) lights.add({ position: [d.x, d.y, d.z - 0.6], radius: 12, colour: [0.7, 0.85, 1.0], intensity: 3, direction: [0, 0, -1], cone: [30, 55] });
+    renderer.setLights(lights, shadowed);
+
+    // the hole's glow, as a screen-space layer over it
+    let n = 0;
+    const p = project(cam.viewProjection, HOLE.x, HOLE.y, 0);
+    if (p) {
+      const size = (HOLE.radius * 2.2 / p[2]) * (1 + holePulse * 0.5);
+      quads.set([p[0], p[1], size, 0.35 + holePulse * 0.9, 0.4, 1.0, 0.65, 1.6], n * EFFECT_STRIDE); n++;
+    }
+    renderer.setEffects(quads, n);
+    return shadowed;
+  }
+
+  // ---- per-frame uploads ----
+
+  let awake = 0;
+  function upload(t: number) {
+    const counts = [0, 0, 0, 0, 0];
+    awake = 0;
+    const { x, y, z, q, kind, alive, asleep } = world;
+    for (let i = 0; i < world.count; i++) {
+      if (!alive[i]) continue;
+      if (!asleep[i]) awake++;
+      const k = kind[i];
+      const m = k === 0 ? coinM : gemM[k];
+      if (counts[k] * 16 >= m.length) continue;
+      placeQuat(m, counts[k]++, x[i], y[i], z[i], q, i * 4);
+    }
+    renderer.move(COINS, coinM, counts[0]);
+    for (let k = 1; k <= 4; k++) renderer.move(GEMS + k - 1, gemM[k], counts[k]);
+
+    place(hullM, 0, dozer.x, dozer.y, 0, dozer.yaw);
+    place(darkM, 0, dozer.x, dozer.y, 0, dozer.yaw);
+    place(bladeM, 0, dozer.x, dozer.y, 0, dozer.yaw);
+    renderer.move(HULL, hullM); renderer.move(DARK, darkM); renderer.move(BLADE, bladeM);
+    const pitch = 6.4 / TREAD_BARS;
+    for (let i = 0; i < TREAD_BARS; i++) {
+      const along = ((((i * pitch + dozer.odometer) % 6.4) + 6.4) % 6.4) - 3.2;
+      placePart(treadM, i * 2, dozer.x, dozer.y, 0, dozer.yaw, along, 2.15, 1.9);
+      placePart(treadM, i * 2 + 1, dozer.x, dozer.y, 0, dozer.yaw, along, -2.15, 1.9);
+    }
+    renderer.move(TREADS, treadM);
+
+    drones.forEach((d, i) => {
+      place(droneM, i, d.x, d.y, d.z, d.yaw);
+      placePart(armM, i * 2, d.x, d.y, d.z, d.yaw, 0, 0, 0.35, Math.PI / 4);
+      placePart(armM, i * 2 + 1, d.x, d.y, d.z, d.yaw, 0, 0, 0.35, -Math.PI / 4);
+      for (let r = 0; r < 4; r++) {
+        const a = Math.PI / 4 + (r * Math.PI) / 2;
+        placePart(rotorM, i * 4 + r, d.x, d.y, d.z, d.yaw, Math.cos(a) * 1.6, Math.sin(a) * 1.6, 0.5, d.spin * (r % 2 ? 1 : -1));
+      }
+    });
+    renderer.move(DRONE_BODY, droneM, drones.length);
+    renderer.move(ARMS, armM, drones.length * 2);
+    renderer.move(ROTORS, rotorM, drones.length * 4);
+
+    let n = 0;
+    for (let a = 1; a < AREAS.length; a++) {
+      if (!economy.save.belts[a]) continue;
+      const s = AREAS[a].belt!.spec;
+      const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0), yaw = Math.atan2(s.y1 - s.y0, s.x1 - s.x0);
+      const cx = (s.x0 + s.x1) / 2, cy = (s.y0 + s.y1) / 2;
+      const gap = 2.6, bars = Math.floor(len / gap);
+      for (let i = 0; i < bars && n < STRIPE_CAPACITY; i++) {
+        const along = (((i * gap + t * s.speed) % len) + len) % len - len / 2;
+        placePart(stripeM, n++, cx, cy, 0.35, yaw, along, 0, 0, 0, 0, 1, s.width * 0.9, 1);
+      }
+    }
+    renderer.move(STRIPES, stripeM, n);
+  }
+
+  // ---- go ----
+
+  boot.classList.add('gone');
+  bankPanel.hidden = false; statsPanel.hidden = false; helpPanel.hidden = false;
+  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, drones });
+
+  let last = performance.now();
+  let t = 0;
+  let smoothed = 16.7;
+  let statsIn = 0, shopIn = 0;
+  let lastBank = -1;
+
+  const frame = (now: number) => {
+    requestAnimationFrame(frame);
+    const dt = Math.min((now - last) / 1000, 1 / 20);
+    last = now; t += dt;
+
+    if (input.takeShop()) { shopOpen = !shopOpen; shopPanel.hidden = !shopOpen; if (shopOpen) renderShop(shopRows, economy); }
+    if (input.takeRecentre()) orbit.setSpherical(CAMERA);
+
+    const spec = economy.spec();
+    dozer.update(dt, input.read(), spec, world.load);
+    dozer.pushers(spec, pushers);
+    world.pushers = pushers;
+    // the heap ahead of the blade wakes before the blade arrives
+    const c = Math.cos(dozer.yaw), s = Math.sin(dozer.yaw);
+    if (Math.abs(dozer.speed) > 0.5 || Math.abs(dozer.yawRate) > 0.2) world.wakeNear(dozer.x + c * BLADE_AT, dozer.y + s * BLADE_AT, spec.bladeWidth * 0.75 + 1.5);
+    trickle(dt);
+    for (const d of drones) d.update(dt, world);
+    world.step(dt, collect);
+    holePulse = Math.max(0, holePulse - dt * 1.8);
+
+    // the camera follows, a little behind
+    const k = Math.min(1, 4 * dt);
+    follow[0] += (dozer.x - follow[0]) * k; follow[1] += (dozer.y - follow[1]) * k;
+    cam.target = [follow[0], follow[1], 1.5];
+    orbit.update();
+    const reach = orbit.distance * 1.1 + 20;
+    renderer.setSunShadow({ min: [follow[0] - reach, follow[1] - reach, -16], max: [follow[0] + reach, follow[1] + reach, 14] });
+
+    lightUp(t);
+    upload(t);
+    renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
+
+    if (toastIn > 0) { toastIn -= dt; if (toastIn <= 0) { gained.fill(0); showToast(); } }
+    if (economy.bank !== lastBank) { lastBank = economy.bank; bankValue.textContent = `${economy.bank}`; showToast(); }
+    smoothed += (dt * 1000 - smoothed) * 0.08;
+    if ((statsIn -= dt) <= 0) {
+      statsIn = 0.25;
+      coinCount.textContent = `${world.live}`;
+      statsPanel.innerHTML = `<span>${smoothed.toFixed(1)}</span> ms · <span>${Math.round(1000 / smoothed)}</span> fps<br>`
+        + `<span>${world.live}</span> bodies · <span>${awake}</span> awake · load <span>${world.load}</span>`;
+    }
+    if (shopOpen && (shopIn -= dt) <= 0) { shopIn = 0.3; renderShop(shopRows, economy); }
+  };
+  requestAnimationFrame(frame);
+}
