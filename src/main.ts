@@ -14,7 +14,7 @@ import { AREAS, BODY_CAPACITY, HOLE, TILE, buildCave, floorTiles, gateTiles, has
 import { World, KIND_NAME, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces, separate } from './dozer';
 import { Input } from './input';
-import { TrackSliders, isTouchDevice } from './touch';
+import { TouchControls, isTouchDevice } from './touch';
 import { Economy, MAX_DRONES, renderShop } from './economy';
 import { Bot, BOT_SCALE, BOT_SPEC, Fountain, beltOf } from './tools';
 import { Sound } from './audio';
@@ -421,11 +421,17 @@ async function main() {
   canvas.addEventListener('pointerdown', () => { manualUntil = performance.now() / 1000 + 5; });
   const wrap = (a: number) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
   function cycleCamera() {
-    cameraMode = MODES[(MODES.indexOf(cameraMode) + 1) % MODES.length];
+    // a phone's canvas takes no drag, so a free camera there would be a stuck one
+    const modes = touch ? MODES.filter((m) => m !== 'free') : MODES;
+    cameraMode = modes[(modes.indexOf(cameraMode) + 1) % modes.length];
     try { localStorage.setItem('pushminer-camera', cameraMode); } catch { /* fine */ }
     manualUntil = 0;
     if (cameraMode === 'fixed') orbit.setSpherical({ azimuth: orbit.currentAzimuth + wrap(CAMERA.azimuth - orbit.currentAzimuth) });
-    cameraNote.textContent = `camera: ${cameraMode}`;
+    note(`camera: ${cameraMode}`);
+  }
+  /** A word at the top of the screen for a couple of seconds: what a button just changed. */
+  function note(text: string) {
+    cameraNote.textContent = text;
     cameraNote.hidden = false;
     cameraNoteIn = 2;
   }
@@ -669,8 +675,18 @@ async function main() {
   const showMute = () => { muteButton.textContent = sound.muted ? '🔇' : '🔊'; muteButton.setAttribute('aria-label', sound.muted ? 'unmute' : 'mute'); };
   economy.onBuy((id) => { if (id === 'horn') showHorn(); });
   if (touch) {
-    input.tracks = new TrackSliders(document.getElementById('trackLeft')!, document.getElementById('trackRight')!);
+    const controls = new TouchControls(document.getElementById('trackLeft')!, document.getElementById('trackRight')!, document.getElementById('steer')!);
+    input.touch = controls;
     document.getElementById('tracks')!.hidden = false;
+    const controlsButton = document.getElementById('controlsButton') as HTMLButtonElement;
+    const showControls = () => { controlsButton.textContent = controls.scheme === 'tracks' ? '⇅⇅' : '⇅⇆'; };
+    controlsButton.addEventListener('click', () => {
+      const scheme = controls.cycle();
+      showControls();
+      note(scheme === 'tracks' ? 'controls: a lever each track' : 'controls: throttle and steering');
+    });
+    showControls();
+    document.getElementById('cameraButton')!.addEventListener('click', () => input.pressCamera());
     document.getElementById('pad')!.hidden = false;
     shopButton.addEventListener('click', () => input.toggleShop());
     // pointerdown, not click: a horn sounds when it is pressed, and a click waits for the lift

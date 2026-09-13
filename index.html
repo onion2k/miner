@@ -65,7 +65,8 @@
                 backdrop-filter: blur(8px); touch-action: none; height: 40px; padding: 0; }
   #pad button[hidden] { display: none; }
   #pad button:active { background: rgba(242, 193, 78, 0.25); }
-  #hornButton, #muteButton { width: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; line-height: 1; }
+  #hornButton, #muteButton, #cameraButton, #controlsButton { width: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; line-height: 1; }
+  #controlsButton { font-size: 14px; letter-spacing: -0.1em; }
   #hornButton { border-color: rgba(242, 193, 78, 0.45); }
   #shopButton { padding: 0 14px; border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em;
                 text-transform: uppercase; color: var(--gold); border-color: rgba(242, 193, 78, 0.45); }
@@ -79,10 +80,17 @@
     .track { top: calc(8px + env(safe-area-inset-top)); bottom: calc(8px + env(safe-area-inset-bottom)); height: auto; }
   }
   #trackLeft { left: calc(3vmin + env(safe-area-inset-left)); }
-  #trackRight { right: calc(3vmin + env(safe-area-inset-right)); }
+  #trackRight, #steer { right: calc(3vmin + env(safe-area-inset-right)); }
   .track::before { content: ''; position: absolute; top: 0; bottom: 0; left: -3vmin; right: -3vmin; }
   /* the tick at the middle, where the lever rests */
   .track::after { content: ''; position: absolute; left: 20%; right: 20%; top: 50%; height: 2px; background: rgba(255, 255, 255, 0.25); }
+  .track[hidden] { display: none; }
+  /* the steering, lying across on the right: it stands on the row of buttons, clear of them at any width */
+  .track.across { top: auto; bottom: calc(64px + env(safe-area-inset-bottom)); height: 8vmin; width: min(44vw, 320px); }
+  .track.across::before { top: -3vmin; bottom: -3vmin; left: 0; right: 0; }
+  .track.across::after { top: 20%; bottom: 20%; left: 50%; right: auto; width: 2px; height: auto; }
+  .track.across .thumb { top: 2px; bottom: 2px; left: calc(50% - 4vmin); width: 8vmin; height: auto; }
+  body.touch.stick #toast { bottom: calc(76px + 8vmin + env(safe-area-inset-bottom)); }
   .track .thumb { position: absolute; left: 2px; right: 2px; top: calc(50% - 4vmin); height: 8vmin; border-radius: 4vmin; z-index: 1;
                   background: rgba(242, 193, 78, 0.6); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4); transition: transform .18s ease-out; }
   .track.held .thumb { transition: none; background: var(--gold); }
@@ -116,12 +124,15 @@
 <div class="panel" id="shop" hidden><h2>Workshop<span class="balance">balance <b id="shopBalance">0</b></span></h2><div class="rows"></div><h2 class="later">Paint shop</h2><div class="rows cosmetics"></div><div class="foot"><span class="keys">press <b>B</b> to close</span> <button id="reset" type="button">start over</button></div></div>
 <div id="pad" hidden>
   <button id="muteButton" type="button" aria-label="mute">🔊</button>
+  <button id="cameraButton" type="button" aria-label="camera">🎥</button>
   <button id="shopButton" type="button">shop</button>
+  <button id="controlsButton" type="button" aria-label="switch controls">⇅⇅</button>
   <button id="hornButton" type="button" aria-label="horn" hidden>📯</button>
 </div>
 <div id="tracks" hidden>
   <div class="track" id="trackLeft" aria-label="left track"><div class="thumb"></div></div>
   <div class="track" id="trackRight" aria-label="right track"><div class="thumb"></div></div>
+  <div class="track across" id="steer" aria-label="steering" hidden><div class="thumb"></div></div>
 </div>
 <div id="boot"><h1>PUSHMINER</h1><p id="bootMsg">starting WebGPU…</p></div>
 <script type="module" src="/src/main.ts"></script>

@@ -1,4 +1,4 @@
-/** The keyboard: WASD or arrows to drive, and a few one-shot keys. On a phone, the track sliders. */
+/** The keyboard: WASD or arrows to drive, and a few one-shot keys. On a phone, the sliders. */
 export interface Drive { throttle: number; steer: number }
 
 export class Input {
@@ -8,8 +8,8 @@ export class Input {
   private mute = false;
   private horn = false;
   private camera = false;
-  /** The phone's track levers, when there are any: read when no drive key is down. */
-  tracks: { left: number; right: number } | null = null;
+  /** The phone's sliders, when there are any: read when no drive key is down. */
+  touch: { drive(): Drive } | null = null;
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -32,19 +32,14 @@ export class Input {
   read(): Drive {
     const throttle = (this.is('w', 'arrowup') ? 1 : 0) - (this.is('s', 'arrowdown') ? 1 : 0);
     const steer = (this.is('a', 'arrowleft') ? 1 : 0) - (this.is('d', 'arrowright') ? 1 : 0);
-    if (throttle || steer || !this.tracks) return { throttle, steer };
-    // Two tracks to one drive: what they share is the throttle, and the difference turns
-    // it, to the left when the right track runs ahead. Summed, not averaged, so the levers
-    // reach what the keys do: both pushed is W at full speed, one pushed is W with A or D,
-    // opposite ways is a spin. Averaged, an arc was three quarters of the speed and a
-    // lever short of its end was slower still.
-    const { left, right } = this.tracks;
-    const clamp = (v: number) => Math.max(-1, Math.min(1, v));
-    return { throttle: clamp(left + right), steer: clamp(right - left) };
+    if (throttle || steer || !this.touch) return { throttle, steer };
+    return this.touch.drive();
   }
 
   /** The shop, asked for by something other than the B key: the phone's button. */
   toggleShop() { this.shop = true; }
+  /** The camera, from the phone's button. */
+  pressCamera() { this.camera = true; }
   /** The horn, from the phone's button. */
   pressHorn() { this.horn = true; }
 
