@@ -10,7 +10,10 @@
  *
  * Bodies sleep. A heap at rest is most of the cave, and a heap at rest costs
  * nothing: only an awake body looks for its neighbours, and it wakes what it
- * touches. The blade wakes what it reaches before it reaches it.
+ * touches. The blade wakes what it reaches before it reaches it. A sleeper
+ * is not looked at one by one either: the blades and belts find the
+ * sleepers under them through the spatial hash, so a cave of resting coins
+ * costs only its place in the hash.
  */
 import { COLS, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from './cave';
 
@@ -18,6 +21,7 @@ export const KIND_VALUE = [1, 10, 25, 40, 100];
 /** Collision radius per kind: coin, ruby, emerald, sapphire, diamond. */
 export const KIND_RADIUS = [0.42, 1.0, 1.0, 1.0, 1.15];
 export const KIND_NAME = ['coin', 'ruby', 'emerald', 'sapphire', 'diamond'];
+const MAX_RADIUS = Math.max(...KIND_RADIUS);
 
 const STEP = 1 / 120;
 const GRAVITY = 70;
@@ -40,6 +44,16 @@ export interface Pusher {
   px: number; py: number;
   /** Whose box it is: 0 the player, then the robo-dozers. Each has its own load count. */
   owner: number;
+}
+
+/** A pusher as it stands this step: swept back by the lag, with its turn worked out once. */
+interface Placed {
+  p: Pusher;
+  bx: number; by: number;
+  pivotX: number; pivotY: number;
+  c: number; s: number;
+  /** How far a body's centre can be from the box's, along x or y, and still touch it. */
+  reach: number;
 }
 
 /** A strip of floor that carries what rests on it. */
@@ -82,6 +96,10 @@ export class World {
   /** A pull toward a point, on whatever lies within `radius` of it on the floor. */
   magnet: { x: number; y: number; radius: number; strength: number } | null = null;
   private loadNow: number[] = [];
+  private placed: Placed[] = [];
+  /** Sleepers the blades and belts have already seen this step, so the awake pass leaves them be. */
+  private readonly seen: Uint8Array;
+  private readonly seenList: number[] = [];
   /** Which tiles are rock right now; the game rewrites it when a gate opens. */
   solid: Uint8Array;
 
@@ -106,7 +124,8 @@ export class World {
     this.carried = new Uint8Array(n); this.onFloor = new Uint8Array(n);
     this.gx = Math.ceil((COLS * TILE) / CELL) + 2;
     this.gy = Math.ceil((ROWS * TILE) / CELL) + 2;
-    this.head = new Int32Array(this.gx * this.gy);
+    this.head = new Int32Array(this.gx * this.gy).fill(-1);
+    this.seen = new Uint8Array(n);
     this.next = new Int32Array(n);
   }
 
@@ -154,11 +173,20 @@ export class World {
 
   /** Wake everything within `radius` of a point — ahead of a blade, say. */
   wakeNear(x: number, y: number, radius: number) {
-    const r2 = radius * radius;
-    for (let i = 0; i < this.count; i++) {
-      if (!this.alive[i] || !this.asleep[i]) continue;
-      const dx = this.x[i] - x, dy = this.y[i] - y;
-      if (dx * dx + dy * dy < r2) this.wake(i);
+    // A sleeper has not moved since the last step hashed it; one that dozed
+    // off in that step may have moved a hair after, which the extra cell covers.
+    const r2 = radius * radius, pad = radius + CELL;
+    const { head, next, gx } = this;
+    const x0 = this.cellX(x - pad), x1 = this.cellX(x + pad);
+    const y0 = this.cellY(y - pad), y1 = this.cellY(y + pad);
+    for (let cy = y0; cy <= y1; cy++) {
+      for (let cx = x0; cx <= x1; cx++) {
+        for (let i = head[cy * gx + cx]; i >= 0; i = next[i]) {
+          if (!this.alive[i] || !this.asleep[i]) continue;
+          const dx = this.x[i] - x, dy = this.y[i] - y;
+          if (dx * dx + dy * dy < r2) this.wake(i);
+        }
+      }
     }
   }
 
@@ -194,9 +222,11 @@ export class World {
     }
     this.hash();
     this.pairs();
+    this.place();
+    this.sleepers();
+    const seen = this.seen;
     for (let i = 0; i < n; i++) {
-      if (!alive[i] || carried[i]) continue;
-      if (asleep[i]) { this.belt(i); this.push(i); continue; }
+      if (!alive[i] || carried[i] || asleep[i] || seen[i]) continue;
       this.walls(i);
       this.push(i);
       this.belt(i);
@@ -218,14 +248,65 @@ export class World {
       }
       this.turn(i);
     }
+    for (const i of this.seenList) seen[i] = 0;
+    this.seenList.length = 0;
     this.loads = this.loadNow.slice();
     this.load = this.loads[0] ?? 0;
   }
 
+  private cellX(px: number): number { return Math.max(0, Math.min(this.gx - 1, ((px - ORIGIN_X) / CELL + 1) | 0)); }
+  private cellY(py: number): number { return Math.max(0, Math.min(this.gy - 1, ((py - ORIGIN_Y) / CELL + 1) | 0)); }
+
   private cellOf(px: number, py: number): number {
-    const cx = Math.max(0, Math.min(this.gx - 1, ((px - ORIGIN_X) / CELL + 1) | 0));
-    const cy = Math.max(0, Math.min(this.gy - 1, ((py - ORIGIN_Y) / CELL + 1) | 0));
-    return cy * this.gx + cx;
+    return this.cellY(py) * this.gx + this.cellX(px);
+  }
+
+  /** Where each pusher is this step. */
+  private place() {
+    const lag = this.lag;
+    const { pushers, placed } = this;
+    while (placed.length < pushers.length) placed.push({ p: pushers[0], bx: 0, by: 0, pivotX: 0, pivotY: 0, c: 1, s: 0, reach: 0 });
+    placed.length = pushers.length;
+    for (let k = 0; k < pushers.length; k++) {
+      const p = pushers[k], o = placed[k];
+      // where the box was `lag` ago: back along its velocity, and back round its turn
+      const ta = -p.spin * lag, tc = Math.cos(ta), ts = Math.sin(ta);
+      const rx = p.x - p.px, ry = p.y - p.py;
+      o.p = p;
+      o.bx = p.px + tc * rx - ts * ry - p.vx * lag; o.by = p.py + ts * rx + tc * ry - p.vy * lag;
+      o.pivotX = p.px - p.vx * lag; o.pivotY = p.py - p.vy * lag;
+      const yaw = p.yaw + ta;
+      o.c = Math.cos(yaw); o.s = Math.sin(yaw);
+      o.reach = Math.hypot(p.hx + MAX_RADIUS, p.hy + MAX_RADIUS);
+    }
+  }
+
+  /**
+   * The sleepers under a belt or a blade, found through the hash, get what an
+   * awake body would: the belt, then each pusher. The rest of them are not
+   * touched at all.
+   */
+  private sleepers() {
+    const { head, next, gx, asleep, seen, seenList } = this;
+    const visit = (x0: number, y0: number, x1: number, y1: number, fn: (i: number) => void) => {
+      for (let cy = this.cellY(y0), cy1 = this.cellY(y1); cy <= cy1; cy++) {
+        for (let cx = this.cellX(x0), cx1 = this.cellX(x1); cx <= cx1; cx++) {
+          for (let i = head[cy * gx + cx]; i >= 0; i = next[i]) {
+            if (!this.alive[i] || !(asleep[i] || seen[i])) continue;
+            if (!seen[i]) { seen[i] = 1; seenList.push(i); }
+            fn(i);
+          }
+        }
+      }
+    };
+    for (const b of this.belts) {
+      const ex = Math.abs(b.dx) * b.half + Math.abs(b.dy) * b.width / 2 + 0.01;
+      const ey = Math.abs(b.dy) * b.half + Math.abs(b.dx) * b.width / 2 + 0.01;
+      visit(b.cx - ex, b.cy - ey, b.cx + ex, b.cy + ey, (i) => this.beltOne(i, b));
+    }
+    for (const o of this.placed) {
+      visit(o.bx - o.reach, o.by - o.reach, o.bx + o.reach, o.by + o.reach, (i) => this.pushOne(i, o));
+    }
   }
 
   private hash() {
@@ -341,54 +422,50 @@ export class World {
 
   /** The blade and the hull: oriented boxes that shove. */
   private push(i: number) {
+    for (const o of this.placed) this.pushOne(i, o);
+  }
+
+  private pushOne(i: number, o: Placed) {
     const { x, y, z, vx, vy, vz, r } = this;
-    const lag = this.lag;
-    for (const p of this.pushers) {
-      // where the box was `lag` ago: back along its velocity, and back round its turn
-      const ta = -p.spin * lag, tc = Math.cos(ta), ts = Math.sin(ta);
-      const rx = p.x - p.px, ry = p.y - p.py;
-      const bx = p.px + tc * rx - ts * ry - p.vx * lag, by = p.py + ts * rx + tc * ry - p.vy * lag;
-      const pivotX = p.px - p.vx * lag, pivotY = p.py - p.vy * lag;
-      const yaw = p.yaw + ta;
-      const dx = x[i] - bx, dy = y[i] - by, dz = z[i] - p.z;
-      const c = Math.cos(yaw), s = Math.sin(yaw);
-      const lx = c * dx + s * dy, ly = -s * dx + c * dy, lz = dz;
-      const rad = r[i];
-      if (Math.abs(lx) > p.hx + rad || Math.abs(ly) > p.hy + rad || Math.abs(lz) > p.hz + rad) continue;
-      const qx = Math.max(-p.hx, Math.min(p.hx, lx)), qy = Math.max(-p.hy, Math.min(p.hy, ly)), qz = Math.max(-p.hz, Math.min(p.hz, lz));
-      let nx = lx - qx, ny = ly - qy, nz = lz - qz;
-      let d = Math.hypot(nx, ny, nz);
-      if (d >= rad) continue;
-      if (d < 1e-4) {
-        // centre inside the box: leave by the nearest face, never downward
-        const ex = p.hx - Math.abs(lx), ey = p.hy - Math.abs(ly), ez = p.hz - lz;
-        // a plate thinner than the coin leaves it on the side it is moving toward,
-        // which is the side the coin was on before the plate got into it
-        const ox = x[i] - pivotX, oy = y[i] - pivotY;
-        const lvx = c * (p.vx - p.spin * oy) + s * (p.vy + p.spin * ox);
-        if (p.hx < rad && Math.abs(lvx) > 0.5 && ex <= ey && ex <= ez) { nx = Math.sign(lvx); ny = 0; nz = 0; d = Math.sign(lvx) * lx - p.hx; }
-        else if (ex <= ey && ex <= ez) { nx = Math.sign(lx) || 1; ny = 0; nz = 0; d = -ex; }
-        else if (ey <= ez) { nx = 0; ny = Math.sign(ly) || 1; nz = 0; d = -ey; }
-        else { nx = 0; ny = 0; nz = 1; d = -ez; }
-      } else { nx /= d; ny /= d; nz /= d; }
-      const pen = rad - d;
-      // back to the world
-      const wnx = c * nx - s * ny, wny = s * nx + c * ny, wnz = nz;
-      if (this.asleep[i]) this.wake(i);
-      x[i] += wnx * pen; y[i] += wny * pen; z[i] += wnz * pen;
-      // the box's velocity at the point of contact: its own, plus the turn
+    const { p, bx, by, pivotX, pivotY, c, s } = o;
+    const dx = x[i] - bx, dy = y[i] - by, dz = z[i] - p.z;
+    if (Math.abs(dx) > o.reach || Math.abs(dy) > o.reach) return;
+    const lx = c * dx + s * dy, ly = -s * dx + c * dy, lz = dz;
+    const rad = r[i];
+    if (Math.abs(lx) > p.hx + rad || Math.abs(ly) > p.hy + rad || Math.abs(lz) > p.hz + rad) return;
+    const qx = Math.max(-p.hx, Math.min(p.hx, lx)), qy = Math.max(-p.hy, Math.min(p.hy, ly)), qz = Math.max(-p.hz, Math.min(p.hz, lz));
+    let nx = lx - qx, ny = ly - qy, nz = lz - qz;
+    let d = Math.hypot(nx, ny, nz);
+    if (d >= rad) return;
+    if (d < 1e-4) {
+      // centre inside the box: leave by the nearest face, never downward
+      const ex = p.hx - Math.abs(lx), ey = p.hy - Math.abs(ly), ez = p.hz - lz;
+      // a plate thinner than the coin leaves it on the side it is moving toward,
+      // which is the side the coin was on before the plate got into it
       const ox = x[i] - pivotX, oy = y[i] - pivotY;
-      const pvx = p.vx - p.spin * oy, pvy = p.vy + p.spin * ox;
-      const vn = vx[i] * wnx + vy[i] * wny + vz[i] * wnz;
-      const pvn = pvx * wnx + pvy * wny;
-      if (vn < pvn) {
-        const j = pvn - vn;
-        vx[i] += wnx * j; vy[i] += wny * j; vz[i] += wnz * j;
-      }
-      // dragged along with the face a little, which is how a blade carries a load
-      vx[i] += (pvx - vx[i]) * 0.15; vy[i] += (pvy - vy[i]) * 0.15;
-      if (Math.abs(wnz) < 0.5) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
+      const lvx = c * (p.vx - p.spin * oy) + s * (p.vy + p.spin * ox);
+      if (p.hx < rad && Math.abs(lvx) > 0.5 && ex <= ey && ex <= ez) { nx = Math.sign(lvx); ny = 0; nz = 0; d = Math.sign(lvx) * lx - p.hx; }
+      else if (ex <= ey && ex <= ez) { nx = Math.sign(lx) || 1; ny = 0; nz = 0; d = -ex; }
+      else if (ey <= ez) { nx = 0; ny = Math.sign(ly) || 1; nz = 0; d = -ey; }
+      else { nx = 0; ny = 0; nz = 1; d = -ez; }
+    } else { nx /= d; ny /= d; nz /= d; }
+    const pen = rad - d;
+    // back to the world
+    const wnx = c * nx - s * ny, wny = s * nx + c * ny, wnz = nz;
+    if (this.asleep[i]) this.wake(i);
+    x[i] += wnx * pen; y[i] += wny * pen; z[i] += wnz * pen;
+    // the box's velocity at the point of contact: its own, plus the turn
+    const ox = x[i] - pivotX, oy = y[i] - pivotY;
+    const pvx = p.vx - p.spin * oy, pvy = p.vy + p.spin * ox;
+    const vn = vx[i] * wnx + vy[i] * wny + vz[i] * wnz;
+    const pvn = pvx * wnx + pvy * wny;
+    if (vn < pvn) {
+      const j = pvn - vn;
+      vx[i] += wnx * j; vy[i] += wny * j; vz[i] += wnz * j;
     }
+    // dragged along with the face a little, which is how a blade carries a load
+    vx[i] += (pvx - vx[i]) * 0.15; vy[i] += (pvy - vy[i]) * 0.15;
+    if (Math.abs(wnz) < 0.5) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
   }
 
   /** The magnet: a pull that grows toward the point, on things low enough to be on the floor. */
@@ -403,17 +480,19 @@ export class World {
   }
 
   private belt(i: number) {
+    for (const b of this.belts) this.beltOne(i, b);
+  }
+
+  private beltOne(i: number, b: Belt) {
     const { x, y, z, vx, vy, r } = this;
-    for (const b of this.belts) {
-      const dx = x[i] - b.cx, dy = y[i] - b.cy;
-      const along = dx * b.dx + dy * b.dy, across = -dx * b.dy + dy * b.dx;
-      if (Math.abs(along) > b.half || Math.abs(across) > b.width / 2 || z[i] > r[i] + 0.6) continue;
-      if (this.asleep[i]) this.wake(i);
-      const k = 0.12;
-      vx[i] += (b.dx * b.speed - vx[i]) * k; vy[i] += (b.dy * b.speed - vy[i]) * k;
-      // gathered toward the centre line, so the belt delivers to one place
-      vx[i] += -b.dy * -across * 0.6 * k; vy[i] += b.dx * -across * 0.6 * k;
-    }
+    const dx = x[i] - b.cx, dy = y[i] - b.cy;
+    const along = dx * b.dx + dy * b.dy, across = -dx * b.dy + dy * b.dx;
+    if (Math.abs(along) > b.half || Math.abs(across) > b.width / 2 || z[i] > r[i] + 0.6) return;
+    if (this.asleep[i]) this.wake(i);
+    const k = 0.12;
+    vx[i] += (b.dx * b.speed - vx[i]) * k; vy[i] += (b.dy * b.speed - vy[i]) * k;
+    // gathered toward the centre line, so the belt delivers to one place
+    vx[i] += -b.dy * -across * 0.6 * k; vy[i] += b.dx * -across * 0.6 * k;
   }
 
   private floor(i: number, collect: (kind: number, x: number, y: number) => void) {
