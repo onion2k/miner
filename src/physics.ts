@@ -17,10 +17,14 @@
  */
 import { COLS, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from './cave';
 
-export const KIND_VALUE = [1, 10, 25, 40, 100];
-/** Collision radius per kind: coin, ruby, emerald, sapphire, diamond. */
-export const KIND_RADIUS = [0.42, 1.0, 1.0, 1.0, 1.15];
-export const KIND_NAME = ['coin', 'ruby', 'emerald', 'sapphire', 'diamond'];
+export const KIND_VALUE = [1, 10, 25, 40, 100, 250];
+/** Collision radius per kind: coin, ruby, emerald, sapphire, diamond, gold bar. */
+export const KIND_RADIUS = [0.42, 1.0, 1.0, 1.0, 1.15, 0.8];
+export const KIND_NAME = ['coin', 'ruby', 'emerald', 'sapphire', 'diamond', 'gold bar'];
+/** How many kinds of thing there are to push. */
+export const KINDS = KIND_VALUE.length;
+/** The gold bar, found only in the hidden chambers. */
+export const BAR = 5;
 const MAX_RADIUS = Math.max(...KIND_RADIUS);
 
 const STEP = 1 / 120;

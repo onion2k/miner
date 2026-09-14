@@ -78,6 +78,13 @@ export class Dozer {
   trackLeft = 0;
   trackRight = 0;
   solid: Uint8Array;
+  /**
+   * Told of each rock tile the machine is up against, with how square on it
+   * is driving at it: 1 straight at it, 0 along it, below 0 away. Before the
+   * rock slows it, so its speed is what it hit the rock at. The player's
+   * machine has one, for the rock that breaks; the robo-dozers do not.
+   */
+  onRock: ((tx: number, ty: number, square: number) => void) | null = null;
 
   /**
    * `scale` is the whole machine's size against the player's: the robo-dozers
@@ -161,6 +168,7 @@ export class Dozer {
           const d = Math.hypot(dx, dy);
           if (d >= reach || d < 1e-4) continue;
           const out = reach - d;
+          if (pass === 0 && this.onRock) this.onRock(nx, ny, -((Math.cos(this.yaw) * dx + Math.sin(this.yaw) * dy) / d) * Math.sign(this.speed));
           this.x += (dx / d) * out; this.y += (dy / d) * out;
           pushX += (dx / d) * out; pushY += (dy / d) * out;
         }

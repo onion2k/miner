@@ -5,9 +5,17 @@
  * whatever is still in it. Saved in the browser, so the cave is where you
  * left it.
  */
-import { AREAS, ORDER } from './cave';
+import { AREAS, ORDER, SECRETS } from './cave';
 import type { DozerSpec } from './dozer';
-import { KIND_VALUE } from './physics';
+import { KINDS, KIND_VALUE } from './physics';
+
+/**
+ * Where a body came from, for what is left of it: a room, by its index, or a
+ * hidden chamber, after the rooms. A chamber's loot is kept apart from its
+ * room's so it never counts toward clearing it.
+ */
+export const SOURCES = AREAS.length + SECRETS.length;
+export const chamberSource = (k: number) => AREAS.length + k;
 
 export interface Save {
   bank: number;
@@ -25,8 +33,10 @@ export interface Save {
   flag: boolean;
   /** The room being cleared. */
   room: number;
-  /** How many of each kind from each room are still in the cave, so a reload puts back what is left and not the lot. Empty when unknown. */
+  /** How many of each kind from each room, and each chamber, are still in the cave, so a reload puts back what is left and not the lot. Empty when unknown. */
   left: number[][];
+  /** Which hidden chambers have been broken into. */
+  secrets: boolean[];
   /** The last room is cleared too. */
   done: boolean;
 }
@@ -36,7 +46,7 @@ export const CLEAR_SHARE = 0.9;
 
 /** What a room's heaps are worth, and how many of each kind they hold. */
 export function roomStock(area: number): { value: number; kinds: number[] } {
-  const kinds = [0, 0, 0, 0, 0];
+  const kinds = new Array<number>(KINDS).fill(0);
   for (const h of AREAS[area].heaps) {
     kinds[0] += h.coins;
     for (const [k, n] of h.gems) kinds[k] += n;
@@ -103,12 +113,12 @@ export class Economy {
   private wiped = false;
 
   constructor() {
-    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false, room: ORDER[0], left: AREAS.map(() => []), done: false };
+    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false, room: ORDER[0], left: Array.from({ length: SOURCES }, () => []), secrets: SECRETS.map(() => false), done: false };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const s = JSON.parse(raw) as Omit<Partial<Save>, 'left'> & { left?: number[] | number[][] };
-        this.save = { ...this.save, ...s, areas: [true, ...(s.areas ?? []).slice(1)], belts: s.belts ?? this.save.belts, left: this.save.left };
+        this.save = { ...this.save, ...s, areas: [true, ...(s.areas ?? []).slice(1)], belts: s.belts ?? this.save.belts, left: this.save.left, secrets: SECRETS.map((_, k) => s.secrets?.[k] ?? false) };
         // a save from before an area existed has it shut
         while (this.save.areas.length < AREAS.length) this.save.areas.push(false);
         while (this.save.belts.length < AREAS.length) this.save.belts.push(false);
@@ -121,7 +131,7 @@ export class Economy {
           ORDER.forEach((a, n) => { this.save.areas[a] = n === 0 || n === furthest; });
           if (s.left?.length === 5 && typeof s.left[0] === 'number') this.save.left[this.save.room] = s.left as number[];
         } else if (Array.isArray(s.left)) {
-          this.save.left = AREAS.map((_, a) => (s.left as number[][])[a] ?? []);
+          this.save.left = Array.from({ length: SOURCES }, (_, a) => (s.left as number[][])[a] ?? []);
         }
       }
     } catch { /* a browser with no storage plays from the start */ }
@@ -179,6 +189,14 @@ export class Economy {
     const e = ENGINE[this.save.engine];
     const m = MAGNET[this.save.magnet];
     return { maxSpeed: e.maxSpeed, accel: e.accel, turnRate: e.turnRate, bladeWidth: BLADE[this.save.blade].width, magnetRadius: m.radius, magnetStrength: m.strength };
+  }
+
+  /** A hidden chamber broken into. */
+  reveal(k: number) {
+    if (this.save.secrets[k]) return;
+    this.save.secrets[k] = true;
+    this.persist();
+    for (const fn of this.listeners) fn(`secret${k}`);
   }
 
   /** Something to do when a purchase lands or a room opens: the game rebuilds what changed. */

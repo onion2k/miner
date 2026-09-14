@@ -21,10 +21,13 @@ export const ORIGIN_Y = -(ROWS / 2 + 0.5) * TILE;
 export const ROCK = 0, OPEN = 1;
 /** A gate tile's value is GATE + the index of the area it opens. */
 export const GATE = 2;
+/** A hidden chamber's tiles, and the rock that breaks to open it, are SECRET + the chamber's index. */
+export const SECRET = 16;
 
 export const HOLE = { x: 0, y: 0, radius: 5.5, depth: 14 };
 
-export type GemKind = 1 | 2 | 3 | 4;
+/** Past the coins: ruby, emerald, sapphire, diamond, and the gold bar, which only the hidden chambers hold. */
+export type GemKind = 1 | 2 | 3 | 4 | 5;
 
 export interface Heap {
   x: number; y: number;
@@ -127,6 +130,43 @@ export const AREAS: Area[] = [
 /** The order the rooms open in, one when the one before is cleared: by what is in them. */
 export const ORDER = [0, 1, 3, 2, 4];
 
+/**
+ * A hidden chamber off a room: rock that looks like any other, until the
+ * player drives square into the stretch of it that is thin, which smashes
+ * and opens a pocket with gold bars in it. What is in one is over and above
+ * the room: it does not count toward clearing it, and it goes with the room
+ * when the room is sealed.
+ *
+ * In tiles, counted as the map is: `wall` is the rock that breaks, from the
+ * room's edge to the chamber; `chamber` the pocket behind it, carved as the
+ * rooms are. Each is kept two tiles and more from any other open floor, so
+ * nothing else shows it and nothing else reaches it.
+ */
+export interface Secret {
+  /** The room it is off. */
+  area: number;
+  wall: [number, number, number, number];
+  chamber: { cx: number; cy: number; rx: number; ry: number; seed: number };
+  loot: { coins: number; gems: [GemKind, number][] };
+}
+
+export const SECRETS: Secret[] = [
+  // off the south gallery's east end
+  { area: 1, wall: [52, 5, 53, 6], chamber: { cx: 56.5, cy: 5.5, rx: 3.2, ry: 2.2, seed: 1.1 }, loot: { coins: 60, gems: [[2, 6], [5, 3]] } },
+  // off the north vault's west end
+  { area: 2, wall: [19, 29, 20, 30], chamber: { cx: 15.5, cy: 30.5, rx: 3.2, ry: 2.2, seed: 2.7 }, loot: { coins: 80, gems: [[4, 3], [5, 5]] } },
+  // above the east gallery's north end
+  { area: 3, wall: [64, 29, 65, 30], chamber: { cx: 63, cy: 32, rx: 3.5, ry: 1.8, seed: 0.6 }, loot: { coins: 80, gems: [[3, 6], [5, 4]] } },
+  // below the west gallery's south end
+  { area: 4, wall: [7, 7, 8, 8], chamber: { cx: 8, cy: 4.5, rx: 3.5, ry: 2.2, seed: 3.9 }, loot: { coins: 100, gems: [[4, 5], [5, 6]] } },
+];
+
+/** Where a chamber's middle is in the world, for its loot. */
+export function chamberCentre(k: number): [number, number] {
+  const { cx, cy } = SECRETS[k].chamber;
+  return [ORIGIN_X + (cx + 0.5) * TILE, ORIGIN_Y + (cy + 0.5) * TILE];
+}
+
 /** The most bodies the cave can hold: every heap plus what the veins add. */
 export const BODY_CAPACITY = 10000;
 
@@ -139,23 +179,34 @@ export function hash(a: number, b: number, c = 0): number {
 
 export interface Cave {
   cells: Uint8Array;
-  /** A rock tile's cell is 1; a gate's is 1 until its area is bought. */
-  solid(unlocked: boolean[]): Uint8Array;
+  /**
+   * A rock tile's cell is 1; a gate's is 1 until its area is opened, and a
+   * hidden chamber's, and the rock in front of it, until it is broken into.
+   */
+  solid(unlocked: boolean[], revealed?: boolean[]): Uint8Array;
 }
 
-function carveEllipse(cells: Uint8Array, cx: number, cy: number, rx: number, ry: number, seed: number) {
+/** Whether a cell is rock to look at: rock, or a chamber not yet broken into. */
+function rockish(cell: number, revealed: boolean[]): boolean {
+  return cell === ROCK || (cell >= SECRET && !revealed[cell - SECRET]);
+}
+
+/** The ellipse's tiles set to `value`; with `onlyRock`, only those that were rock. */
+function carveEllipse(cells: Uint8Array, cx: number, cy: number, rx: number, ry: number, seed: number, value = OPEN, onlyRock = false) {
   for (let ty = 1; ty < ROWS - 1; ty++) {
     for (let tx = 1; tx < COLS - 1; tx++) {
       const dx = (tx - cx) / rx, dy = (ty - cy) / ry;
       const th = Math.atan2(dy, dx);
       const wobble = 1 + 0.09 * Math.sin(3 * th + seed) + 0.06 * Math.sin(7 * th + seed * 2.3);
-      if (dx * dx + dy * dy < wobble * wobble) cells[ty * COLS + tx] = OPEN;
+      if (dx * dx + dy * dy < wobble * wobble && (!onlyRock || cells[ty * COLS + tx] === ROCK)) cells[ty * COLS + tx] = value;
     }
   }
 }
 
-function carveRect(cells: Uint8Array, x0: number, y0: number, x1: number, y1: number, value = OPEN) {
-  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) cells[ty * COLS + tx] = value;
+function carveRect(cells: Uint8Array, x0: number, y0: number, x1: number, y1: number, value = OPEN, onlyRock = false) {
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) if (!onlyRock || cells[ty * COLS + tx] === ROCK) cells[ty * COLS + tx] = value;
+  }
 }
 
 export function buildCave(): Cave {
@@ -182,13 +233,18 @@ export function buildCave(): Cave {
   carveEllipse(cells, C - 27, R - 1, 5, 9, 2.2);
   carveRect(cells, C - 22, R - 2, C - 17, R + 1);
   carveRect(cells, C - 19, R - 2, C - 19, R + 1, GATE + 4);
+  // the hidden chambers, in what is left of the rock
+  SECRETS.forEach(({ wall, chamber: c }, k) => {
+    carveEllipse(cells, c.cx, c.cy, c.rx, c.ry, c.seed, SECRET + k, true);
+    carveRect(cells, wall[0], wall[1], wall[2], wall[3], SECRET + k, true);
+  });
   return {
     cells,
-    solid(unlocked) {
+    solid(unlocked, revealed = []) {
       const out = new Uint8Array(COLS * ROWS);
       for (let i = 0; i < cells.length; i++) {
         const c = cells[i];
-        out[i] = c === OPEN ? 0 : c >= GATE ? (unlocked[c - GATE] ? 0 : 1) : 1;
+        out[i] = c === OPEN ? 0 : c >= SECRET ? (revealed[c - SECRET] ? 0 : 1) : c >= GATE ? (unlocked[c - GATE] ? 0 : 1) : 1;
       }
       return out;
     },
@@ -204,18 +260,18 @@ export interface WallInstance {
 }
 
 /** The rock tiles worth drawing: those within two of an open tile. */
-export function wallInstances(cave: Cave): WallInstance[] {
+export function wallInstances(cave: Cave, revealed: boolean[] = []): WallInstance[] {
   const out: WallInstance[] = [];
   const { cells } = cave;
   for (let ty = 0; ty < ROWS; ty++) {
     for (let tx = 0; tx < COLS; tx++) {
-      if (cells[ty * COLS + tx] !== ROCK) continue;
+      if (!rockish(cells[ty * COLS + tx], revealed)) continue;
       let ring = 3;
       for (let dy = -2; dy <= 2 && ring > 0; dy++) {
         for (let dx = -2; dx <= 2; dx++) {
           const nx = tx + dx, ny = ty + dy;
           if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-          if (cells[ny * COLS + nx] !== ROCK) ring = Math.min(ring, Math.max(Math.abs(dx), Math.abs(dy)) - 1);
+          if (!rockish(cells[ny * COLS + nx], revealed)) ring = Math.min(ring, Math.max(Math.abs(dx), Math.abs(dy)) - 1);
         }
       }
       if (ring > 1) continue;
@@ -238,12 +294,12 @@ export function gateTiles(cave: Cave, area: number): [number, number][] {
   return out;
 }
 
-/** Every open tile (gates included), for the floor. */
-export function floorTiles(cave: Cave): [number, number][] {
+/** Every open tile (gates included, chambers once broken into), for the floor. */
+export function floorTiles(cave: Cave, revealed: boolean[] = []): [number, number][] {
   const out: [number, number][] = [];
   for (let ty = 0; ty < ROWS; ty++) {
     for (let tx = 0; tx < COLS; tx++) {
-      if (cave.cells[ty * COLS + tx] === ROCK) continue;
+      if (rockish(cave.cells[ty * COLS + tx], revealed)) continue;
       const [x, y] = tileCentre(tx, ty);
       // the hole's collar covers these
       if (Math.abs(x - HOLE.x) < TILE * 2 && Math.abs(y - HOLE.y) < TILE * 2) continue;
@@ -259,7 +315,17 @@ export function floorTiles(cave: Cave): [number, number][] {
  * has no gate, and nobody goes on into it.
  */
 export function pastGate(area: number, x: number, y: number): boolean {
-  return area === 1 ? y < -46 : area === 2 ? y > 46 : area === 3 ? x > 94 : area === 4 ? x < -94 : false;
+  return inBand(area, x, y) && (area === 1 ? y < -46 : area === 2 ? y > 46 : area === 3 ? x > 94 : area === 4 ? x < -94 : false);
+}
+
+/**
+ * The band a room lies across, from the hollow out: the south gallery and the
+ * north vault across the middle, the galleries either side between them. It
+ * keeps a hidden chamber off one room, which lies out past the corner of
+ * another, from counting as the way into that other.
+ */
+function inBand(area: number, x: number, y: number): boolean {
+  return area === 1 || area === 2 ? Math.abs(x) < 60 : y > -40 && y < 36;
 }
 
 /** Where, down a room's corridor, going on seals the room behind: the line `pastGate` draws, in the corridor's middle. */
@@ -270,7 +336,7 @@ export function sealPoint(cave: Cave, area: number): [number, number] {
 
 /** Whether a point is up to a room's gate, or through it and not yet past: where going on is a turn of the wheel away. */
 export function atGate(area: number, x: number, y: number): boolean {
-  return area === 1 ? y < -22 : area === 2 ? y > 22 : area === 3 ? x > 62 : area === 4 ? x < -62 : false;
+  return inBand(area, x, y) && (area === 1 ? y < -22 : area === 2 ? y > 22 : area === 3 ? x > 62 : area === 4 ? x < -62 : false);
 }
 
 /** Whether a machine at a point would be shut in, or in the rock, when a room's gate closes. */

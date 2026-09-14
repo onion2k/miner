@@ -19,6 +19,12 @@ still in it. Up at the gate the game says so, and the line that seals it
 glows red. Only a room or two is ever in play, so a cave that has been worked
 through does not weigh on the frame.
 
+Off each gallery a stretch of the wall looks like any other rock and is not.
+Knock into it and it sounds hollow; drive square into it at speed and it
+smashes, and behind it is a hidden chamber with gold bars in it. What is in a
+chamber does not count toward clearing the room, and whatever is still in it
+when the room is sealed is gone with the room.
+
 The drones work the room being cleared, finding their way round the rock and
 the heaps, and give a loaded machine the road. With a belt running they push
 a load to whichever is nearer, the belt or the hole, and leave the belt to
@@ -45,6 +51,7 @@ It needs a browser with WebGPU.
     npm run sim                                  # the south gallery, three drones, two minutes, seeds 1-8
     npm run sim -- --room 3 --belt               # the east gallery, with its belt running
     npm run sim -- --room 1 --player patrol      # the player driving in and out through the drones
+    npm run sim -- --room 2 --secret             # the north vault with its hidden chamber broken into
     npm run sim -- --drones 1 --seconds 300 --seeds 1-3 --each
 
 The game without the picture: the same cave, physics, machines and drone code,

@@ -102,6 +102,48 @@ export class Sound {
     });
   }
 
+  /** A knock on rock with nothing behind it: hollow, a low note with a ring to it, where solid rock only thuds. */
+  knock() {
+    const ctx = this.ctx; if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    for (const [f, vol, decay] of [[95, 0.5, 0.35], [190, 0.18, 0.22], [310, 0.08, 0.3]] as const) {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f * 1.15, now);
+      osc.frequency.exponentialRampToValueAtTime(f, now + 0.05);
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + decay);
+      osc.connect(gain).connect(this.master);
+      osc.start(now); osc.stop(now + decay + 0.05);
+    }
+  }
+
+  /** Rock giving way: a crack, the stone coming down after it, and a boom under both. */
+  smash() {
+    const ctx = this.ctx; if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 1.2, ctx.sampleRate);
+    const d = buffer.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const t = i / d.length;
+      // a sharp front, then a patter of pieces landing that thins out
+      d[i] = (Math.random() * 2 - 1) * (Math.pow(1 - t, 4) + (Math.random() < 0.004 * (1 - t) ? 0.8 : 0));
+    }
+    const src = ctx.createBufferSource(); src.buffer = buffer;
+    const filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 1600;
+    const gain = ctx.createGain(); gain.gain.value = 0.8;
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(now);
+    const boom = ctx.createOscillator(), boomGain = ctx.createGain();
+    boom.type = 'sine';
+    boom.frequency.setValueAtTime(90, now);
+    boom.frequency.exponentialRampToValueAtTime(35, now + 0.6);
+    boomGain.gain.setValueAtTime(0.7, now);
+    boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    boom.connect(boomGain).connect(this.master);
+    boom.start(now); boom.stop(now + 0.9);
+  }
+
   /** The rock cracking, before a fountain. */
   crack() {
     const ctx = this.ctx; if (!ctx || !this.master) return;

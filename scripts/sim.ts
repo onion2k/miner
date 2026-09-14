@@ -8,6 +8,7 @@
  *   npm run sim                                   the south gallery, three drones, two minutes, seeds 1-8
  *   npm run sim -- --room 3 --belt                the east gallery, with its belt running
  *   npm run sim -- --room 1 --player patrol       the player driving in and out through the drones
+ *   npm run sim -- --room 2 --secret                the north vault with its hidden chamber broken into
  *   npm run sim -- --drones 1 --seconds 300 --seeds 1-3 --each
  *
  * What it reports, per seed with --each and as a mean:
@@ -18,13 +19,14 @@
  *   held       how much of the time a loaded drone was held up by another drone in front of it
  *   yielding   how much of the time drones were out of another's way rather than working
  *   player     with --player patrol: its mean speed, trips made, and how often a drone blocked it
+ *   chamber    with --secret: what came out of the hidden chamber, and how many of its gold bars
  */
-import { AREAS, BODY_CAPACITY, HOLE, buildCave, gateCentre } from '../src/cave';
-import { World, KIND_VALUE, type Pusher } from '../src/physics';
+import { AREAS, BODY_CAPACITY, HOLE, SECRETS, buildCave, chamberCentre, gateCentre, type Heap } from '../src/cave';
+import { World, BAR, KIND_VALUE, type Pusher } from '../src/physics';
 import { Dozer, BLADE_AT, separate } from '../src/dozer';
 import { Bot, BOT_SCALE, BOT_SPEC, Foreman, beltOf } from '../src/tools';
 import { Nav } from '../src/nav';
-import { roomStock } from '../src/economy';
+import { chamberSource, roomStock } from '../src/economy';
 
 declare const process: { argv: string[]; exit(code: number): never };
 
@@ -52,6 +54,7 @@ function options() {
     seconds: +value('seconds', '120'),
     belt: args.includes('--belt'),
     patrol: value('player', 'park') === 'patrol',
+    secret: args.includes('--secret'),
     each: args.includes('--each'),
   };
 }
@@ -66,20 +69,25 @@ function run(opts: ReturnType<typeof options>, seed: number) {
   seedRandom(seed);
   const { room } = opts;
   const cave = buildCave();
-  const world = new World(BODY_CAPACITY, cave.solid(AREAS.map((_, a) => a === 0 || a === room)));
-  // the room's heaps, as the game drops them
+  const secret = SECRETS.findIndex((sc) => sc.area === room);
+  const revealed = SECRETS.map((_, k) => opts.secret && k === secret);
+  const world = new World(BODY_CAPACITY, cave.solid(AREAS.map((_, a) => a === 0 || a === room), revealed));
+  // the room's heaps, as the game drops them, and the chamber's loot if it is open
   const origin = new Uint8Array(BODY_CAPACITY);
-  for (const h of AREAS[room].heaps) {
+  const dropHeap = (h: Heap, from: number) => {
     const R = Math.sqrt(h.coins) * 0.36 + 1.5, H = Math.sqrt(h.coins) * 0.3 + 1.5;
     const drop = (kind: number) => {
       const z = 1 + Math.random() * H;
       const rr = R * (1 - z / (H + 2)) * Math.sqrt(Math.random()), a = Math.random() * Math.PI * 2;
       const i = world.spawn(kind, h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr, z);
-      if (i >= 0) origin[i] = room;
+      if (i >= 0) origin[i] = from;
     };
     for (let k = 0; k < h.coins; k++) drop(0);
     for (const [kind, n] of h.gems) for (let k = 0; k < n; k++) drop(kind);
-  }
+  };
+  for (const h of AREAS[room].heaps) dropHeap(h, room);
+  const loot = opts.secret && secret >= 0 ? { ...SECRETS[secret].loot, x: chamberCentre(secret)[0], y: chamberCentre(secret)[1] } : null;
+  if (loot) dropHeap(loot, chamberSource(secret));
   for (let i = 0; i < 90; i++) world.step(DT, () => {});
   if (opts.belt && AREAS[room].belt) world.belts = [beltOf(AREAS[room].belt!.spec)];
 
@@ -90,7 +98,7 @@ function run(opts: ReturnType<typeof options>, seed: number) {
   for (let i = 0; i < opts.drones; i++) bots.push(new Bot(world.solid, i + 1, HOLE.x + 14 + i * 6, HOLE.y + 10));
   const traffic = { bots, player };
   let t = 0;
-  const foreman = new Foreman(world, nav, bots, origin, () => room);
+  const foreman = new Foreman(world, nav, bots, origin, (from) => from === room || (secret >= 0 && from === chamberSource(secret)));
   const choose = (bot: Bot) => foreman.choose(bot, t);
 
   // the player: parked out of the way, or driving between the hole and the middle of the room's heaps
@@ -102,7 +110,7 @@ function run(opts: ReturnType<typeof options>, seed: number) {
   let leg = 0;
   if (opts.patrol) { player.x = nearHole[0]; player.y = nearHole[1]; } else { player.x = -40; player.y = 16; }
 
-  let banked = 0;
+  let banked = 0, fromChamber = 0, barsOut = 0;
   const ends = { hole: 0, belt: 0, lost: 0, backUp: 0 };
   let touching = 0, pushSamples = 0, held = 0, yielding = 0, samples = 0;
   let playerSpeed = 0, playerMoving = 0, trips = 0, blocked = 0;
@@ -151,7 +159,10 @@ function run(opts: ReturnType<typeof options>, seed: number) {
       const c = Math.cos(player.yaw), s = Math.sin(player.yaw);
       world.wakeNear(player.x + c * BLADE_AT, player.y + s * BLADE_AT, PLAYER_SPEC.bladeWidth * 0.75 + 1.5);
     }
-    world.step(DT, (kind) => { banked += KIND_VALUE[kind]; });
+    world.step(DT, (kind, _x, _y, i) => {
+      banked += KIND_VALUE[kind];
+      if (origin[i] === chamberSource(secret)) { fromChamber += KIND_VALUE[kind]; if (kind === BAR) barsOut++; }
+    });
 
     if (f % 6 === 0) {
       samples++;
@@ -181,6 +192,7 @@ function run(opts: ReturnType<typeof options>, seed: number) {
     seed, banked, share: pct(banked, roomStock(room).value), ...ends, touching,
     held: pct(held, pushSamples), yielding: pct(yielding, samples * Math.max(1, bots.length)),
     playerSpeed: playerMoving ? playerSpeed / playerMoving : 0, trips, blocked,
+    fromChamber, barsOut, bars: loot ? (loot.gems.find(([k]) => k === BAR)?.[1] ?? 0) : 0,
   };
 }
 
@@ -189,12 +201,13 @@ function line(r: Omit<Row, 'seed'>, patrol: boolean) {
   const f = (n: number, d = 0) => n.toFixed(d);
   return `banked ${f(r.banked).padStart(4)} (${f(r.share, 1)}%)  pushes: hole ${f(r.hole, 1)} belt ${f(r.belt, 1)} lost ${f(r.lost, 1)} backUp ${f(r.backUp, 1)}`
     + `  touching ${f(r.touching, 1)}  held ${f(r.held, 1)}%  yielding ${f(r.yielding, 1)}%`
-    + (patrol ? `  player: speed ${f(r.playerSpeed, 2)} trips ${f(r.trips, 1)} blocked ${f(r.blocked, 1)}` : '');
+    + (patrol ? `  player: speed ${f(r.playerSpeed, 2)} trips ${f(r.trips, 1)} blocked ${f(r.blocked, 1)}` : '')
+    + (r.bars ? `  chamber: ${f(r.fromChamber)} banked, ${f(r.barsOut, 1)} of ${f(r.bars)} bars` : '');
 }
 
 const opts = options();
 const started = performance.now();
-console.log(`${AREAS[opts.room].name}${opts.belt ? ' with its belt' : ''}, ${opts.drones} drone${opts.drones === 1 ? '' : 's'}, ${opts.seconds} s, seeds ${opts.seeds.join(',')}${opts.patrol ? ', player patrolling' : ''}`);
+console.log(`${AREAS[opts.room].name}${opts.belt ? ' with its belt' : ''}${opts.secret ? ' and its chamber open' : ''}, ${opts.drones} drone${opts.drones === 1 ? '' : 's'}, ${opts.seconds} s, seeds ${opts.seeds.join(',')}${opts.patrol ? ', player patrolling' : ''}`);
 const rows = opts.seeds.map((seed) => {
   const r = run(opts, seed);
   if (opts.each) console.log(`  seed ${String(seed).padStart(2)}  ${line(r, opts.patrol)}`);

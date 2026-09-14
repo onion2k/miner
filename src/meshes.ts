@@ -34,6 +34,25 @@ function tri(b: MeshBuilder, p0: V3, p1: V3, p2: V3) {
 }
 
 /**
+ * A gold bar: an ingot, its top narrower than its base on every side, `length`
+ * along X, `width` along Y and `height` up Z, centred in X and Y. It stands
+ * `lift` below its middle, so a bar the physics holds at its collision radius
+ * above the floor lies on the floor.
+ */
+export function bar(length: number, width: number, height: number, lift: number): Mesh {
+  const b = new MeshBuilder();
+  const x0 = length / 2, y0 = width / 2, x1 = x0 - height * 0.35, y1 = y0 - height * 0.35;
+  const z0 = -lift, z1 = z0 + height;
+  face(b, [-x1, -y1, z1], [x1, -y1, z1], [x1, y1, z1], [-x1, y1, z1]);       // top
+  face(b, [-x0, y0, z0], [x0, y0, z0], [x0, -y0, z0], [-x0, -y0, z0]);       // bottom
+  face(b, [-x0, -y0, z0], [x0, -y0, z0], [x1, -y1, z1], [-x1, -y1, z1]);     // -y
+  face(b, [x0, y0, z0], [-x0, y0, z0], [-x1, y1, z1], [x1, y1, z1]);         // +y
+  face(b, [x0, -y0, z0], [x0, y0, z0], [x1, y1, z1], [x1, -y1, z1]);         // +x
+  face(b, [-x0, y0, z0], [-x0, -y0, z0], [-x1, -y1, z1], [-x1, y1, z1]);     // -x
+  return b.build();
+}
+
+/**
  * A box `w` across X, `d` along Y and `h` up Z, centred in X and Y and
  * standing on z = 0 unless `centred`, in which case it is centred in Z too.
  */

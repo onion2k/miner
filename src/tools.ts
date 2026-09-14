@@ -34,6 +34,8 @@ const NO_HEADWAY = 3;
 const SET_BACK = 5.5;
 /** More coins than this on the tile where it would set up, and the coin is buried in a heap. */
 const BURIED = 8;
+/** Worth this much or more, and a thing is worth setting up in the middle of a heap to push: a diamond, a gold bar. */
+const DEAR = 100;
 
 type BotState = 'seek' | 'approach' | 'push' | 'backUp' | 'retreat';
 
@@ -169,11 +171,18 @@ export class Bot {
     let ux = on[0] - cx, uy = on[1] - cy;
     const len = Math.hypot(ux, uy) || 1;
     ux /= len; uy /= len;
+    // Straight behind it, and then nearer. Not in the rock, and not in the middle of a heap, where
+    // behind a coin is more heap. A dear enough thing is worth more trouble: set up in a heap for it,
+    // or at a slant, where straight behind is rock — a hidden chamber, a corner — since a push from
+    // the side still moves it out to where it can be pushed again.
+    const dear = KIND_VALUE[world.kind[i]] >= DEAR;
     for (const back of [SET_BACK, SET_BACK * 0.6]) {
-      const sx = cx - ux * back, sy = cy - uy * back;
-      // not in the rock, and not in the middle of a heap: behind a coin buried in one is more heap
-      const t = nav.tileOf(sx, sy);
-      if (nav.clear(sx, sy, sx, sy, CLEARANCE * 0.8) && t >= 0 && nav.crowd[t] <= BURIED) return [sx, sy];
+      for (const turn of dear ? [0, 0.5, -0.5, 1, -1] : [0]) {
+        const c = Math.cos(turn), s = Math.sin(turn);
+        const sx = cx - (ux * c - uy * s) * back, sy = cy - (ux * s + uy * c) * back;
+        const t = nav.tileOf(sx, sy);
+        if (nav.clear(sx, sy, sx, sy, CLEARANCE * 0.8) && t >= 0 && (dear || nav.crowd[t] <= BURIED)) return [sx, sy];
+      }
     }
     return null;
   }
@@ -310,9 +319,10 @@ export class Foreman {
     private readonly world: World,
     private readonly nav: Nav,
     private readonly bots: Bot[],
-    /** The room each body came from, by slot. */
+    /** Where each body came from, by slot: a room, or a hidden chamber after the rooms. */
     private readonly origin: Uint8Array,
-    private readonly room: () => number,
+    /** Whether bodies from a place are the drones' to work: the room being cleared, and what is broken into off it. */
+    private readonly works: (from: number) => boolean,
   ) {}
 
   /** The coin for a machine to go for, or -1 with nothing worth it; `now` is the game's clock, in seconds. */
@@ -321,10 +331,9 @@ export class Foreman {
     if (now - this.listedAt > 0.5) {
       this.listedAt = now;
       nav.count(world.count, world.alive, world.x, world.y);
-      const room = this.room();
       this.workable = [];
       for (let i = 0; i < world.count; i++) {
-        if (!world.alive[i] || this.origin[i] !== room || world.z[i] < 0) continue;
+        if (!world.alive[i] || !this.works(this.origin[i]) || world.z[i] < 0) continue;
         if (Math.hypot(world.x[i] - HOLE.x, world.y[i] - HOLE.y) < STOP_AT + 4) continue;
         // on a belt, and on its way
         if (nav.onBelt(world.x[i], world.y[i])) continue;

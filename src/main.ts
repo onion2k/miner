@@ -10,23 +10,26 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer, EFFECT_STRIDE, MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import { LightPool } from 'artshape-render/game/lights';
 import { mergeMeshes } from 'artshape-render/mesh/types';
-import { AREAS, BODY_CAPACITY, HOLE, ORDER, TILE, atGate, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, sealPoint, wallInstances, type Heap, type Vein } from './cave';
-import { World, KIND_NAME, KIND_VALUE, type Pusher } from './physics';
+import { AREAS, BODY_CAPACITY, COLS, HOLE, ORDER, SECRET, SECRETS, TILE, atGate, chamberCentre, tileCentre, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, sealPoint, wallInstances, type Heap, type Vein } from './cave';
+import { World, BAR, KINDS, KIND_NAME, KIND_RADIUS, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces, separate } from './dozer';
 import { Input } from './input';
 import { TouchControls, isTouchDevice } from './touch';
-import { CLEAR_SHARE, Economy, MAX_DRONES, renderShop, roomStock } from './economy';
+import { CLEAR_SHARE, Economy, MAX_DRONES, SOURCES, chamberSource, renderShop, roomStock } from './economy';
 import { Bot, BOT_SCALE, BOT_SPEC, Foreman, Fountain, beltOf } from './tools';
 import { Nav } from './nav';
 import { Sound } from './audio';
-import { COIN_LADDER, ball, box, coin, collar, cylinder, gem, moved, pit, tile, turned } from './meshes';
+import { COIN_LADDER, ball, bar, box, coin, collar, cylinder, gem, moved, pit, tile, turned } from './meshes';
 import { identity, hide, place, placePart, placeQuat, project } from './matrix';
 
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
 const MM_PER_UNIT = 100;
 const LIGHT_CAPACITY = 64;
 const EFFECT_CAPACITY = 32;
-const GEM_CAPACITY = [0, 320, 240, 260, 160];
+/** How many of each kind the cave can hold at once, past the coins; the last is gold bars. */
+const GEM_CAPACITY = [0, 320, 240, 260, 160, 40];
+/** Driving into the rock that breaks: square enough on, as the cosine off straight at it, and fast enough, to smash it. */
+const SMASH_SQUARE = 0.7, SMASH_SPEED = 6;
 const BOT_CAPACITY = MAX_DRONES;
 const TREAD_BARS = 9;
 const STRIPE_CAPACITY = 80;
@@ -108,7 +111,7 @@ async function main() {
 
   const economy = new Economy();
   const cave = buildCave();
-  const world = new World(BODY_CAPACITY, cave.solid(economy.save.areas));
+  const world = new World(BODY_CAPACITY, cave.solid(economy.save.areas, economy.save.secrets));
   const dozer = new Dozer(world.solid);
   const input = new Input();
   const sound = new Sound();
@@ -136,7 +139,7 @@ async function main() {
   };
 
   function buildStatic() {
-    const floor = floorTiles(cave);
+    const floor = floorTiles(cave, economy.save.secrets);
     const floorM = new Float32Array(floor.length * 16);
     const floorMat = new Float32Array(floor.length * MATERIAL_STRIDE);
     floor.forEach(([x, y], i) => {
@@ -144,7 +147,7 @@ async function main() {
       const h = hash(x, y, 3), warm = hash(x, y, 5);
       floorMat.set([0.3 + h * 0.06 + warm * 0.04, 0.21 + h * 0.04, 0.13 + h * 0.03, 0.95], i * MATERIAL_STRIDE);
     });
-    const walls = wallInstances(cave);
+    const walls = wallInstances(cave, economy.save.secrets);
     const wallM = new Float32Array(walls.length * 16);
     const wallMat = new Float32Array(walls.length * MATERIAL_STRIDE);
     walls.forEach((w, i) => {
@@ -191,7 +194,9 @@ async function main() {
 
   // ---- the dynamic half: coins, gems, the dozer, drones, belt stripes ----
 
-  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, BOT_HULL = 9, BOT_DARK = 10, BOT_BLADE = 11, STRIPES = 12, POLE = 13, FLAG = 14;
+  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, BOT_HULL = 9, BOT_DARK = 10, BOT_BLADE = 11, STRIPES = 12, POLE = 13, FLAG = 14, BARS = 15;
+  /** The dynamic group a kind of thing is drawn in. */
+  const groupOf = (kind: number) => (kind === BAR ? BARS : kind);
   const coinM = new Float32Array(BODY_CAPACITY * 16);
   const gemM = GEM_CAPACITY.map((n) => new Float32Array(Math.max(1, n) * 16));
   const hullM = new Float32Array(16), darkM = new Float32Array(16), bladeM = new Float32Array(16);
@@ -246,6 +251,8 @@ async function main() {
     { mesh: box(0.5, 1, 0.15), matrices: stripeM, count: 0, albedo: [0.9, 0.78, 0.3], roughness: 0.5 },
     { mesh: cylinder(0.09, 4.2, 6), matrices: poleM, count: 0, albedo: [0.3, 0.3, 0.32], roughness: 0.5 },
     { mesh: box(0.4, 0.06, 0.9, true), matrices: flagM, count: 0, albedo: flagColour(), roughness: 0.6 },
+    // a gold bar, lying on the floor where the physics holds its ball
+    { mesh: bar(2.6, 1.3, 0.9, KIND_RADIUS[BAR]), matrices: gemM[BAR], count: 0, albedo: [1.0, 0.72, 0.18], roughness: 0.18 },
   ];
   /** The pennant is red, unless the hull is: then it is white, so it shows. */
   function flagColour(): [number, number, number] {
@@ -256,11 +263,12 @@ async function main() {
 
   // ---- coins into the cave ----
 
-  // How many of each kind are in the cave, and how many of each from each room: kept in
-  // the save, so a reload puts back what is left. Each body remembers the room it came from.
+  // How many of each kind are in the cave, and how many of each from each room and hidden
+  // chamber: kept in the save, so a reload puts back what is left. Each body remembers where it
+  // came from.
   const saved = economy.save.left;
-  const left = economy.save.left = AREAS.map(() => [0, 0, 0, 0, 0]);
-  const kinds = [0, 0, 0, 0, 0];
+  const left = economy.save.left = Array.from({ length: SOURCES }, () => new Array<number>(KINDS).fill(0));
+  const kinds = new Array<number>(KINDS).fill(0);
   const origin = new Uint8Array(BODY_CAPACITY);
   function spawn(kind: number, x: number, y: number, z: number, vx = 0, vy = 0, vz = 0, from = economy.current()): boolean {
     if (kind > 0 && kinds[kind] >= GEM_CAPACITY[kind]) return false;
@@ -270,8 +278,8 @@ async function main() {
     kinds[kind]++; left[from][kind]++;
     return true;
   }
-  /** A room's heap, with `share[kind]` of each kind in it: all of them for a room just opened. */
-  function spawnHeap(area: number, h: Heap, share = [1, 1, 1, 1, 1]) {
+  /** A heap from a room or a chamber, with `share[kind]` of each kind in it: all of them for one just opened. */
+  function spawnHeap(area: number, h: Heap, share = new Array<number>(KINDS).fill(1)) {
     const coins = Math.round(h.coins * share[0]);
     const R = Math.sqrt(coins) * 0.36 + 1.5, H = Math.sqrt(coins) * 0.3 + 1.5;
     const drop = (kind: number) => {
@@ -292,16 +300,29 @@ async function main() {
   const banked = (a: number) => Math.max(0, Math.min(1, 1 - lying(a) / stocks[a].value));
   /** "the South Gallery", "the Hollow". */
   const the = (a: number) => `the ${AREAS[a].name.replace(/^The /, '')}`;
+  /** A hidden chamber's loot, as a heap in the middle of it. */
+  const lootHeap = (k: number): Heap => { const [x, y] = chamberCentre(k); return { x, y, ...SECRETS[k].loot }; };
+  /** What was saved as left of a source, or null if nothing was; a save from before the gold bars has one kind fewer. */
+  const hadOf = (a: number) => (saved[a]?.length >= 5 ? Array.from({ length: KINDS }, (_, k) => saved[a][k] ?? 0) : null);
   // The rooms not sealed are put back, as much of each as was left, the heaps smaller where they started.
   // A room with nothing saved is put back whole, unless the cave is done and the last room was emptied long ago.
+  // So are the hidden chambers broken into off them, from what was left of each.
   {
     const next = economy.next();
     for (const a of [economy.current(), ...(next !== null && economy.nextOpen() ? [next] : [])]) {
-      const had = saved[a]?.length === 5 ? saved[a] : null;
+      const had = hadOf(a);
       if (!had && economy.save.done) continue;
       const share = stocks[a].kinds.map((n, k) => (had && n ? Math.min(1, had[k] / n) : 1));
       AREAS[a].heaps.forEach((h) => spawnHeap(a, h, share));
     }
+    SECRETS.forEach((secret, k) => {
+      if (!economy.save.secrets[k] || economy.sealed(secret.area)) return;
+      const heap = lootHeap(k), had = hadOf(chamberSource(k));
+      const stock = new Array<number>(KINDS).fill(0);
+      stock[0] = heap.coins;
+      for (const [kind, n] of heap.gems) stock[kind] += n;
+      spawnHeap(chamberSource(k), heap, stock.map((n, kind) => (had && n ? Math.min(1, had[kind] / n) : 1)));
+    });
   }
   // a moment of settling before anyone sees it, so the heaps are heaps
   for (let i = 0; i < 90; i++) world.step(1 / 60, () => {});
@@ -337,7 +358,7 @@ async function main() {
   /** A run: everything that has gone in without a pause longer than a moment. */
   let holePulse = 0;
   let runValue = 0, runCount = 0, runTimer = 0;
-  const gained: number[] = [0, 0, 0, 0, 0];
+  const gained = new Array<number>(KINDS).fill(0);
   /** How fast value is arriving, in coins a second, smoothed: what the cascade scales by. */
   let flow = 0;
   function collect(kind: number, x: number, y: number, i: number) {
@@ -350,7 +371,7 @@ async function main() {
     const heat = Math.min(1, flow / 25);
     holePulse = Math.min(3, holePulse + 0.2 + heat * 0.5 + (kind > 0 ? 0.7 : 0));
     if (kind > 0) sound.thunk(value); else sound.clink(runCount);
-    const gold: [number, number, number] = kind === 0 ? [1.6, 1.2, 0.4] : (dynamic[kind].albedo as [number, number, number]).map((c) => c * 2) as [number, number, number];
+    const gold: [number, number, number] = kind === 0 ? [1.6, 1.2, 0.4] : (dynamic[groupOf(kind)].albedo as [number, number, number]).map((c) => c * 2) as [number, number, number];
     renderer.emit({
       position: [x, y, 0.5], velocity: [0, 0, 12 + heat * 10], spread: 6 + heat * 6, count: (kind > 0 ? 40 : 8) + Math.round(heat * 30),
       life: 0.9 + heat * 0.5, lifeSpread: 0.4, size: (kind > 0 ? 0.45 : 0.3) + heat * 0.15, growth: -0.2, colour: gold, alpha: 0, gravity: 0.8, floor: -30,
@@ -358,7 +379,7 @@ async function main() {
   }
   function showRun() {
     const parts: string[] = [];
-    for (let k = 0; k < 5; k++) {
+    for (let k = 0; k < KINDS; k++) {
       if (!gained[k]) continue;
       parts.push(`${gained[k]} ${KIND_NAME[k]}${gained[k] > 1 ? 's' : ''}`);
     }
@@ -387,6 +408,30 @@ async function main() {
       resetButton.classList.remove('armed');
     }, 4000);
   });
+  /**
+   * A hidden chamber broken into: the stone in front of it bursts into chips
+   * that fly on the way the dozer was going, a cloud of dust hangs where it
+   * was, and the chamber is floor, with its loot in it.
+   */
+  function smashOpen(k: number) {
+    const faces: [number, number][] = [];
+    for (let i = 0; i < cave.cells.length; i++) {
+      if (cave.cells[i] !== SECRET + k) continue;
+      const tx = i % COLS, ty = (i / COLS) | 0, [w0x, w0y, w1x, w1y] = SECRETS[k].wall;
+      if (tx >= w0x && tx <= w1x && ty >= w0y && ty <= w1y) faces.push(tileCentre(tx, ty));
+    }
+    const c = Math.cos(dozer.yaw), sn = Math.sin(dozer.yaw);
+    for (const [x, y] of faces) {
+      renderer.emit({ position: [x, y, 2], velocity: [c * 14, sn * 14, 9], spread: 12, count: 70, life: 1.3, lifeSpread: 0.5, size: 0.45, growth: -0.2, colour: [0.32, 0.33, 0.4], alpha: 1, gravity: 1.6, floor: 0 });
+      renderer.emit({ position: [x, y, 1.5], velocity: [c * 3, sn * 3, 4], spread: 7, count: 50, life: 2.2, lifeSpread: 0.6, size: 1.4, growth: 1.8, colour: [0.42, 0.4, 0.46], alpha: 0.7, gravity: 0.1, floor: 0 });
+    }
+    sound.smash();
+    spawnHeap(chamberSource(k), lootHeap(k));
+    economy.persist();
+    reshape();
+    note('a hidden chamber', 3);
+  }
+
   /** The rock, at a gate: coming down when a room opens, going up when one is sealed. */
   function rockCloud(area: number) {
     for (const [x, y] of gateTiles(cave, area)) {
@@ -394,7 +439,7 @@ async function main() {
     }
   }
   function reshape() {
-    world.solid = cave.solid(economy.save.areas);
+    world.solid = cave.solid(economy.save.areas, economy.save.secrets);
     dozer.solid = world.solid;
     for (const b of bots) { b.dozer.solid = world.solid; b.reset(); }
     nav.rebuild(world.solid);
@@ -417,10 +462,12 @@ async function main() {
       // what is left of the room behind goes, wherever it has got to, with a puff where each was
       const lost = lying(old);
       let puffs = 0;
+      // and what is left in any hidden chamber off it: bars not got out before going on are lost with the room
+      const goes = (from: number) => from === old || (from >= AREAS.length && SECRETS[from - AREAS.length].area === old);
       for (let i = 0; i < world.count; i++) {
-        if (!world.alive[i] || origin[i] !== old) continue;
+        if (!world.alive[i] || !goes(origin[i])) continue;
         if (puffs++ < 160) renderer.emit({ position: [world.x[i], world.y[i], world.z[i] + 0.3], velocity: [0, 0, 2], spread: 1.5, count: 3, life: 0.8, lifeSpread: 0.3, size: 0.5, growth: 0.8, colour: [0.5, 0.45, 0.4], alpha: 0.6, gravity: 0.1, floor: 0 });
-        kinds[world.kind[i]]--; left[old][world.kind[i]]--;
+        kinds[world.kind[i]]--; left[origin[i]][world.kind[i]]--;
         world.remove(i);
       }
       // no machine is shut in with the rock, or in it
@@ -433,6 +480,9 @@ async function main() {
       if (old !== ORDER[0]) rockCloud(old);
       const gone = lost > 0 ? ` · ${lost} left behind` : '';
       note(old === ORDER[0] ? `on into ${the(economy.current())}${gone}` : `${the(old)} is sealed behind you${gone}`, 4);
+    } else if (id.startsWith('secret')) {
+      const k = +id.slice(6);
+      smashOpen(k);
     } else if (id === 'done') {
       note(`the cave is cleared · ${the(LAST)}'s vein runs on`, 6);
       fountains.push(new Fountain(AREAS[LAST]));
@@ -452,6 +502,18 @@ async function main() {
     }
     world.wakeAll();
   });
+
+  // ---- the rock that breaks ----
+
+  // Square on and fast, it smashes; any other knock on it sounds hollow, which is all that gives it away.
+  const knockedAt = SECRETS.map(() => -Infinity);
+  dozer.onRock = (tx, ty, square) => {
+    const cell = cave.cells[ty * COLS + tx];
+    if (cell < SECRET || economy.save.secrets[cell - SECRET]) return;
+    const k = cell - SECRET, speed = Math.abs(dozer.speed);
+    if (square >= SMASH_SQUARE && speed >= SMASH_SPEED) economy.reveal(k);
+    else if (square > 0.2 && speed > 1.5 && t - knockedAt[k] > 0.6) { knockedAt[k] = t; sound.knock(); }
+  };
 
   // ---- the camera ----
 
@@ -621,7 +683,7 @@ async function main() {
 
   let awake = 0;
   function upload(t: number) {
-    const counts = [0, 0, 0, 0, 0];
+    const counts = new Array<number>(KINDS).fill(0);
     awake = 0;
     const { x, y, z, q, kind, alive, asleep } = world;
     for (let i = 0; i < world.count; i++) {
@@ -634,6 +696,7 @@ async function main() {
     }
     renderer.move(COINS, coinM, counts[0]);
     for (let k = 1; k <= 4; k++) renderer.move(GEMS + k - 1, gemM[k], counts[k]);
+    renderer.move(BARS, gemM[BAR], counts[BAR]);
 
     place(hullM, 0, dozer.x, dozer.y, 0, dozer.yaw);
     place(darkM, 0, dozer.x, dozer.y, 0, dozer.yaw);
@@ -791,7 +854,11 @@ async function main() {
 
   // ---- what the robo-dozers go for: the room being cleared ----
 
-  const foreman = new Foreman(world, nav, bots, origin, () => economy.current());
+  // the room being cleared, and any chamber broken into off it
+  const foreman = new Foreman(world, nav, bots, origin, (from) => {
+    const room = economy.current();
+    return from === room || (from >= AREAS.length && SECRETS[from - AREAS.length].area === room);
+  });
   const choose = (bot: Bot) => foreman.choose(bot, t);
 
   // ---- the pointer ----
