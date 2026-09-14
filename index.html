@@ -107,6 +107,12 @@
   body.touch #shop .rows { max-height: none; overflow: visible; }
   body.touch #shop h2:first-child { position: sticky; top: 0; z-index: 1; margin: 0; padding: 10px 0 8px; background: rgb(22, 20, 28); }
   body.touch #toast { bottom: calc(66px + env(safe-area-inset-bottom)); }
+  /* where to go: an arrow at the edge of the screen, or a marker over the place once it is in view */
+  #pointer { position: fixed; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 2; }
+  #pointer .arrow { position: absolute; left: -20px; top: -20px; width: 40px; height: 40px; filter: drop-shadow(0 0 5px rgba(242, 193, 78, 0.8)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.8)); }
+  #pointer .arrow::before { content: ''; position: absolute; inset: 3px; background: var(--gold); clip-path: polygon(0 12%, 100% 50%, 0 88%, 26% 50%); }
+  #pointer span { position: absolute; top: 0; left: 0; white-space: nowrap; color: var(--gold);
+                  font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); }
   #boot { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center;
           background: #0b0a10; transition: opacity .5s; z-index: 10; }
   #boot.gone { opacity: 0; pointer-events: none; }
@@ -118,6 +124,7 @@
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="toast" hidden></div>
 <div class="panel" id="cameraNote" hidden></div>
+<div id="pointer" hidden><div class="arrow"></div><span></span></div>
 <div class="panel" id="help" hidden>
   drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom · <span>V</span> camera mode · <span>C</span> reset camera · <span>M</span> mute · <span>H</span> horn<br>
   push the coins and gems into the hole to bank them

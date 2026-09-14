@@ -253,6 +253,26 @@ export function floorTiles(cave: Cave): [number, number][] {
   return out;
 }
 
+/**
+ * Whether a point is well inside a room, past its gate and into the corridor
+ * beyond: where the player has gone on into it. The hollow has no gate, and
+ * nobody goes on into it.
+ */
+export function pastGate(area: number, x: number, y: number): boolean {
+  return area === 1 ? y < -38 : area === 2 ? y > 38 : area === 3 ? x > 82 : area === 4 ? x < -82 : false;
+}
+
+/** Whether a machine at a point would be shut in, or in the rock, when a room's gate closes. */
+export function behindGate(area: number, x: number, y: number): boolean {
+  return area === 1 ? y < -25 : area === 2 ? y > 25 : area === 3 ? x > 69 : area === 4 ? x < -69 : false;
+}
+
+/** The middle of an area's gate, for pointing at. */
+export function gateCentre(cave: Cave, area: number): [number, number] {
+  const tiles = gateTiles(cave, area);
+  return [tiles.reduce((s, t) => s + t[0], 0) / tiles.length, tiles.reduce((s, t) => s + t[1], 0) / tiles.length];
+}
+
 /** Which area a world point is in, by the room's rough extent: 1 south, 2 north, 3 east, 4 west, 0 otherwise. */
 export function areaAt(x: number, y: number): number {
   return x > 70 ? 3 : x < -70 ? 4 : y < -34 ? 1 : y > 34 ? 2 : 0;

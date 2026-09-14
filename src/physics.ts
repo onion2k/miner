@@ -227,7 +227,7 @@ export class World {
   wakeAll() { for (let i = 0; i < this.count; i++) this.wake(i); }
 
   /** Advance by `dt` seconds in fixed steps, reporting what fell in the hole. */
-  step(dt: number, collect: (kind: number, x: number, y: number) => void) {
+  step(dt: number, collect: (kind: number, x: number, y: number, i: number) => void) {
     this.accumulator = Math.min(this.accumulator + dt, STEP * 4);
     const steps = Math.floor(this.accumulator / STEP + 1e-6);
     // The machines moved the whole frame at once; the blade is swept there
@@ -242,7 +242,7 @@ export class World {
     this.lag = 0;
   }
 
-  private substep(collect: (kind: number, x: number, y: number) => void) {
+  private substep(collect: (kind: number, x: number, y: number, i: number) => void) {
     const { x, y, z, vx, vy, vz, alive, asleep, carried, awake } = this;
     const window = ++this.steps % SLEEP_STEPS === 0;
     this.loadNow.length = 0;
@@ -577,7 +577,7 @@ export class World {
     vx[i] += -b.dy * -across * 0.6 * k; vy[i] += b.dx * -across * 0.6 * k;
   }
 
-  private floor(i: number, collect: (kind: number, x: number, y: number) => void) {
+  private floor(i: number, collect: (kind: number, x: number, y: number, i: number) => void) {
     const { x, y, z, vx, vy, vz, r } = this;
     const dx = x[i] - HOLE.x, dy = y[i] - HOLE.y;
     const d = Math.hypot(dx, dy);
@@ -590,7 +590,7 @@ export class World {
         const vn = vx[i] * nx + vy[i] * ny;
         if (vn > 0) { vx[i] -= nx * vn; vy[i] -= ny * vn; }
       }
-      if (z[i] < -HOLE.depth + 3) { collect(this.kind[i], x[i], y[i]); this.remove(i); }
+      if (z[i] < -HOLE.depth + 3) { collect(this.kind[i], x[i], y[i], i); this.remove(i); }
       return;
     }
     if (z[i] < r[i]) {

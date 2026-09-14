@@ -9,13 +9,16 @@ go and fetch things. Drag to orbit the camera, wheel to zoom, **C** to put it
 back, **M** to mute. Progress is saved in the browser; the workshop has a
 *start over* button.
 
-The cave is five rooms, and nothing refills them. Bank nineteen parts in
-twenty of what a room holds and the rock at the next gate comes down: the
-Hollow, then the South Gallery, the East Gallery, the North Vault and the West
-Gallery, each with dearer gems than the last. Only the room being cleared is
-in play, so a cave that has been worked through does not weigh on the frame.
-Once the West Gallery is cleared too, its vein trickles coins in and its
-floor now and then cracks, glows, and throws up a fountain of them.
+The cave is five rooms, and nothing refills them. Bank nine tenths of what a
+room holds and the rock at the next gate comes down: the Hollow, then the
+South Gallery, the East Gallery, the North Vault and the West Gallery, each
+with dearer gems than the last. Chase the last tenth or leave it: drive on
+through the new gate and the room behind is sealed, with whatever was still
+in it. Only a room or two is ever in play, so a cave that has been worked
+through does not weigh on the frame. A gold arrow at the edge of the screen
+points to the open gate, or, once most of a room is in, to the best of what
+is left. Once the West Gallery is cleared too, its vein trickles coins in and
+its floor now and then cracks, glows, and throws up a fountain of them.
 A run of coins into the hole is tallied on screen and grows louder — in
 sparkle, light and pitch — the longer it goes on.
 

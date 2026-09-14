@@ -1,7 +1,9 @@
 /**
  * The bank and what it buys: engine, blade, magnet, a belt for each room,
- * and drones. The rooms are not bought: each opens when the one before it
- * is cleared. Saved in the browser, so the cave is where you left it.
+ * and drones. The rooms are not bought: the next opens when most of the one
+ * being cleared is banked, and going on into it seals the one behind, with
+ * whatever is still in it. Saved in the browser, so the cave is where you
+ * left it.
  */
 import { AREAS, ORDER } from './cave';
 import type { DozerSpec } from './dozer';
@@ -21,14 +23,16 @@ export interface Save {
   paints: string[];
   horn: boolean;
   flag: boolean;
-  /** How many of each kind are still in the cave, so a reload puts back what is left and not the lot. Empty when unknown. */
-  left: number[];
+  /** The room being cleared. */
+  room: number;
+  /** How many of each kind from each room are still in the cave, so a reload puts back what is left and not the lot. Empty when unknown. */
+  left: number[][];
   /** The last room is cleared too. */
   done: boolean;
 }
 
-/** The share of a room's value that has to be banked before the next one opens: a few strays are forgiven. */
-export const CLEAR_SHARE = 0.95;
+/** The share of a room's value that has to be banked before the next one opens: the last tenth is the player's to chase or leave. */
+export const CLEAR_SHARE = 0.9;
 
 /** What a room's heaps are worth, and how many of each kind they hold. */
 export function roomStock(area: number): { value: number; kinds: number[] } {
@@ -99,45 +103,70 @@ export class Economy {
   private wiped = false;
 
   constructor() {
-    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false, left: [], done: false };
+    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false, room: ORDER[0], left: AREAS.map(() => []), done: false };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
-        const s = JSON.parse(raw) as Partial<Save>;
-        this.save = { ...this.save, ...s, areas: [true, ...(s.areas ?? []).slice(1)], belts: s.belts ?? this.save.belts };
+        const s = JSON.parse(raw) as Omit<Partial<Save>, 'left'> & { left?: number[] | number[][] };
+        this.save = { ...this.save, ...s, areas: [true, ...(s.areas ?? []).slice(1)], belts: s.belts ?? this.save.belts, left: this.save.left };
         // a save from before an area existed has it shut
         while (this.save.areas.length < AREAS.length) this.save.areas.push(false);
         while (this.save.belts.length < AREAS.length) this.save.belts.push(false);
-        // A save from when rooms were bought, in any order: everything up to the
-        // furthest room it had is open, and that room is the one being cleared.
-        const furthest = ORDER.reduce((f, a, n) => (this.save.areas[a] ? n : f), 0);
-        for (let n = 0; n <= furthest; n++) this.save.areas[ORDER[n]] = true;
-        for (let n = furthest + 1; n < ORDER.length; n++) this.save.areas[ORDER[n]] = false;
+        if (s.room === undefined) {
+          // A save from before rooms were sealed, or from when they were bought in any
+          // order: the furthest room it had is the one being cleared, the ones before
+          // it are sealed, and what it had left of the room is that room's.
+          const furthest = ORDER.reduce((f, a, n) => (this.save.areas[a] ? n : f), 0);
+          this.save.room = ORDER[furthest];
+          ORDER.forEach((a, n) => { this.save.areas[a] = n === 0 || n === furthest; });
+          if (s.left?.length === 5 && typeof s.left[0] === 'number') this.save.left[this.save.room] = s.left as number[];
+        } else if (Array.isArray(s.left)) {
+          this.save.left = AREAS.map((_, a) => (s.left as number[][])[a] ?? []);
+        }
       }
     } catch { /* a browser with no storage plays from the start */ }
   }
 
   get bank() { return this.save.bank; }
 
-  /** The room being cleared: the furthest one open. */
-  current(): number {
-    return ORDER.reduce((c, a) => (this.save.areas[a] ? a : c), ORDER[0]);
-  }
+  /** The room being cleared. */
+  current(): number { return this.save.room; }
 
-  /** The room that opens when the current one is cleared, or null at the last. */
+  /** The room after the current one, or null at the last. */
   next(): number | null {
-    const n = ORDER.indexOf(this.current()) + 1;
+    const n = ORDER.indexOf(this.save.room) + 1;
     return n < ORDER.length ? ORDER[n] : null;
   }
 
-  /** The current room is cleared: the next one opens, or the cave is done. */
-  clear() {
-    if (this.save.done) return;
+  /** Whether the next room's gate is open, and it is waiting to be gone on into. */
+  nextOpen(): boolean {
+    const next = this.next();
+    return next !== null && this.save.areas[next];
+  }
+
+  /** A room the player has gone on from: its gate is shut, and what was in it is gone. */
+  sealed(area: number): boolean {
+    return ORDER.indexOf(area) < ORDER.indexOf(this.save.room);
+  }
+
+  /** Enough of the current room is banked: the next one opens, or at the last the cave is done. */
+  open() {
+    if (this.save.done || this.nextOpen()) return;
     const next = this.next();
     if (next === null) this.save.done = true;
     else this.save.areas[next] = true;
     this.persist();
     for (const fn of this.listeners) fn(next === null ? 'done' : `area${next}`);
+  }
+
+  /** The player has gone on into the next room: the one behind is sealed. The hollow has no gate to shut. */
+  moveOn() {
+    const old = this.save.room, next = this.next();
+    if (next === null || !this.nextOpen()) return;
+    if (old !== ORDER[0]) this.save.areas[old] = false;
+    this.save.room = next;
+    this.persist();
+    for (const fn of this.listeners) fn(`sealed${old}`);
   }
 
   deposit(value: number) {
@@ -176,18 +205,14 @@ export class Economy {
       sub: m ? `pulls coins from ${m.radius} away, up from ${MAGNET[s.magnet].radius}` : `reaches ${MAGNET[s.magnet].radius}: nothing escapes it`,
       cost: m?.cost ?? 0, owned: !m, available: !!m,
     });
-    // a belt for the room being cleared, and the ones still to come; one for a room
-    // already cleared and never bought is no use to anyone, so it is not offered
-    const current = this.current();
+    // a belt for each room still to be cleared; a sealed room's belt runs into rock
     for (const a of ORDER) {
       const belt = AREAS[a].belt;
-      if (!belt) continue;
-      const cleared = s.done || ORDER.indexOf(a) < ORDER.indexOf(current);
-      if (cleared && !s.belts[a]) continue;
+      if (!belt || this.sealed(a)) continue;
       out.push({
         id: `belt${a}`, title: `Conveyor to the ${AREAS[a].name}`,
         sub: s.areas[a] ? 'push coins onto it and it carries them to the hole' : 'once the room is open',
-        cost: belt.cost, owned: s.belts[a], available: a === current && !s.done,
+        cost: belt.cost, owned: s.belts[a], available: s.areas[a],
       });
     }
     const d = s.drones < MAX_DRONES ? DRONE_COST[s.drones] : null;
