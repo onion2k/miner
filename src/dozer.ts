@@ -31,6 +31,8 @@ export const WING_SWEEP = 0.24;
 export const TRACK_GAUGE = 2.15;
 /** The circle the hull is kept off the rock by. */
 const BODY_RADIUS = 3.6;
+/** How square on to the rock a machine has to be driving, as the cosine off straight at it, to be stopped rather than slide. */
+const SQUARE_ON = 0.9;
 /**
  * The capsule one machine is kept out of another by, in its own frame: a
  * segment along the heading from BODY_BACK to BODY_FRONT, fattened by
@@ -130,25 +132,69 @@ export class Dozer {
     this.keepOffRock();
   }
 
+  /**
+   * Out of the rock, by the shortest way. What the push-out takes off is the
+   * part of the move that went into the rock, so a machine that meets a wall
+   * at a slant slides along it, and over the steps of a wall that runs across
+   * the tiles. Only one that drives square into the rock is stopped by it:
+   * one slowed at every touch stuck to any wall it grazed, and sat at the
+   * mouth of a corridor it came at a little off the middle.
+   *
+   * Twice over, for a corner, where getting out of one tile is getting into
+   * the next.
+   */
   keepOffRock() {
-    const tx = Math.floor((this.x - ORIGIN_X) / TILE), ty = Math.floor((this.y - ORIGIN_Y) / TILE);
-    for (let oy = -1; oy <= 1; oy++) {
-      for (let ox = -1; ox <= 1; ox++) {
-        const nx = tx + ox, ny = ty + oy;
-        const rock = nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || this.solid[ny * COLS + nx];
-        if (!rock) continue;
-        const x0 = ORIGIN_X + nx * TILE, y0 = ORIGIN_Y + ny * TILE;
-        const cx = Math.max(x0, Math.min(x0 + TILE, this.x)), cy = Math.max(y0, Math.min(y0 + TILE, this.y));
-        let dx = this.x - cx, dy = this.y - cy;
-        const d = Math.hypot(dx, dy);
-        const reach = BODY_RADIUS * this.scale;
-        if (d >= reach || d < 1e-4) continue;
-        dx /= d; dy /= d;
-        this.x += dx * (reach - d); this.y += dy * (reach - d);
-        // the speed along the heading is what carried it in: take that back
-        const head = Math.cos(this.yaw) * dx + Math.sin(this.yaw) * dy;
-        if (head * this.speed < 0) this.speed *= 0.2;
+    const reach = BODY_RADIUS * this.scale;
+    if (this.rockAt(Math.floor((this.x - ORIGIN_X) / TILE), Math.floor((this.y - ORIGIN_Y) / TILE))) this.outOfRock();
+    for (let pass = 0; pass < 2; pass++) {
+      // the push out of every tile it is in, added up: along a wall that steps across the tiles
+      // that is the wall's own slant, which no one tile's face is
+      let pushX = 0, pushY = 0;
+      const tx = Math.floor((this.x - ORIGIN_X) / TILE), ty = Math.floor((this.y - ORIGIN_Y) / TILE);
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          const nx = tx + ox, ny = ty + oy;
+          if ((!ox && !oy) || !this.rockAt(nx, ny)) continue;
+          const x0 = ORIGIN_X + nx * TILE, y0 = ORIGIN_Y + ny * TILE;
+          const cx = Math.max(x0, Math.min(x0 + TILE, this.x)), cy = Math.max(y0, Math.min(y0 + TILE, this.y));
+          const dx = this.x - cx, dy = this.y - cy;
+          const d = Math.hypot(dx, dy);
+          if (d >= reach || d < 1e-4) continue;
+          const out = reach - d;
+          this.x += (dx / d) * out; this.y += (dy / d) * out;
+          pushX += (dx / d) * out; pushY += (dy / d) * out;
+        }
       }
+      const pushed = Math.hypot(pushX, pushY);
+      if (pushed < 1e-5) break;
+      // square on, the engine is pushing at the rock and gets nowhere: stop it; at a slant, let it slide
+      const head = (Math.cos(this.yaw) * pushX + Math.sin(this.yaw) * pushY) / pushed;
+      if (pass === 0 && head * Math.sign(this.speed) < -SQUARE_ON) this.speed *= 0.5;
+    }
+  }
+
+  private rockAt(tx: number, ty: number): boolean {
+    return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS || this.solid[ty * COLS + tx] === 1;
+  }
+
+  /**
+   * The middle is in the rock — a gate shut on it, or a shove from another
+   * machine — and no push off a face gets it out of a wall several tiles
+   * thick: it goes to the nearest open tile, in rings out from where it is.
+   */
+  private outOfRock() {
+    const tx = Math.floor((this.x - ORIGIN_X) / TILE), ty = Math.floor((this.y - ORIGIN_Y) / TILE);
+    for (let ring = 1; ring < 8; ring++) {
+      let best: [number, number] | null = null, bestD = Infinity;
+      for (let oy = -ring; oy <= ring; oy++) {
+        for (let ox = -ring; ox <= ring; ox++) {
+          if (Math.max(Math.abs(ox), Math.abs(oy)) !== ring || this.rockAt(tx + ox, ty + oy)) continue;
+          const cx = ORIGIN_X + (tx + ox + 0.5) * TILE, cy = ORIGIN_Y + (ty + oy + 0.5) * TILE;
+          const d = Math.hypot(cx - this.x, cy - this.y);
+          if (d < bestD) { bestD = d; best = [cx, cy]; }
+        }
+      }
+      if (best) { this.x = best[0]; this.y = best[1]; this.speed = 0; return; }
     }
   }
 
@@ -220,9 +266,9 @@ export function separate(a: Dozer, b: Dozer) {
   const push = (reach - Math.min(d, reach)) / 2;
   a.x += nx * push; a.y += ny * push;
   b.x -= nx * push; b.y -= ny * push;
-  // what was driving each into the other: its heading against the way it is pushed
-  if ((Math.cos(a.yaw) * nx + Math.sin(a.yaw) * ny) * a.speed < 0) a.speed *= 0.2;
-  if ((Math.cos(b.yaw) * -nx + Math.sin(b.yaw) * -ny) * b.speed < 0) b.speed *= 0.2;
+  // what was driving each into the other, square on: a glancing meeting slides, as on the rock
+  if ((Math.cos(a.yaw) * nx + Math.sin(a.yaw) * ny) * Math.sign(a.speed) < -SQUARE_ON) a.speed *= 0.5;
+  if ((Math.cos(b.yaw) * -nx + Math.sin(b.yaw) * -ny) * Math.sign(b.speed) < -SQUARE_ON) b.speed *= 0.5;
   a.keepOffRock();
   b.keepOffRock();
 }

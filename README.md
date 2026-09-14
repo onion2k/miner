@@ -13,11 +13,16 @@ The cave is five rooms, and nothing refills them. Bank nine tenths of what a
 room holds and the rock at the next gate comes down: the Hollow, then the
 South Gallery, the East Gallery, the North Vault and the West Gallery, each
 with dearer gems than the last. Chase the last tenth or leave it: drive on
-through the new gate and the room behind is sealed, with whatever was still
-in it. Only a room or two is ever in play, so a cave that has been worked
+through the new gate and down its corridor and the room behind is sealed,
+with whatever was still in it. Up at the gate the game says so, and the line
+that seals it glows red. Only a room or two is ever in play, so a cave that has been worked
 through does not weigh on the frame. A gold arrow at the edge of the screen
 points to the open gate, or, once most of a room is in, to the best of what
-is left. Once the West Gallery is cleared too, its vein trickles coins in and
+is left. The drones work the room being cleared, finding their way round the
+rock and the heaps, and give a loaded machine the road. With a belt running
+they push a load to whichever is nearer, the belt or the hole, and leave the
+belt to carry it. Once the West Gallery
+is cleared too, its vein trickles coins in and
 its floor now and then cracks, glows, and throws up a fountain of them.
 A run of coins into the hole is tallied on screen and grows louder — in
 sparkle, light and pitch — the longer it goes on.
@@ -41,6 +46,7 @@ It needs a browser with WebGPU.
     src/physics.ts    the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
     src/dozer.ts      the bulldozer: tank steering, the blade and hull as pushers, load
     src/tools.ts      conveyor belts, drones, and the fountains
+    src/nav.ts        the way round the rock and the heaps, for the drones
     src/audio.ts      every sound, synthesised: clinks, thunks, the engine, the rumble
     src/economy.ts    the bank, the upgrades, which room is being cleared, the save, the shop
     src/meshes.ts     flat-shaded shapes: coin, gem, box, cone, ball, the hole's collar and pit

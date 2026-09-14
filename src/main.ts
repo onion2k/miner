@@ -10,13 +10,14 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer, EFFECT_STRIDE, MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import { LightPool } from 'artshape-render/game/lights';
 import { mergeMeshes } from 'artshape-render/mesh/types';
-import { AREAS, BODY_CAPACITY, HOLE, ORDER, TILE, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, wallInstances, type Heap, type Vein } from './cave';
+import { AREAS, BODY_CAPACITY, HOLE, ORDER, TILE, atGate, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, sealPoint, wallInstances, type Heap, type Vein } from './cave';
 import { World, KIND_NAME, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces, separate } from './dozer';
 import { Input } from './input';
 import { TouchControls, isTouchDevice } from './touch';
 import { CLEAR_SHARE, Economy, MAX_DRONES, renderShop, roomStock } from './economy';
-import { Bot, BOT_SCALE, BOT_SPEC, Fountain, beltOf } from './tools';
+import { Bot, BOT_SCALE, BOT_SPEC, Foreman, Fountain, beltOf } from './tools';
+import { Nav } from './nav';
 import { Sound } from './audio';
 import { COIN_LADDER, ball, box, coin, collar, cylinder, gem, moved, pit, tile, turned } from './meshes';
 import { identity, hide, place, placePart, placeQuat, project } from './matrix';
@@ -115,11 +116,14 @@ async function main() {
   const LAST = ORDER[ORDER.length - 1];
   const fountains: Fountain[] = [];
   if (economy.save.done) fountains.push(new Fountain(AREAS[LAST]));
+  const nav = new Nav(world.solid);
   const bots: Bot[] = [];
+  const traffic = { bots, player: dozer };
   for (let i = 0; i < economy.save.drones; i++) bots.push(new Bot(world.solid, i + 1, HOLE.x + 14 + i * 6, HOLE.y + 10));
   /** The belts that run: those bought, for rooms not sealed. */
   const running = () => AREAS.map((_, a) => a).filter((a) => AREAS[a].belt && economy.save.belts[a] && !economy.sealed(a));
   world.belts = running().map((a) => beltOf(AREAS[a].belt!.spec));
+  nav.setBelts(world.belts);
 
   // ---- the static half: floor, walls, hole, gates, chutes, belts ----
 
@@ -395,8 +399,10 @@ async function main() {
   function reshape() {
     world.solid = cave.solid(economy.save.areas);
     dozer.solid = world.solid;
-    for (const b of bots) b.dozer.solid = world.solid;
+    for (const b of bots) { b.dozer.solid = world.solid; b.reset(); }
+    nav.rebuild(world.solid);
     world.belts = running().map((a) => beltOf(AREAS[a].belt!.spec));
+    nav.setBelts(world.belts);
     buildStatic();
   }
   economy.onChange((id) => {
@@ -424,7 +430,6 @@ async function main() {
       bots.forEach((b, j) => {
         if (!behindGate(old, b.x, b.y)) return;
         b.dozer.x = HOLE.x + 14 + j * 6; b.dozer.y = HOLE.y + 10; b.dozer.speed = 0;
-        b.state = 'seek';
       });
       economy.persist();
       reshape();
@@ -436,6 +441,7 @@ async function main() {
       fountains.push(new Fountain(AREAS[LAST]));
     } else if (id.startsWith('belt')) {
       world.belts = running().map((a) => beltOf(AREAS[a].belt!.spec));
+      nav.setBelts(world.belts);
       buildStatic();
     } else if (id === 'drone') {
       bots.push(new Bot(world.solid, bots.length + 1, HOLE.x + 14, HOLE.y + 10));
@@ -514,6 +520,8 @@ async function main() {
   }
   const cameraNote = document.getElementById('cameraNote')!;
   let cameraNoteIn = 0;
+  /** The player is at the next room's gate, and going further seals the one being cleared. */
+  let warning = false;
 
   let width = 1, height = 1;
   const resize = () => {
@@ -577,6 +585,11 @@ async function main() {
       const flicker = f.state === 'warn' ? 0.7 + 0.3 * Math.sin(t * 30) : 1;
       lights.add({ position: [f.x, f.y, 2], radius: 10 + f.glow * 14, colour: [1.0, 0.55, 0.2], intensity: f.glow * 5 * flicker });
     }
+    if (warning) {
+      // the line that seals the room behind, down the corridor ahead: a red light on it, pulsing
+      const [sx, sy] = sealPoint(cave, economy.next()!);
+      lights.add({ position: [sx, sy, 3], radius: 20, colour: [1.0, 0.25, 0.1], intensity: 3 + 2.5 * Math.sin(t * 8) });
+    }
     const m = world.magnet;
     if (m) lights.add({ position: [m.x, m.y, 1.2], radius: m.radius * 0.8, colour: [0.45, 0.7, 1.0], intensity: 0.6 + m.strength * 0.03 });
     renderer.setLights(lights, shadowed);
@@ -593,6 +606,11 @@ async function main() {
       const q = project(cam.viewProjection, f.x, f.y, 0.2);
       if (!q || n >= EFFECT_CAPACITY) continue;
       quads.set([q[0], q[1], (6 / q[2]) * (0.6 + f.glow * 0.6), f.glow * (f.state === 'warn' ? 0.5 + 0.3 * Math.sin(t * 30) : 1.2), 1.0, 0.5, 0.15, 2.2], n * EFFECT_STRIDE); n++;
+    }
+    if (warning && n < EFFECT_CAPACITY) {
+      const [sx, sy] = sealPoint(cave, economy.next()!);
+      const q = project(cam.viewProjection, sx, sy, 0.2);
+      if (q) { quads.set([q[0], q[1], 14 / q[2], 0.5 + 0.3 * Math.sin(t * 8), 1.0, 0.25, 0.1, 1.6], n * EFFECT_STRIDE); n++; }
     }
     if (m && n < EFFECT_CAPACITY) {
       const q = project(cam.viewProjection, m.x, m.y, 0.2);
@@ -774,6 +792,11 @@ async function main() {
   }
   Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, bots, fountains, sound, setCoinDetail, calibration });
 
+  // ---- what the robo-dozers go for: the room being cleared ----
+
+  const foreman = new Foreman(world, nav, bots, origin, () => economy.current());
+  const choose = (bot: Bot) => foreman.choose(bot, t);
+
   // ---- the pointer ----
 
   /**
@@ -894,7 +917,7 @@ async function main() {
     const spec = economy.spec();
     const drive = input.read();
     dozer.update(dt, drive, spec, world.load);
-    for (const b of bots) b.update(dt, world, world.loads[b.dozer.owner] ?? 0);
+    for (const b of bots) b.update(dt, world, world.loads[b.dozer.owner] ?? 0, nav, choose, traffic);
     // no machine drives through another: every pair, twice, so a push out of one
     // that shoves into a third is settled in the same frame
     const machines = [dozer, ...bots.map((b) => b.dozer)];
@@ -981,8 +1004,18 @@ async function main() {
       if (!economy.save.done && !economy.nextOpen() && banked(economy.current()) >= CLEAR_SHARE) economy.open();
       showProgress();
     }
-    // through the next room's gate and on: the room behind is sealed
-    if (economy.nextOpen() && pastGate(economy.next()!, dozer.x, dozer.y)) { economy.moveOn(); showProgress(); }
+    // through the next room's gate and on among its heaps: the room behind is sealed. Up to the
+    // gate and in the corridor, a word first, and the line that seals it glows red, so it is not a surprise.
+    warning = false;
+    if (economy.nextOpen()) {
+      const next = economy.next()!, room = economy.current();
+      if (pastGate(next, dozer.x, dozer.y)) { economy.moveOn(); showProgress(); }
+      else if (atGate(next, dozer.x, dozer.y)) {
+        warning = true;
+        const still = lying(room);
+        note(`further in seals ${the(room)}${still > 0 ? ` · ${still} still in it` : ''}`, 0.4);
+      }
+    }
     showPointer(t);
     smoothed += (dt * 1000 - smoothed) * 0.08;
     if ((statsIn -= dt) <= 0) {

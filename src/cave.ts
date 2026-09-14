@@ -254,12 +254,23 @@ export function floorTiles(cave: Cave): [number, number][] {
 }
 
 /**
- * Whether a point is well inside a room, past its gate and into the corridor
- * beyond: where the player has gone on into it. The hollow has no gate, and
- * nobody goes on into it.
+ * Whether a point is well inside a room, through the gate and the corridor
+ * and out among its heaps: where the player has gone on into it. The hollow
+ * has no gate, and nobody goes on into it.
  */
 export function pastGate(area: number, x: number, y: number): boolean {
-  return area === 1 ? y < -38 : area === 2 ? y > 38 : area === 3 ? x > 82 : area === 4 ? x < -82 : false;
+  return area === 1 ? y < -46 : area === 2 ? y > 46 : area === 3 ? x > 94 : area === 4 ? x < -94 : false;
+}
+
+/** Where, down a room's corridor, going on seals the room behind: the line `pastGate` draws, in the corridor's middle. */
+export function sealPoint(cave: Cave, area: number): [number, number] {
+  const [gx, gy] = gateCentre(cave, area);
+  return area === 1 ? [gx, -46] : area === 2 ? [gx, 46] : area === 3 ? [94, gy] : area === 4 ? [-94, gy] : [gx, gy];
+}
+
+/** Whether a point is up to a room's gate, or through it and not yet past: where going on is a turn of the wheel away. */
+export function atGate(area: number, x: number, y: number): boolean {
+  return area === 1 ? y < -22 : area === 2 ? y > 22 : area === 3 ? x > 62 : area === 4 ? x < -62 : false;
 }
 
 /** Whether a machine at a point would be shut in, or in the rock, when a room's gate closes. */
