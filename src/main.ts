@@ -54,7 +54,9 @@ const CALIBRATE_WARMUP = 4;
 const CALIBRATE_SAMPLES = 24;
 
 /** How high a lamp's head stands, how many lamps are lit at once near the eye, and how near a machine has to come to knock one over. */
-const LAMP_HEIGHT = 5.6, LAMP_LIGHTS = 220, LAMP_KNOCK = 4.2;
+const LAMP_HEIGHT = 5.6, LAMP_LIGHTS = 240, LAMP_KNOCK = 4.2;
+/** How far a lamp's light carries, and how bright it is. */
+const LAMP_REACH = 40, LAMP_BRIGHT = 16;
 
 const CAMERA = { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 };
 
@@ -854,6 +856,8 @@ async function main() {
       });
       if (side === 1) shadowed.push(i);
     }
+    // a small light over the cab, so the machine can be seen in the dark: it lights the dozer, not the floor
+    lights.add({ position: [dozer.x - c * 0.8, dozer.y - s * 0.8, 6.5], radius: 7, colour: [1.0, 0.9, 0.75], intensity: 1.2 });
     // the lamps still standing in the rooms in play, the nearest the eye first, as many as fit
     const [ex, ey] = cam.target;
     const reach = orbit.distance * 1.6 + 40;
@@ -863,8 +867,8 @@ async function main() {
     for (const k of lampsLit.slice(0, LAMP_LIGHTS)) {
       const l = cave.lamps[k];
       const flicker = 0.92 + 0.08 * Math.sin(t * 13 + k * 7) * Math.sin(t * 3.1 + k);
-      // close together as they stand, each is a small pool, and the rooms' edges are strings of them
-      lights.add({ position: [l.x, l.y, LAMP_HEIGHT], radius: 20, colour: [1.0, 0.78, 0.5], intensity: 4 * flicker });
+      // bright, and far-reaching enough that between them nowhere on the floor is dark
+      lights.add({ position: [l.x, l.y, LAMP_HEIGHT], radius: LAMP_REACH, colour: [1.0, 0.8, 0.55], intensity: LAMP_BRIGHT * flicker });
     }
     if (economy.save.done) {
       const v = AREAS[LAST].vein;

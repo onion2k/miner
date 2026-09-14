@@ -12,8 +12,8 @@
  */
 
 export const TILE = 4;
-export const COLS = 144;
-export const ROWS = 112;
+export const COLS = 104;
+export const ROWS = 64;
 /** World position of the grid's corner, chosen so tile (COLS / 2, ROWS / 2) is centred on the origin. */
 export const ORIGIN_X = -(COLS / 2 + 0.5) * TILE;
 export const ORIGIN_Y = -(ROWS / 2 + 0.5) * TILE;
@@ -78,7 +78,7 @@ export function tileCentre(tx: number, ty: number): [number, number] {
  * way are what says where its gate is, where the way into it starts, and
  * where going on into it seals the room behind.
  */
-export const HOLLOW = { rx: 18, ry: 12, alcove: { along: 21, rx: 5, ry: 4.5 } };
+export const HOLLOW = { rx: 12, ry: 7, alcove: { along: 14, rx: 4.5, ry: 4 } };
 
 /** A gated room, out from the hollow. `dir` is the way out; `along` and `across` are in tiles, the way out and square to it. */
 export interface Wing {
@@ -89,29 +89,20 @@ export interface Wing {
   corridor: { from: number; to: number; across: [number, number] };
   /** How far along the gate stands. */
   gate: number;
-  /** Where the way in starts: the hollow's edge on that side, along. */
+  /** Where the way in starts, along: the hollow's edge on that side, or for the galleries the alcove's mouth. */
   mouth: number;
 }
 
 export const WINGS: Wing[] = [
   // the hollow has none
   null as unknown as Wing,
-  { dir: [0, -1], room: { along: 27, across: 0, half: 9, halfAcross: 19, seed: 0.4 }, corridor: { from: 11, to: 19, across: [-2, 1] }, gate: 15, mouth: HOLLOW.ry },
-  { dir: [0, 1], room: { along: 27, across: 0, half: 9, halfAcross: 20, seed: 3.3 }, corridor: { from: 11, to: 19, across: [-2, 1] }, gate: 15, mouth: HOLLOW.ry },
-  { dir: [1, 0], room: { along: 39, across: 1, half: 10, halfAcross: 13, seed: 5.2 }, corridor: { from: 25, to: 30, across: [-1, 2] }, gate: 27, mouth: HOLLOW.alcove.along + HOLLOW.alcove.rx },
-  { dir: [-1, 0], room: { along: 39, across: -1, half: 10, halfAcross: 13, seed: 2.2 }, corridor: { from: 25, to: 30, across: [-2, 1] }, gate: 27, mouth: HOLLOW.alcove.along + HOLLOW.alcove.rx },
+  { dir: [0, -1], room: { along: 13, across: 0, half: 4, halfAcross: 14, seed: 0.4 }, corridor: { from: 6, to: 10, across: [-2, 1] }, gate: 8, mouth: HOLLOW.ry },
+  { dir: [0, 1], room: { along: 13, across: 0, half: 4, halfAcross: 15, seed: 3.3 }, corridor: { from: 6, to: 10, across: [-2, 1] }, gate: 8, mouth: HOLLOW.ry },
+  { dir: [1, 0], room: { along: 27, across: 1, half: 5, halfAcross: 9, seed: 5.2 }, corridor: { from: 17, to: 22, across: [-1, 2] }, gate: 19, mouth: 17 },
+  { dir: [-1, 0], room: { along: 27, across: -1, half: 5, halfAcross: 9, seed: 2.2 }, corridor: { from: 17, to: 22, across: [-2, 1] }, gate: 19, mouth: 17 },
 ];
 
-/** A point `along` and `across` a wing, in world units. */
-function wingPoint(area: number, along: number, across: number): [number, number] {
-  const [dx, dy] = WINGS[area].dir;
-  // across is to the left of the way out for north and south, and up for east and west
-  return dx ? [dx * along * TILE, across * TILE] : [across * TILE, dy * along * TILE];
-}
-
 const S = 1, N = 2, E = 3, W = 4;
-/** World units, from the middle of a wing's room: `along` further out, `across` to the side. */
-const inRoom = (area: number, along: number, across: number) => wingPoint(area, WINGS[area].room.along + along / TILE, WINGS[area].room.across + across / TILE);
 
 export const AREAS: Area[] = [
   {
@@ -129,23 +120,23 @@ export const AREAS: Area[] = [
     name: 'South Gallery',
     blurb: 'rubies and emeralds',
     heaps: [
-      { x: inRoom(S, 6, -36)[0], y: inRoom(S, 6, -36)[1], coins: 960, gems: [[1, 22], [2, 12]] },
-      { x: inRoom(S, -6, 34)[0], y: inRoom(S, -6, 34)[1], coins: 960, gems: [[1, 18], [2, 16]] },
+      { x: -24, y: -52, coins: 960, gems: [[1, 22], [2, 12]] },
+      { x: 22, y: -54, coins: 960, gems: [[1, 18], [2, 16]] },
     ],
-    vein: { x: inRoom(S, 0, 48)[0], y: inRoom(S, 0, 48)[1], every: 0.9, coins: 1, gems: [[1, 0.08], [2, 0.03]] },
-    cracks: [inRoom(S, 0, 0), inRoom(S, 0, -52), inRoom(S, 0, 52)],
-    belt: { spec: { x0: -2, y0: -104, x1: -2, y1: -12, width: 7, speed: 9 }, cost: 250 },
+    vein: { x: 40, y: -50, every: 0.9, coins: 1, gems: [[1, 0.08], [2, 0.03]] },
+    cracks: [[0, -56], [-40, -50], [36, -58]],
+    belt: { spec: { x0: -2, y0: -46, x1: -2, y1: -8, width: 7, speed: 9 }, cost: 250 },
   },
   {
     name: 'North Vault',
     blurb: 'emeralds, sapphires, diamonds',
     heaps: [
-      { x: inRoom(N, -6, -38)[0], y: inRoom(N, -6, -38)[1], coins: 1000, gems: [[2, 22], [3, 14], [4, 2]] },
-      { x: inRoom(N, 6, 34)[0], y: inRoom(N, 6, 34)[1], coins: 1000, gems: [[2, 18], [3, 16], [4, 2]] },
+      { x: -28, y: 52, coins: 1000, gems: [[2, 22], [3, 14], [4, 2]] },
+      { x: 24, y: 54, coins: 1000, gems: [[2, 18], [3, 16], [4, 2]] },
     ],
-    vein: { x: inRoom(N, 0, -54)[0], y: inRoom(N, 0, -54)[1], every: 0.7, coins: 1, gems: [[2, 0.08], [3, 0.05], [4, 0.015]] },
-    cracks: [inRoom(N, 0, 0), inRoom(N, 0, -52), inRoom(N, 0, 50)],
-    belt: { spec: { x0: -2, y0: 104, x1: -2, y1: 12, width: 7, speed: 9 }, cost: 500 },
+    vein: { x: -44, y: 54, every: 0.7, coins: 1, gems: [[2, 0.08], [3, 0.05], [4, 0.015]] },
+    cracks: [[0, 56], [-44, 50], [40, 52]],
+    belt: { spec: { x0: -2, y0: 46, x1: -2, y1: 8, width: 7, speed: 9 }, cost: 500 },
   },
   // The two galleries either side: long rooms running north and south, reached through
   // the alcoves off the hollow. Added after the vault, so a save's areas keep their places;
@@ -154,23 +145,23 @@ export const AREAS: Area[] = [
     name: 'East Gallery',
     blurb: 'rubies and sapphires',
     heaps: [
-      { x: inRoom(E, -8, 28)[0], y: inRoom(E, -8, 28)[1], coins: 700, gems: [[1, 22], [3, 24]] },
-      { x: inRoom(E, 8, -28)[0], y: inRoom(E, 8, -28)[1], coins: 700, gems: [[1, 18], [3, 26]] },
+      { x: 104, y: 22, coins: 700, gems: [[1, 22], [3, 24]] },
+      { x: 110, y: -14, coins: 700, gems: [[1, 18], [3, 26]] },
     ],
-    vein: { x: inRoom(E, -6, -36)[0], y: inRoom(E, -6, -36)[1], every: 0.85, coins: 1, gems: [[1, 0.07], [3, 0.03]] },
-    cracks: [inRoom(E, 0, 0), inRoom(E, -4, 38), inRoom(E, 4, -34)],
-    belt: { spec: { x0: 160, y0: 4, x1: 12, y1: 4, width: 7, speed: 10 }, cost: 400 },
+    vein: { x: 100, y: -26, every: 0.85, coins: 1, gems: [[1, 0.07], [3, 0.03]] },
+    cracks: [[108, 4], [102, 32], [112, -24]],
+    belt: { spec: { x0: 110, y0: 2, x1: 8, y1: 2, width: 7, speed: 10 }, cost: 400 },
   },
   {
     name: 'West Gallery',
     blurb: 'sapphires and diamonds',
     heaps: [
-      { x: inRoom(W, 8, -28)[0], y: inRoom(W, 8, -28)[1], coins: 700, gems: [[3, 26], [4, 10]] },
-      { x: inRoom(W, -8, 28)[0], y: inRoom(W, -8, 28)[1], coins: 700, gems: [[3, 24], [4, 11]] },
+      { x: -104, y: -22, coins: 700, gems: [[3, 26], [4, 10]] },
+      { x: -110, y: 14, coins: 700, gems: [[3, 24], [4, 11]] },
     ],
-    vein: { x: inRoom(W, -6, 36)[0], y: inRoom(W, -6, 36)[1], every: 0.65, coins: 1, gems: [[3, 0.07], [4, 0.025]] },
-    cracks: [inRoom(W, 0, 0), inRoom(W, 4, -38), inRoom(W, -4, 34)],
-    belt: { spec: { x0: -160, y0: -4, x1: -12, y1: -4, width: 7, speed: 10 }, cost: 600 },
+    vein: { x: -100, y: 26, every: 0.65, coins: 1, gems: [[3, 0.07], [4, 0.025]] },
+    cracks: [[-108, -4], [-102, -32], [-112, 24]],
+    belt: { spec: { x0: -110, y0: -2, x1: -8, y1: -2, width: 7, speed: 10 }, cost: 600 },
   },
 ];
 
@@ -199,13 +190,13 @@ export interface Secret {
 
 export const SECRETS: Secret[] = [
   // off the south gallery's east end
-  { area: 1, wall: [C + 20, R - 26, C + 22, R - 25], chamber: { cx: C + 25, cy: R - 25.5, rx: 2.2, ry: 3.3, seed: 1.1 }, loot: { coins: 60, gems: [[2, 6], [5, 3]] } },
+  { area: 1, wall: [C + 16, R - 13, C + 17, R - 12], chamber: { cx: C + 20.5, cy: R - 12.5, rx: 3.2, ry: 2.2, seed: 1.1 }, loot: { coins: 60, gems: [[2, 6], [5, 3]] } },
   // off the north vault's west end
-  { area: 2, wall: [C - 22, R + 23, C - 21, R + 24], chamber: { cx: C - 24.2, cy: R + 23.5, rx: 2.2, ry: 3.3, seed: 2.7 }, loot: { coins: 80, gems: [[4, 3], [5, 5]] } },
+  { area: 2, wall: [C - 17, R + 11, C - 16, R + 12], chamber: { cx: C - 20.5, cy: R + 12.5, rx: 3.2, ry: 2.2, seed: 2.7 }, loot: { coins: 80, gems: [[4, 3], [5, 5]] } },
   // above the east gallery's north end
-  { area: 3, wall: [C + 37, R + 13, C + 38, R + 15], chamber: { cx: C + 37.5, cy: R + 18, rx: 3.3, ry: 2.2, seed: 0.6 }, loot: { coins: 80, gems: [[3, 6], [5, 4]] } },
+  { area: 3, wall: [C + 28, R + 11, C + 29, R + 12], chamber: { cx: C + 27, cy: R + 14, rx: 3.5, ry: 1.8, seed: 0.6 }, loot: { coins: 80, gems: [[3, 6], [5, 4]] } },
   // below the west gallery's south end
-  { area: 4, wall: [C - 38, R - 15, C - 37, R - 14], chamber: { cx: C - 37.5, cy: R - 17.2, rx: 3.3, ry: 2.2, seed: 3.9 }, loot: { coins: 100, gems: [[4, 5], [5, 6]] } },
+  { area: 4, wall: [C - 29, R - 11, C - 28, R - 10], chamber: { cx: C - 28, cy: R - 13.5, rx: 3.5, ry: 2.2, seed: 3.9 }, loot: { coins: 100, gems: [[4, 5], [5, 6]] } },
 ];
 
 /**
@@ -230,14 +221,14 @@ export interface Wall {
 }
 
 /**
- * Something behind brick walls, to be smashed into: a side room down a
- * corridor off a room, or a pen of walls round a heap in the middle of one.
+ * Something behind a brick wall, to be smashed into: a side room down a
+ * corridor off a room.
  * What is in it can be seen over the walls, from when its area opens, and is
  * over and above the area, like a hidden chamber's, and gone with the area
  * when it is sealed.
  *
- * In tiles, from the middle of the grid: a side room's `corridor`, and its
- * `room` carved as the others are; `at` the middle of what is in it.
+ * In tiles, from the middle of the grid: the `corridor`, and the `room`
+ * carved as the others are; `at` the middle of what is in it.
  */
 export interface Stash {
   name: string;
@@ -257,46 +248,10 @@ function sideRoom(name: string, area: number, grade: 1 | 2 | 3, corridor: [numbe
   STASHES.push({ name, area, at: [room.cx, room.cy], loot, corridor, room });
 }
 
-/**
- * A pen: four walls round a heap, `w` by `h` tiles inside, its bottom-left
- * inside corner at `x`, `y`. Each side is a wall of its own, so one side down
- * is a way in and the others still stand.
- */
-function pen(name: string, area: number, grades: [1 | 2 | 3, 1 | 2 | 3, 1 | 2 | 3, 1 | 2 | 3], x: number, y: number, w: number, h: number, loot: Stash['loot'], treasure: [GemKind, number][][] = []) {
-  const sides: [number, number, number, number][] = [
-    [x - 1, y - 1, x + w, y - 1], // bottom, corners and all
-    [x - 1, y + h, x + w, y + h], // top
-    [x - 1, y, x - 1, y + h - 1], // left
-    [x + w, y, x + w, y + h - 1], // right
-  ];
-  sides.forEach((tiles, k) => WALLS.push({ area, grade: grades[k], tiles, treasure: treasure[k] ?? [] }));
-  STASHES.push({ name, area, at: [x + (w - 1) / 2, y + (h - 1) / 2], loot });
-}
-
-/** A single wall standing in a room, in the way. */
-function baffle(area: number, grade: 1 | 2 | 3, tiles: [number, number, number, number], treasure: [GemKind, number][] = []) {
-  WALLS.push({ area, grade, tiles, treasure });
-}
-
-sideRoom('South Cellar', S, 1, [C - 2, R - 44, C + 1, R - 35], [C - 2, R - 40, C + 1, R - 40], { cx: C, cy: R - 48, rx: 10, ry: 4, seed: 1.9 }, { coins: 400, gems: [[1, 20], [2, 12], [5, 2]] }, [[2, 3]]);
-sideRoom('East Annex', E, 2, [C + 48, R, C + 56, R + 2], [C + 53, R, C + 53, R + 2], { cx: C + 62, cy: R + 1, rx: 6, ry: 8, seed: 0.8 }, { coins: 450, gems: [[1, 16], [3, 18], [5, 3]] }, [[3, 4], [5, 1]]);
-sideRoom('North Loft', N, 2, [C - 2, R + 35, C + 1, R + 44], [C - 2, R + 40, C + 1, R + 40], { cx: C, cy: R + 48, rx: 10, ry: 4, seed: 4.4 }, { coins: 500, gems: [[2, 16], [3, 12], [4, 4], [5, 3]] }, [[4, 2], [5, 1]]);
-sideRoom('West Annex', W, 3, [C - 56, R - 2, C - 48, R], [C - 53, R - 2, C - 53, R], { cx: C - 62, cy: R - 1, rx: 6, ry: 8, seed: 3.1 }, { coins: 500, gems: [[3, 16], [4, 8], [5, 4]] }, [[4, 3], [5, 2]]);
-
-// Pens in the rooms, sides bottom, top, left, right: each with one side softer than the rest,
-// for a player who looks before driving at it.
-pen('Hollow pen', 0, [1, 1, 1, 1], C - 11, R - 8, 5, 4, { coins: 110, gems: [[1, 12]] }, [[], [[1, 3]]]);
-pen('South pen', S, [2, 1, 2, 2], C - 10, R - 24, 4, 3, { coins: 80, gems: [[2, 8], [5, 1]] }, [[], [], [[2, 2]]]);
-pen('North pen', N, [2, 3, 3, 3], C - 8, R + 30, 4, 3, { coins: 80, gems: [[3, 8], [4, 2], [5, 1]] }, [[], [[4, 1], [5, 1]]]);
-pen('East pen', E, [2, 2, 3, 2], C + 43, R + 2, 4, 3, { coins: 80, gems: [[3, 10], [5, 1]] }, [[], [], [], [[3, 3]]]);
-pen('West pen', W, [3, 3, 2, 3], C - 37, R - 7, 4, 3, { coins: 80, gems: [[4, 4], [5, 2]] }, [[[4, 2]]]);
-
-// And a wall standing on its own in each room, to go round or through, with something set in it.
-baffle(0, 1, [C + 7, R + 4, C + 11, R + 4], [[1, 2]]);
-baffle(S, 1, [C + 12, R - 29, C + 12, R - 25], [[5, 1]]);
-baffle(N, 2, [C + 3, R + 23, C + 7, R + 23], [[4, 1]]);
-baffle(E, 2, [C + 37, R - 6, C + 37, R - 2], [[3, 2]]);
-baffle(W, 3, [C - 43, R + 2, C - 39, R + 2], [[4, 1], [5, 1]]);
+sideRoom('South Cellar', S, 1, [C - 2, R - 22, C + 1, R - 16], [C - 2, R - 20, C + 1, R - 20], { cx: C, cy: R - 25, rx: 9, ry: 3, seed: 1.9 }, { coins: 400, gems: [[1, 20], [2, 12], [5, 2]] }, [[2, 3]]);
+sideRoom('East Annex', E, 2, [C + 31, R, C + 37, R + 2], [C + 35, R, C + 35, R + 2], { cx: C + 42, cy: R + 1, rx: 5, ry: 6, seed: 0.8 }, { coins: 450, gems: [[1, 16], [3, 18], [5, 3]] }, [[3, 4], [5, 1]]);
+sideRoom('North Loft', N, 2, [C - 2, R + 16, C + 1, R + 22], [C - 2, R + 20, C + 1, R + 20], { cx: C, cy: R + 25, rx: 9, ry: 3, seed: 4.4 }, { coins: 500, gems: [[2, 16], [3, 12], [4, 4], [5, 3]] }, [[4, 2], [5, 1]]);
+sideRoom('West Annex', W, 3, [C - 37, R - 2, C - 31, R], [C - 35, R - 2, C - 35, R], { cx: C - 42, cy: R - 1, rx: 5, ry: 6, seed: 3.1 }, { coins: 500, gems: [[3, 16], [4, 8], [5, 4]] }, [[4, 3], [5, 2]]);
 
 /** Where a stash's middle is in the world, for its loot. */
 export function stashCentre(k: number): [number, number] {
@@ -413,8 +368,8 @@ export function buildCave(): Cave {
   };
 }
 
-/** How far apart lamps stand, in world units, and how far off the rock face. */
-const LAMP_SPACING = 10, LAMP_OFF_ROCK = 1.4;
+/** How far apart lamps stand along the rock, in world units, and how far off its face; and how far apart across the open floor. */
+const LAMP_SPACING = 10, LAMP_OFF_ROCK = 1.4, FLOOR_LAMP_SPACING = 20;
 
 /**
  * Lamps along the edges of the floor: on open tiles against the rock, the
@@ -426,7 +381,7 @@ const LAMP_SPACING = 10, LAMP_OFF_ROCK = 1.4;
 function placeLamps(cells: Uint8Array): Lamp[] {
   const out: Lamp[] = [];
   const at = (tx: number, ty: number) => (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS ? ROCK : cells[ty * COLS + tx]);
-  const nearHeap = (x: number, y: number) => AREAS.some((a) => a.heaps.some((h) => Math.hypot(h.x - x, h.y - y) < Math.sqrt(h.coins) * 0.36 + 4));
+  const nearHeap = (x: number, y: number, margin = 4) => AREAS.some((a) => a.heaps.some((h) => Math.hypot(h.x - x, h.y - y) < Math.sqrt(h.coins) * 0.36 + margin));
   const nearBelt = (x: number, y: number) => AREAS.some((a) => {
     const b = a.belt?.spec;
     if (!b) return false;
@@ -452,6 +407,22 @@ function placeLamps(cells: Uint8Array): Lamp[] {
       const x = cx - (nx / len) * (TILE / 2 - LAMP_OFF_ROCK), y = cy - (ny / len) * (TILE / 2 - LAMP_OFF_ROCK);
       if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 8 || nearHeap(x, y) || nearBelt(x, y)) continue;
       if (out.some((l) => Math.hypot(l.x - x, l.y - y) < LAMP_SPACING)) continue;
+      out.push({ x, y, area: areaAt(x, y) });
+    }
+  }
+  // and across the middle of the floor, on a grid, so nowhere is out of reach of one: not in a heap,
+  // on a belt, by the hole, or on or beside anything that comes down or opens
+  const step = Math.round(FLOOR_LAMP_SPACING / TILE);
+  for (let ty = 1; ty < ROWS - 1; ty++) {
+    for (let tx = 1; tx < COLS - 1; tx++) {
+      if ((tx - COLS / 2) % step !== 0 || (ty - ROWS / 2) % step !== 0) continue;
+      if (at(tx, ty) !== OPEN) continue;
+      let clear = true;
+      for (let oy = -1; oy <= 1 && clear; oy++) for (let ox = -1; ox <= 1; ox++) if (at(tx + ox, ty + oy) !== OPEN) { clear = false; break; }
+      if (!clear) continue;
+      const [x, y] = tileCentre(tx, ty);
+      if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 10 || nearHeap(x, y, 1.5) || nearBelt(x, y)) continue;
+      if (out.some((l) => Math.hypot(l.x - x, l.y - y) < 12)) continue;
       out.push({ x, y, area: areaAt(x, y) });
     }
   }
