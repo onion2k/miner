@@ -109,7 +109,7 @@ export const AREAS: Area[] = [
     ],
     vein: { x: 100, y: -26, every: 0.85, coins: 1, gems: [[1, 0.07], [3, 0.03]] },
     cracks: [[108, 4], [102, 32], [112, -24]],
-    belt: { spec: { x0: 58, y0: 2, x1: 8, y1: 2, width: 7, speed: 10 }, cost: 400 },
+    belt: { spec: { x0: 110, y0: 2, x1: 8, y1: 2, width: 7, speed: 10 }, cost: 400 },
   },
   {
     name: 'West Gallery',
@@ -120,7 +120,7 @@ export const AREAS: Area[] = [
     ],
     vein: { x: -100, y: 26, every: 0.65, coins: 1, gems: [[3, 0.07], [4, 0.025]] },
     cracks: [[-108, -4], [-102, -32], [-112, 24]],
-    belt: { spec: { x0: -58, y0: -2, x1: -8, y1: -2, width: 7, speed: 10 }, cost: 600 },
+    belt: { spec: { x0: -110, y0: -2, x1: -8, y1: -2, width: 7, speed: 10 }, cost: 600 },
   },
 ];
 

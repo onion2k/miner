@@ -125,13 +125,13 @@ async function main() {
   world.belts = running().map((a) => beltOf(AREAS[a].belt!.spec));
   nav.setBelts(world.belts);
 
-  // ---- the static half: floor, walls, hole, gates, chutes, belts ----
+  // ---- the static half: floor, walls, hole, gates, belts ----
 
   const meshes = {
     tile: tile(TILE * 1.01), wall: box(TILE * 1.02, TILE * 1.02, 1), gate: box(3.4, 3.4, 1, false),
     // the three tiles each way the floor leaves out, and a little more so no seam shows
     // between them; see where it is placed for why that overlap does not flicker
-    collar: collar(TILE * 3 + 0.2, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth), chute: box(4, 4, 1),
+    collar: collar(TILE * 3 + 0.2, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth),
     beltBase: box(1, 1, 1), rail: box(1, 1, 1),
   };
 
@@ -160,8 +160,6 @@ async function main() {
     const gateM = new Float32Array(Math.max(1, gates.length) * 16);
     gates.forEach(([x, y, a], i) => placePart(gateM, i, x, y, 0, hash(x, y, a) * 0.5 - 0.25, 0, 0, 0, 0, 0, 1, 1, 2.6 + hash(x, y) * 1.2));
     if (!gates.length) hide(gateM, 0);
-    const chuteM = new Float32Array(AREAS.length * 16);
-    AREAS.forEach((a, i) => placePart(chuteM, i, a.vein.x, a.vein.y, 7, 0, 0, 0, 0, 0, 0.35, 1, 1, 2));
     const belts: GameGroup[] = [];
     for (const a of running()) {
       const s = AREAS[a].belt!.spec;
@@ -186,7 +184,6 @@ async function main() {
       { mesh: meshes.pit, matrices: identity(), albedo: [0.04, 0.035, 0.05], roughness: 0.95 },
       { mesh: meshes.wall, matrices: wallM, materials: wallMat },
       { mesh: meshes.gate, matrices: gateM, count: gates.length, albedo: [0.62, 0.32, 0.72], roughness: 0.35 },
-      { mesh: meshes.chute, matrices: chuteM, albedo: [0.2, 0.2, 0.22], roughness: 0.6 },
       ...belts,
     ]);
   }
@@ -800,42 +797,17 @@ async function main() {
   // ---- the pointer ----
 
   /**
-   * An arrow at the edge of the screen toward where to go next, or a marker
-   * over it once it is in view. With the next room open, that is its gate;
-   * before, once most of the room is banked, it is the best of what is left:
-   * the most value for the least driving, gathered into patches.
+   * With the next room open, an arrow at the edge of the screen toward its
+   * gate, or a marker over the gate once it is in view.
    */
-  const POINT_FROM = 0.6, PATCH = 12;
   let target: { x: number; y: number; label: string } | null = null;
   let aimAt = 0;
   function aimPointer() {
     target = null;
-    const room = economy.current();
-    if (economy.save.done) return;
-    if (economy.nextOpen()) {
-      const next = economy.next()!;
-      const [x, y] = gateCentre(cave, next);
-      target = { x, y, label: AREAS[next].name };
-      return;
-    }
-    if (banked(room) < POINT_FROM || lying(room) <= 0) return;
-    const patches = new Map<number, { v: number; x: number; y: number }>();
-    for (let i = 0; i < world.count; i++) {
-      if (!world.alive[i] || origin[i] !== room || world.z[i] < 0) continue;
-      const x = world.x[i], y = world.y[i];
-      // on its way in already
-      if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 3) continue;
-      const key = Math.floor(x / PATCH) * 1000 + Math.floor(y / PATCH);
-      const v = KIND_VALUE[world.kind[i]];
-      const p = patches.get(key);
-      if (p) { p.v += v; p.x += x * v; p.y += y * v; } else patches.set(key, { v, x: x * v, y: y * v });
-    }
-    let best = -1;
-    for (const p of patches.values()) {
-      const x = p.x / p.v, y = p.y / p.v;
-      const score = p.v / (20 + Math.hypot(x - dozer.x, y - dozer.y));
-      if (score > best) { best = score; target = { x, y, label: `${p.v} here` }; }
-    }
+    if (economy.save.done || !economy.nextOpen()) return;
+    const next = economy.next()!;
+    const [x, y] = gateCentre(cave, next);
+    target = { x, y, label: AREAS[next].name };
   }
   /** The arrow along a direction on the screen, and its words behind it, on the side away from where it points. */
   function pointAlong(ux: number, uy: number) {

@@ -12,18 +12,19 @@ back, **M** to mute. Progress is saved in the browser; the workshop has a
 The cave is five rooms, and nothing refills them. Bank nine tenths of what a
 room holds and the rock at the next gate comes down: the Hollow, then the
 South Gallery, the East Gallery, the North Vault and the West Gallery, each
-with dearer gems than the last. Chase the last tenth or leave it: drive on
-through the new gate and down its corridor and the room behind is sealed,
-with whatever was still in it. Up at the gate the game says so, and the line
-that seals it glows red. Only a room or two is ever in play, so a cave that has been worked
-through does not weigh on the frame. A gold arrow at the edge of the screen
-points to the open gate, or, once most of a room is in, to the best of what
-is left. The drones work the room being cleared, finding their way round the
-rock and the heaps, and give a loaded machine the road. With a belt running
-they push a load to whichever is nearer, the belt or the hole, and leave the
-belt to carry it. Once the West Gallery
-is cleared too, its vein trickles coins in and
+with dearer gems than the last. A gold arrow at the edge of the screen points
+to the open gate. Chase the last tenth or leave it: drive on through the new
+gate and down its corridor and the room behind is sealed, with whatever was
+still in it. Up at the gate the game says so, and the line that seals it
+glows red. Only a room or two is ever in play, so a cave that has been worked
+through does not weigh on the frame.
+
+The drones work the room being cleared, finding their way round the rock and
+the heaps, and give a loaded machine the road. With a belt running they push
+a load to whichever is nearer, the belt or the hole, and leave the belt to
+carry it. Once the West Gallery is cleared too, its vein trickles coins in and
 its floor now and then cracks, glows, and throws up a fountain of them.
+
 A run of coins into the hole is tallied on screen and grows louder — in
 sparkle, light and pitch — the longer it goes on.
 
@@ -39,6 +40,20 @@ each kind of thing — three and a half thousand coins are one draw.
 
 It needs a browser with WebGPU.
 
+## Measuring the drones
+
+    npm run sim                                  # the south gallery, three drones, two minutes, seeds 1-8
+    npm run sim -- --room 3 --belt               # the east gallery, with its belt running
+    npm run sim -- --room 1 --player patrol      # the player driving in and out through the drones
+    npm run sim -- --drones 1 --seconds 300 --seeds 1-3 --each
+
+The game without the picture: the same cave, physics, machines and drone code,
+stepped in Node as fast as it goes, from a seed, so a run can be repeated. One
+run of the game is too much luck to tell a better drone from a worse one; eight
+seeds of this take seconds. It reports what was banked, how each push ended,
+and how much the drones got in each other's way — see the top of
+`scripts/sim.ts`.
+
 ## How it is put together
 
     src/main.ts       boot, the scene's groups, lights, particles, the HUD, the frame loop
@@ -47,6 +62,7 @@ It needs a browser with WebGPU.
     src/dozer.ts      the bulldozer: tank steering, the blade and hull as pushers, load
     src/tools.ts      conveyor belts, drones, and the fountains
     src/nav.ts        the way round the rock and the heaps, for the drones
+    scripts/sim.ts    the drones without the picture, for measuring them
     src/audio.ts      every sound, synthesised: clinks, thunks, the engine, the rumble
     src/economy.ts    the bank, the upgrades, which room is being cleared, the save, the shop
     src/meshes.ts     flat-shaded shapes: coin, gem, box, cone, ball, the hole's collar and pit
