@@ -144,6 +144,48 @@ export class Sound {
     boom.start(now); boom.stop(now + 0.9);
   }
 
+  /** A lamp knocked over: the glass going, a few bits of it tinkling after, and the bulb's last fizz. */
+  shatter() {
+    const ctx = this.ctx; if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
+    const d = buffer.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 6);
+    const src = ctx.createBufferSource(); src.buffer = buffer;
+    const filter = ctx.createBiquadFilter(); filter.type = 'highpass'; filter.frequency.value = 2500;
+    const gain = ctx.createGain(); gain.gain.value = 0.5;
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(now);
+    for (let k = 0; k < 6; k++) {
+      const t = now + 0.05 + Math.random() * 0.35;
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.value = 3000 + Math.random() * 3500;
+      g.gain.setValueAtTime(0.06, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+      osc.connect(g).connect(this.master);
+      osc.start(t); osc.stop(t + 0.1);
+    }
+    const fizz = ctx.createOscillator(), fg = ctx.createGain();
+    fizz.type = 'sawtooth'; fizz.frequency.setValueAtTime(120, now); fizz.frequency.exponentialRampToValueAtTime(40, now + 0.25);
+    fg.gain.setValueAtTime(0.05, now); fg.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    fizz.connect(fg).connect(this.master);
+    fizz.start(now); fizz.stop(now + 0.3);
+  }
+
+  /** A blade into a wall that does not give: a dull thump, and nothing after it. */
+  clunk() {
+    const ctx = this.ctx; if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140, now);
+    osc.frequency.exponentialRampToValueAtTime(55, now + 0.12);
+    gain.gain.setValueAtTime(0.5, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.connect(gain).connect(this.master);
+    osc.start(now); osc.stop(now + 0.2);
+  }
+
   /** The rock cracking, before a fountain. */
   crack() {
     const ctx = this.ctx; if (!ctx || !this.master) return;

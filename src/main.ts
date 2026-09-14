@@ -10,12 +10,12 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer, EFFECT_STRIDE, MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import { LightPool } from 'artshape-render/game/lights';
 import { mergeMeshes } from 'artshape-render/mesh/types';
-import { AREAS, BODY_CAPACITY, COLS, HOLE, ORDER, SECRET, SECRETS, TILE, atGate, chamberCentre, tileCentre, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, sealPoint, wallInstances, type Heap, type Vein } from './cave';
-import { World, BAR, KINDS, KIND_NAME, KIND_RADIUS, KIND_VALUE, type Pusher } from './physics';
+import { AREAS, BODY_CAPACITY, BRICK, COLS, HOLE, ORDER, ORIGIN_X, ORIGIN_Y, SECRET, SECRETS, STASHES, TILE, WALLS, atGate, stashCentre, chamberCentre, tileCentre, wallAlongX, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, sealPoint, wallInstances, type Heap, type Vein } from './cave';
+import { World, BAR, BRICK_KIND, KINDS, KIND_NAME, KIND_RADIUS, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces, separate } from './dozer';
 import { Input } from './input';
 import { TouchControls, isTouchDevice } from './touch';
-import { CLEAR_SHARE, Economy, MAX_DRONES, SOURCES, chamberSource, renderShop, roomStock } from './economy';
+import { CLEAR_SHARE, Economy, MAX_DRONES, SOURCES, WALL_NAME, WALL_STRENGTH, areaOfSource, chamberSource, renderShop, roomStock, stashSource, wallSource } from './economy';
 import { Bot, BOT_SCALE, BOT_SPEC, Foreman, Fountain, beltOf } from './tools';
 import { Nav } from './nav';
 import { Sound } from './audio';
@@ -25,14 +25,22 @@ import { identity, hide, place, placePart, placeQuat, project } from './matrix';
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
 const MM_PER_UNIT = 100;
 const LIGHT_CAPACITY = 64;
-const EFFECT_CAPACITY = 32;
-/** How many of each kind the cave can hold at once, past the coins; the last is gold bars. */
-const GEM_CAPACITY = [0, 320, 240, 260, 160, 40];
-/** Driving into the rock that breaks: square enough on, as the cosine off straight at it, and fast enough, to smash it. */
+const EFFECT_CAPACITY = 64;
+/** How many of each kind the cave can hold at once, past the coins; the last two are gold bars and bricks. */
+const GEM_CAPACITY = [0, 320, 240, 260, 160, 60, 900];
+/** Driving into the rock that breaks, or a brick wall: square enough on, as the cosine off straight at it, and fast enough, to smash it. */
 const SMASH_SQUARE = 0.7, SMASH_SPEED = 6;
+/** A brick in a wall: how long along the wall, how deep, how tall; and how many courses a wall stands. */
+const BRICK_SIZE = [1.9, 1.75, 1.05] as const, COURSES = 4;
+/** The colour of each grade of wall, clay, stone and iron-bound, and how rough. */
+const WALL_COLOUR: [number, number, number, number][] = [[0, 0, 0, 0], [0.58, 0.24, 0.16, 0.85], [0.46, 0.45, 0.47, 0.8], [0.2, 0.22, 0.27, 0.45]];
+/** The colour of each kind of gem, for one set in a wall as for one loose. */
+const GEM_ALBEDO: [number, number, number][] = [[0, 0, 0], [1.0, 0.06, 0.12], [0.08, 0.95, 0.35], [0.12, 0.35, 1.0], [0.9, 0.97, 1.0]];
+/** Where a body came from when it came from nowhere that counts: a brick. */
+const NO_SOURCE = 255;
 const BOT_CAPACITY = MAX_DRONES;
 const TREAD_BARS = 9;
-const STRIPE_CAPACITY = 80;
+const STRIPE_CAPACITY = 160;
 /** The pennant: a pole and this many slats waving behind it. */
 const FLAG_SLATS = 5;
 
@@ -45,8 +53,8 @@ const RENDER_BUDGET_MS = 8;
 const CALIBRATE_WARMUP = 4;
 const CALIBRATE_SAMPLES = 24;
 
-/** The eye lamp's strength: enough to make coins flash, not to light the cave. */
-const GLINT = 2.5;
+/** How high a lamp's head stands, how many lamps are lit at once near the eye, and how near a machine has to come to knock one over. */
+const LAMP_HEIGHT = 5.6, LAMP_LIGHTS = 40, LAMP_KNOCK = 4.2;
 
 const CAMERA = { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 };
 
@@ -80,22 +88,18 @@ async function main() {
     ...renderer.look,
     albedo: [0.8, 0.8, 0.8],
     roughness: 0.6,
-    // No daylight underground, but a cool light from high above, as if through a
-    // shaft: it gives the walls lit tops and shadowed sides, and the sun map throws
-    // their shadows across the floor. The tonemap lifts the darks hard, so these
-    // read far brighter than the numbers look.
+    // Pitch black: no daylight, no fill. What is seen is what a lamp or a machine's
+    // lights fall on, and nothing else.
     sunDir: [0.3, -0.22, 0.93],
-    sunColour: [0.06, 0.065, 0.085],
-    exposure: 1.15,
+    sunColour: [0, 0, 0],
+    exposure: 1.3,
     falloffHalf: 9,
-    // the fill the cave had before it went dark, with the occlusion darkening
-    // what it cannot reach: wall bases, the gaps in a heap, under the dozer
-    ambient: 0.42,
+    ambient: 0,
     occlusion: 2,
     occlusionRadius: 2.5,
     occlusionDirect: 0.3,
     spotSoftness: 0.004,
-    background: [0.012, 0.01, 0.018],
+    background: [0, 0, 0],
   };
   // bloom on what is past white, so lamps, the hole and coin glints spill light; any
   // lower and a run of coins into the hole, each throwing gold sparkles, is a white blob
@@ -111,7 +115,7 @@ async function main() {
 
   const economy = new Economy();
   const cave = buildCave();
-  const world = new World(BODY_CAPACITY, cave.solid(economy.save.areas, economy.save.secrets));
+  const world = new World(BODY_CAPACITY, cave.solid(economy.save.areas, economy.save.secrets, economy.save.walls));
   const dozer = new Dozer(world.solid);
   const input = new Input();
   const sound = new Sound();
@@ -134,9 +138,82 @@ async function main() {
     tile: tile(TILE * 1.01), wall: box(TILE * 1.02, TILE * 1.02, 1), gate: box(3.4, 3.4, 1, false),
     // the three tiles each way the floor leaves out, and a little more so no seam shows
     // between them; see where it is placed for why that overlap does not flicker
-    collar: collar(TILE * 3 + 0.2, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth),
+    collar: collar(TILE * 3 + 0.2, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth), brick: box(1, 1, 1, true), stud: gem(1.05, 2.3),
+    lampPost: cylinder(0.14, LAMP_HEIGHT, 6), lampHead: moved(box(0.8, 0.8, 0.9, true), 0, 0, 0.1),
     beltBase: box(1, 1, 1), rail: box(1, 1, 1),
   };
+
+  /**
+   * The bricks of a wall as it stands: courses of them, two deep across the
+   * corridor, each course set half a brick along from the one below, with a
+   * part brick at each end where the bond leaves one. Along the wall's own
+   * length, which is X or Y as the wall runs.
+   */
+  function layBricks(w: number): { x: number; y: number; z: number; yaw: number; length: number }[] {
+    const [x0, y0, x1, y1] = WALLS[w].tiles;
+    const alongX = wallAlongX(w);
+    const start = alongX ? ORIGIN_X + x0 * TILE : ORIGIN_Y + y0 * TILE;
+    const span = ((alongX ? x1 - x0 : y1 - y0) + 1) * TILE;
+    const across = alongX ? ORIGIN_Y + (y0 + 0.5) * TILE : ORIGIN_X + (x0 + 0.5) * TILE;
+    const out: { x: number; y: number; z: number; yaw: number; length: number }[] = [];
+    const L = BRICK_SIZE[0], D = BRICK_SIZE[1], H = BRICK_SIZE[2];
+    for (let c = 0; c < COURSES; c++) {
+      for (const side of [-1, 1]) {
+        const offset = ((c + (side > 0 ? 1 : 0)) % 2) * (L / 2);
+        for (let edge = -offset; edge < span; edge += L) {
+          const a = Math.max(0, edge), b = Math.min(span, edge + L);
+          if (b - a < 0.5) continue;
+          const along = start + (a + b) / 2, off = across + side * (D / 2 + 0.05);
+          out.push({ x: alongX ? along : off, y: alongX ? off : along, z: H * (c + 0.5), yaw: alongX ? 0 : Math.PI / 2, length: b - a - 0.08 });
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Which of a wall's bricks hold its treasure, and what: a gold bar is a gold
+   * brick, a gem is set in the top of one. Always the same bricks for the same
+   * wall, and from the top course, where they show from above.
+   */
+  function treasureBricks(w: number): { brick: number; kind: number }[] {
+    const bricks = layBricks(w), items = WALLS[w].treasure.flatMap(([kind, n]) => new Array<number>(n).fill(kind));
+    const high = bricks.map((b, i) => [b, i] as const).filter(([b]) => b.z > BRICK_SIZE[2] * (COURSES - 1)).map(([, i]) => i);
+    const taken = new Set<number>(), out: { brick: number; kind: number }[] = [];
+    items.forEach((kind, n) => {
+      let pick = high[Math.floor(hash(w, n, 11) * high.length)];
+      for (let tries = 0; taken.has(pick) && tries < high.length; tries++) pick = high[(high.indexOf(pick) + 1) % high.length];
+      taken.add(pick);
+      out.push({ brick: pick, kind });
+    });
+    return out;
+  }
+
+  // ---- the lamps ----
+
+  /** Whether a lamp is lit: standing, and in a room open and not sealed. */
+  const lampOn = (k: number) => !economy.save.lampsBroken.includes(k) && economy.save.areas[cave.lamps[k].area];
+  /** The lamps lit near the eye this frame, nearest first. */
+  const lampsLit: number[] = [];
+  /** The way a lamp fell, which is always the same way for the same lamp. */
+  const fallYaw = (k: number) => hash(k, 3, 17) * Math.PI * 2;
+
+  /** Knock over any lamp the player's machine is into: its hull, or its blade. */
+  function knockLamps() {
+    const c = Math.cos(dozer.yaw), sn = Math.sin(dozer.yaw);
+    const bx = dozer.x + c * BLADE_AT, by = dozer.y + sn * BLADE_AT;
+    cave.lamps.forEach((l, k) => {
+      if (economy.save.lampsBroken.includes(k)) return;
+      if (Math.hypot(l.x - dozer.x, l.y - dozer.y) > LAMP_KNOCK && Math.hypot(l.x - bx, l.y - by) > LAMP_KNOCK - 0.8) return;
+      const lit = lampOn(k);
+      economy.breakLamp(k);
+      sound.shatter();
+      // glass, and the last of the light going out of it as sparks
+      renderer.emit({ position: [l.x, l.y, LAMP_HEIGHT], velocity: [c * 3, sn * 3, 4], spread: 6, count: 40, life: 0.9, lifeSpread: 0.4, size: 0.18, growth: -0.1, colour: lit ? [2.4, 2.0, 1.4] : [0.6, 0.65, 0.7], alpha: 1, gravity: 1.6, floor: 0 });
+      if (lit) renderer.emit({ position: [l.x, l.y, LAMP_HEIGHT], velocity: [0, 0, 2], spread: 3, count: 25, life: 0.5, lifeSpread: 0.3, size: 0.12, growth: -0.2, colour: [3, 2.2, 0.9], alpha: 0, gravity: 0.6, floor: 0 });
+      buildStatic();
+    });
+  }
 
   function buildStatic() {
     const floor = floorTiles(cave, economy.save.secrets);
@@ -163,6 +240,55 @@ async function main() {
     const gateM = new Float32Array(Math.max(1, gates.length) * 16);
     gates.forEach(([x, y, a], i) => placePart(gateM, i, x, y, 0, hash(x, y, a) * 0.5 - 0.25, 0, 0, 0, 0, 0, 1, 1, 2.6 + hash(x, y) * 1.2));
     if (!gates.length) hide(gateM, 0);
+    // The brick walls still standing, each brick a shade off the next. A wall that has taken a
+    // beating shows it: its bricks knocked askew and darker, the more the worse. A gold brick is
+    // gold, and a gem set in a wall sits in the top of its brick.
+    const standing: { x: number; y: number; z: number; yaw: number; length: number; colour: number[]; tilt: number }[] = [];
+    const studs: { x: number; y: number; z: number; kind: number }[] = [];
+    WALLS.forEach((wall, w) => {
+      if (economy.save.walls[w]) return;
+      const hurt = economy.save.wallDamage[w] / WALL_STRENGTH[wall.grade];
+      const bricks = layBricks(w), gold = new Map(treasureBricks(w).map((t) => [t.brick, t.kind]));
+      bricks.forEach((b, i) => {
+        const j = (salt: number) => hash(w * 131 + i, salt, 5) - 0.5;
+        const kind = gold.get(i);
+        const shade = (0.82 + hash(b.x * 3, b.y * 3, b.z * 7) * 0.3) * (1 - hurt * 0.35);
+        const colour = kind === BAR ? [1.0, 0.72, 0.18, 0.2] : [...WALL_COLOUR[wall.grade].slice(0, 3).map((c) => c * shade), WALL_COLOUR[wall.grade][3]];
+        const x = b.x + j(1) * hurt * 0.9, y = b.y + j(2) * hurt * 0.9;
+        standing.push({ x, y, z: b.z, yaw: b.yaw + j(3) * hurt * 0.5, length: b.length, colour, tilt: j(4) * hurt * 0.3 });
+        if (kind !== undefined && kind !== BAR) studs.push({ x, y, z: b.z + BRICK_SIZE[2] / 2, kind });
+      });
+    });
+    const brickM = new Float32Array(Math.max(1, standing.length) * 16), brickMat = new Float32Array(Math.max(1, standing.length) * MATERIAL_STRIDE);
+    standing.forEach((b, i) => {
+      placePart(brickM, i, b.x, b.y, b.z, b.yaw, 0, 0, 0, 0, b.tilt, b.length, BRICK_SIZE[1], BRICK_SIZE[2]);
+      brickMat.set(b.colour, i * MATERIAL_STRIDE);
+    });
+    if (!standing.length) hide(brickM, 0);
+    const studM = new Float32Array(Math.max(1, studs.length) * 16), studMat = new Float32Array(Math.max(1, studs.length) * MATERIAL_STRIDE);
+    studs.forEach((g, i) => {
+      placePart(studM, i, g.x, g.y, g.z, 0, 0, 0, 0, 0, 0, 0.45, 0.45, 0.45);
+      studMat.set([...(GEM_ALBEDO[g.kind] as number[]), 0.2], i * MATERIAL_STRIDE);
+    });
+    if (!studs.length) hide(studM, 0);
+    // the lamps: a post each, standing or lying where it fell, and a head on it, dark on one knocked over
+    const postM = new Float32Array(Math.max(1, cave.lamps.length) * 16), headM = new Float32Array(Math.max(1, cave.lamps.length) * 16);
+    const headMat = new Float32Array(Math.max(1, cave.lamps.length) * MATERIAL_STRIDE);
+    cave.lamps.forEach((l, k) => {
+      const down = economy.save.lampsBroken.includes(k);
+      const yaw = fallYaw(k), pitch = down ? 1.45 : 0;
+      placePart(postM, k, l.x, l.y, down ? 0.25 : 0, yaw, 0, 0, 0, 0, pitch, 1, 1, 1);
+      const reach = LAMP_HEIGHT - 0.3;
+      const hx = l.x + Math.sin(yaw) * Math.sin(pitch) * reach, hy = l.y - Math.cos(yaw) * Math.sin(pitch) * reach, hz = (down ? 0.6 : 0) + Math.cos(pitch) * reach;
+      placePart(headM, k, hx, hy, hz, yaw, 0, 0, 0, 0, pitch, 1, 1, 1);
+      headMat.set(down ? [0.18, 0.17, 0.16, 0.6] : [1.0, 0.86, 0.6, 0.3], k * MATERIAL_STRIDE);
+    });
+    const brickGroups: GameGroup[] = [
+      { mesh: meshes.lampPost, matrices: postM, count: cave.lamps.length, albedo: [0.22, 0.22, 0.25], roughness: 0.5 },
+      { mesh: meshes.lampHead, matrices: headM, materials: headMat, count: cave.lamps.length },
+      { mesh: meshes.brick, matrices: brickM, materials: brickMat, count: standing.length },
+      { mesh: meshes.stud, matrices: studM, materials: studMat, count: studs.length },
+    ];
     const belts: GameGroup[] = [];
     for (const a of running()) {
       const s = AREAS[a].belt!.spec;
@@ -187,6 +313,7 @@ async function main() {
       { mesh: meshes.pit, matrices: identity(), albedo: [0.04, 0.035, 0.05], roughness: 0.95 },
       { mesh: meshes.wall, matrices: wallM, materials: wallMat },
       { mesh: meshes.gate, matrices: gateM, count: gates.length, albedo: [0.62, 0.32, 0.72], roughness: 0.35 },
+      ...brickGroups,
       ...belts,
     ]);
   }
@@ -194,9 +321,12 @@ async function main() {
 
   // ---- the dynamic half: coins, gems, the dozer, drones, belt stripes ----
 
-  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, BOT_HULL = 9, BOT_DARK = 10, BOT_BLADE = 11, STRIPES = 12, POLE = 13, FLAG = 14, BARS = 15;
-  /** The dynamic group a kind of thing is drawn in. */
-  const groupOf = (kind: number) => (kind === BAR ? BARS : kind);
+  const COINS = 0, GEMS = 1, HULL = 5, DARK = 6, BLADE = 7, TREADS = 8, BOT_HULL = 9, BOT_DARK = 10, BOT_BLADE = 11, STRIPES = 12, POLE = 13, FLAG = 14, BARS = 15, RUBBLE = 16;
+  /** The dynamic group a kind of thing is drawn in; bricks by the grade of the wall they came from. */
+  const groupOf = (kind: number, grade = 1) => (kind === BAR ? BARS : kind === BRICK_KIND ? RUBBLE + grade - 1 : kind);
+  /** The grade of wall each brick in the world came from, by slot. */
+  const brickGrade = new Uint8Array(BODY_CAPACITY);
+  const rubbleM = [1, 2, 3].map(() => new Float32Array(GEM_CAPACITY[BRICK_KIND] * 16));
   const coinM = new Float32Array(BODY_CAPACITY * 16);
   const gemM = GEM_CAPACITY.map((n) => new Float32Array(Math.max(1, n) * 16));
   const hullM = new Float32Array(16), darkM = new Float32Array(16), bladeM = new Float32Array(16);
@@ -237,10 +367,10 @@ async function main() {
   let coinDetail = 0;
   const dynamic: GameGroup[] = [
     { mesh: coin(0.52, 0.26, coinDetail), matrices: coinM, count: 0, albedo: [1.0, 0.56, 0.08], roughness: 0.26 },
-    { mesh: gemMesh, matrices: gemM[1], count: 0, albedo: [1.0, 0.06, 0.12], roughness: 0.28 },
-    { mesh: gemMesh, matrices: gemM[2], count: 0, albedo: [0.08, 0.95, 0.35], roughness: 0.28 },
-    { mesh: gemMesh, matrices: gemM[3], count: 0, albedo: [0.12, 0.35, 1.0], roughness: 0.28 },
-    { mesh: gemMesh, matrices: gemM[4], count: 0, albedo: [0.9, 0.97, 1.0], roughness: 0.15 },
+    { mesh: gemMesh, matrices: gemM[1], count: 0, albedo: GEM_ALBEDO[1], roughness: 0.28 },
+    { mesh: gemMesh, matrices: gemM[2], count: 0, albedo: GEM_ALBEDO[2], roughness: 0.28 },
+    { mesh: gemMesh, matrices: gemM[3], count: 0, albedo: GEM_ALBEDO[3], roughness: 0.28 },
+    { mesh: gemMesh, matrices: gemM[4], count: 0, albedo: GEM_ALBEDO[4], roughness: 0.15 },
     { mesh: hull, matrices: hullM, albedo: economy.paint().colour, roughness: economy.paint().roughness },
     { mesh: dark, matrices: darkM, albedo: [0.15, 0.15, 0.17], roughness: 0.75 },
     { mesh: bladeMesh(economy.spec().bladeWidth), matrices: bladeM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
@@ -253,6 +383,8 @@ async function main() {
     { mesh: box(0.4, 0.06, 0.9, true), matrices: flagM, count: 0, albedo: flagColour(), roughness: 0.6 },
     // a gold bar, lying on the floor where the physics holds its ball
     { mesh: bar(2.6, 1.3, 0.9, KIND_RADIUS[BAR]), matrices: gemM[BAR], count: 0, albedo: [1.0, 0.72, 0.18], roughness: 0.18 },
+    // bricks off the walls, lying where the physics holds their balls
+    ...[1, 2, 3].map((grade) => ({ mesh: moved(box(BRICK_SIZE[0], BRICK_SIZE[1] * 0.55, BRICK_SIZE[2], true), 0, 0, BRICK_SIZE[2] / 2 - KIND_RADIUS[BRICK_KIND]), matrices: rubbleM[grade - 1], count: 0, albedo: WALL_COLOUR[grade].slice(0, 3) as [number, number, number], roughness: WALL_COLOUR[grade][3] })),
   ];
   /** The pennant is red, unless the hull is: then it is white, so it shows. */
   function flagColour(): [number, number, number] {
@@ -302,27 +434,52 @@ async function main() {
   const the = (a: number) => `the ${AREAS[a].name.replace(/^The /, '')}`;
   /** A hidden chamber's loot, as a heap in the middle of it. */
   const lootHeap = (k: number): Heap => { const [x, y] = chamberCentre(k); return { x, y, ...SECRETS[k].loot }; };
+  /** A side room's or a pen's loot, likewise. */
+  const stashHeap = (k: number): Heap => { const [x, y] = stashCentre(k); return { x, y, ...STASHES[k].loot }; };
+  /** What was set in a wall now down, put back by where the wall stood. */
+  const treasureHeap = (w: number): Heap => {
+    const [x0, y0, x1, y1] = WALLS[w].tiles, [x, y] = tileCentre((x0 + x1) / 2, (y0 + y1) / 2);
+    return { x, y, coins: 0, gems: WALLS[w].treasure };
+  };
+  /** A bonus heap put back from what was saved as left of it: all of it if nothing was. */
+  function spawnSaved(from: number, heap: Heap) {
+    const had = hadOf(from);
+    const stock = new Array<number>(KINDS).fill(0);
+    stock[0] = heap.coins;
+    for (const [kind, n] of heap.gems) stock[kind] += n;
+    spawnHeap(from, heap, stock.map((n, kind) => (had && n ? Math.min(1, had[kind] / n) : 1)));
+  }
   /** What was saved as left of a source, or null if nothing was; a save from before the gold bars has one kind fewer. */
   const hadOf = (a: number) => (saved[a]?.length >= 5 ? Array.from({ length: KINDS }, (_, k) => saved[a][k] ?? 0) : null);
   // The rooms not sealed are put back, as much of each as was left, the heaps smaller where they started.
   // A room with nothing saved is put back whole, unless the cave is done and the last room was emptied long ago.
-  // So are the hidden chambers broken into off them, from what was left of each.
+  // So are the hidden chambers broken into off them, and their side rooms, from what was left of each.
   {
     const next = economy.next();
-    for (const a of [economy.current(), ...(next !== null && economy.nextOpen() ? [next] : [])]) {
+    const inPlay = [economy.current(), ...(next !== null && economy.nextOpen() ? [next] : [])];
+    for (const a of inPlay) {
       const had = hadOf(a);
       if (!had && economy.save.done) continue;
       const share = stocks[a].kinds.map((n, k) => (had && n ? Math.min(1, had[k] / n) : 1));
       AREAS[a].heaps.forEach((h) => spawnHeap(a, h, share));
     }
     SECRETS.forEach((secret, k) => {
-      if (!economy.save.secrets[k] || economy.sealed(secret.area)) return;
-      const heap = lootHeap(k), had = hadOf(chamberSource(k));
-      const stock = new Array<number>(KINDS).fill(0);
-      stock[0] = heap.coins;
-      for (const [kind, n] of heap.gems) stock[kind] += n;
-      spawnHeap(chamberSource(k), heap, stock.map((n, kind) => (had && n ? Math.min(1, had[kind] / n) : 1)));
+      if (economy.save.secrets[k] && !economy.sealed(secret.area)) spawnSaved(chamberSource(k), lootHeap(k));
     });
+    STASHES.forEach((stash, k) => {
+      if (inPlay.includes(stash.area)) spawnSaved(stashSource(k), stashHeap(k));
+    });
+    WALLS.forEach((wall, w) => {
+      if (economy.save.walls[w] && wall.treasure.length && inPlay.includes(wall.area) && hadOf(wallSource(w))) spawnSaved(wallSource(w), treasureHeap(w));
+    });
+  }
+  // the bricks off walls knocked down, where they lay
+  for (let k = 0; k + 3 < economy.save.rubble.length; k += 4) {
+    const [x, y, z, grade] = economy.save.rubble.slice(k, k + 4);
+    if (kinds[BRICK_KIND] >= GEM_CAPACITY[BRICK_KIND]) break;
+    const i = world.spawn(BRICK_KIND, x, y, z);
+    if (i < 0) break;
+    origin[i] = NO_SOURCE; brickGrade[i] = grade; kinds[BRICK_KIND]++;
   }
   // a moment of settling before anyone sees it, so the heaps are heaps
   for (let i = 0; i < 90; i++) world.step(1 / 60, () => {});
@@ -362,7 +519,10 @@ async function main() {
   /** How fast value is arriving, in coins a second, smoothed: what the cascade scales by. */
   let flow = 0;
   function collect(kind: number, x: number, y: number, i: number) {
-    kinds[kind]--; left[origin[i]][kind]--;
+    kinds[kind]--;
+    // a brick down the hole is only gone
+    if (kind === BRICK_KIND) return;
+    left[origin[i]][kind]--;
     const value = KIND_VALUE[kind];
     economy.deposit(value);
     gained[kind]++;
@@ -432,6 +592,63 @@ async function main() {
     note('a hidden chamber', 3);
   }
 
+  /**
+   * A brick wall knocked down: every brick in it comes loose, those in the
+   * middle of the hit hardest and the top courses furthest, on the way the
+   * dozer was driving, and tumbles; dust where the wall stood. The bricks stay
+   * where they land, and in the save, until they are pushed down the hole.
+   */
+  function knockOver(w: number) {
+    const grade = WALLS[w].grade;
+    const c = Math.cos(dozer.yaw), sn = Math.sin(dozer.yaw);
+    const gold = new Map(treasureBricks(w).map((t) => [t.brick, t.kind]));
+    layBricks(w).forEach((b, n) => {
+      const near = Math.max(0, 1 - Math.hypot(b.x - dozer.x, b.y - dozer.y) / 16);
+      const push = 3 + near * 9 + (b.z / (COURSES * BRICK_SIZE[2])) * 4;
+      // loose, each course a ball's height above the one below, or the balls would start in each other and burst
+      const course = Math.round(b.z / BRICK_SIZE[2] - 0.5);
+      const z = KIND_RADIUS[BRICK_KIND] + 0.05 + course * (KIND_RADIUS[BRICK_KIND] * 2 + 0.05);
+      const vx = c * push + (Math.random() - 0.5) * 3, vy = sn * push + (Math.random() - 0.5) * 3, vz = 2 + Math.random() * 5;
+      // what was set in the brick comes loose with it: a gold brick is a gold bar, a gem sat in the top of it
+      const kind = gold.get(n);
+      if (kind !== undefined) spawn(kind, b.x, b.y, z + (kind === BAR ? 0 : 1.2), vx, vy, vz + 1, wallSource(w));
+      if (kind === BAR) return;
+      const i = world.spawn(BRICK_KIND, b.x, b.y, z, vx, vy, vz);
+      if (i < 0) return;
+      origin[i] = NO_SOURCE; brickGrade[i] = grade; kinds[BRICK_KIND]++;
+      world.wx[i] = (Math.random() - 0.5) * 10; world.wy[i] = (Math.random() - 0.5) * 10; world.wz[i] = (Math.random() - 0.5) * 6;
+    });
+    for (const [x, y] of wallTiles(w)) {
+      renderer.emit({ position: [x, y, 2], velocity: [c * 4, sn * 4, 3], spread: 8, count: 60, life: 2.4, lifeSpread: 0.7, size: 1.5, growth: 1.8, colour: WALL_COLOUR[grade].slice(0, 3).map((v) => v * 0.6 + 0.2) as [number, number, number], alpha: 0.6, gravity: 0.1, floor: 0 });
+    }
+    sound.smash();
+    recordRubble();
+    economy.persist();
+    reshape();
+    const behind = STASHES.find((st) => st.area === WALLS[w].area && Math.hypot(...(() => { const [x0, y0, x1, y1] = WALLS[w].tiles; return [(x0 + x1) / 2 - st.at[0], (y0 + y1) / 2 - st.at[1]]; })()) < 12);
+    note(`${WALL_NAME[grade]} wall down${WALLS[w].treasure.length ? ' · something glints in the rubble' : behind ? ` · ${behind.name}` : ''}`, 3);
+  }
+
+  /** A brick wall's tiles, as world centres. */
+  function wallTiles(w: number): [number, number][] {
+    const [x0, y0, x1, y1] = WALLS[w].tiles, out: [number, number][] = [];
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.push(tileCentre(x, y));
+    return out;
+  }
+
+  /** Where every brick lies, into the save, which goes out with the next coin banked or when the page is put away. */
+  function recordRubble() {
+    const out: number[] = [];
+    for (let i = 0; i < world.count; i++) {
+      if (!world.alive[i] || world.kind[i] !== BRICK_KIND) continue;
+      out.push(+world.x[i].toFixed(2), +world.y[i].toFixed(2), +world.z[i].toFixed(2), brickGrade[i]);
+    }
+    economy.save.rubble = out;
+  }
+  let rubbleAt = 0;
+  addEventListener('pagehide', () => { recordRubble(); economy.persist(); });
+  addEventListener('visibilitychange', () => { if (document.hidden) { recordRubble(); economy.persist(); } });
+
   /** The rock, at a gate: coming down when a room opens, going up when one is sealed. */
   function rockCloud(area: number) {
     for (const [x, y] of gateTiles(cave, area)) {
@@ -439,7 +656,7 @@ async function main() {
     }
   }
   function reshape() {
-    world.solid = cave.solid(economy.save.areas, economy.save.secrets);
+    world.solid = cave.solid(economy.save.areas, economy.save.secrets, economy.save.walls);
     dozer.solid = world.solid;
     for (const b of bots) { b.dozer.solid = world.solid; b.reset(); }
     nav.rebuild(world.solid);
@@ -453,6 +670,8 @@ async function main() {
       const a = +id.slice(4);
       note(`${the(a)} is open: ${AREAS[a].blurb} · go on in when you are done here`, 5);
       AREAS[a].heaps.forEach((h) => spawnHeap(a, h));
+      // and what is in its side rooms, to be seen over their walls
+      STASHES.forEach((stash, k) => { if (stash.area === a) spawnHeap(stashSource(k), stashHeap(k)); });
       // the heaps are in the save now, or a reload before the next coin would find the room empty
       economy.persist();
       reshape();
@@ -462,8 +681,8 @@ async function main() {
       // what is left of the room behind goes, wherever it has got to, with a puff where each was
       const lost = lying(old);
       let puffs = 0;
-      // and what is left in any hidden chamber off it: bars not got out before going on are lost with the room
-      const goes = (from: number) => from === old || (from >= AREAS.length && SECRETS[from - AREAS.length].area === old);
+      // and what is left in any hidden chamber or side room off it: bars not got out before going on are lost with the room
+      const goes = (from: number) => from !== NO_SOURCE && areaOfSource(from) === old;
       for (let i = 0; i < world.count; i++) {
         if (!world.alive[i] || !goes(origin[i])) continue;
         if (puffs++ < 160) renderer.emit({ position: [world.x[i], world.y[i], world.z[i] + 0.3], velocity: [0, 0, 2], spread: 1.5, count: 3, life: 0.8, lifeSpread: 0.3, size: 0.5, growth: 0.8, colour: [0.5, 0.45, 0.4], alpha: 0.6, gravity: 0.1, floor: 0 });
@@ -483,6 +702,8 @@ async function main() {
     } else if (id.startsWith('secret')) {
       const k = +id.slice(6);
       smashOpen(k);
+    } else if (id.startsWith('wall')) {
+      knockOver(+id.slice(4));
     } else if (id === 'done') {
       note(`the cave is cleared · ${the(LAST)}'s vein runs on`, 6);
       fountains.push(new Fountain(AREAS[LAST]));
@@ -506,12 +727,34 @@ async function main() {
   // ---- the rock that breaks ----
 
   // Square on and fast, it smashes; any other knock on it sounds hollow, which is all that gives it away.
+  // A brick wall driven square into takes a beating by the engine and the speed, and says how much
+  // it has taken; one hit to each run at it, however long the blade is up against it after.
   const knockedAt = SECRETS.map(() => -Infinity);
+  const hitAt = WALLS.map(() => -Infinity);
   dozer.onRock = (tx, ty, square) => {
     const cell = cave.cells[ty * COLS + tx];
+    const speed = Math.abs(dozer.speed), hard = square >= SMASH_SQUARE && speed >= SMASH_SPEED;
+    if (cell >= BRICK) {
+      const w = cell - BRICK, wall = WALLS[w];
+      if (economy.save.walls[w] || square < SMASH_SQUARE || t - hitAt[w] < 0.5) return;
+      const damage = economy.ram(speed);
+      if (!damage) return;
+      hitAt[w] = t;
+      const [x, y] = tileCentre(tx, ty);
+      const gone = economy.hitWall(w, damage);
+      if (gone >= 1) return;
+      sound.clunk();
+      if (gone > 0.5) sound.crack();
+      renderer.emit({ position: [x, y, 2], velocity: [-Math.cos(dozer.yaw) * 4, -Math.sin(dozer.yaw) * 4, 4], spread: 5, count: Math.round(12 + gone * 30), life: 1, lifeSpread: 0.3, size: 0.35, growth: -0.2, colour: WALL_COLOUR[wall.grade].slice(0, 3) as [number, number, number], alpha: 1, gravity: 1.4, floor: 0 });
+      renderer.emit({ position: [x, y, 1.5], velocity: [0, 0, 2], spread: 4, count: 20, life: 1.2, lifeSpread: 0.3, size: 0.8, growth: 1, colour: [0.5, 0.45, 0.42], alpha: 0.5, gravity: 0.2, floor: 0 });
+      const more = Math.ceil((WALL_STRENGTH[wall.grade] - economy.save.wallDamage[w]) / damage);
+      note(`${WALL_NAME[wall.grade]} wall · ${Math.round(gone * 100)}% · ${more === 1 ? 'one more like that' : `about ${more} more like that`}`, 2.5);
+      buildStatic();
+      return;
+    }
     if (cell < SECRET || economy.save.secrets[cell - SECRET]) return;
-    const k = cell - SECRET, speed = Math.abs(dozer.speed);
-    if (square >= SMASH_SQUARE && speed >= SMASH_SPEED) economy.reveal(k);
+    const k = cell - SECRET;
+    if (hard) economy.reveal(k);
     else if (square > 0.2 && speed > 1.5 && t - knockedAt[k] > 0.6) { knockedAt[k] = t; sound.knock(); }
   };
 
@@ -611,23 +854,20 @@ async function main() {
       });
       if (side === 1) shadowed.push(i);
     }
-    // a dim work lamp on the cab, so the ground just round the machine is not black
-    lights.add({ position: [dozer.x - c * 0.5, dozer.y - s * 0.5, 6], radius: 12, colour: [1.0, 0.85, 0.65], intensity: 0.35 });
-    // A glint lamp, high and to the left of the eye. With no environment to reflect, a
-    // metal only shines where a light's highlight lands, and the dozers' low beams bounce
-    // off flat coins away from a camera looking down. Near the eye, the highlight lands on
-    // whatever faces the viewer, so tilted coins flash; not at it, because a light from
-    // the eye lights every face the eye sees alike, and the rock goes flat and grey.
-    {
-      const [px, py, pz] = cam.position, [tx, ty] = cam.target;
-      const fx = tx - px, fy = ty - py, fl = Math.hypot(fx, fy) || 1;
-      const reach = Math.hypot(px - tx, py - ty, pz);
-      // the view's right, flat on the floor, and the lamp that far to its left and above
-      const rx = fy / fl, ry = -fx / fl;
-      lights.add({ position: [px - rx * reach * 0.55, py - ry * reach * 0.55, pz + reach * 0.35], radius: 500, colour: [1.0, 0.72, 0.42], intensity: GLINT });
+    // a work lamp on the cab, so the ground round the machine is not black: in a cave with no
+    // other light it is what the player sees the dozer by, and a little way about it
+    lights.add({ position: [dozer.x - c * 0.5, dozer.y - s * 0.5, 7], radius: 22, colour: [1.0, 0.85, 0.65], intensity: 1.6 });
+    // the lamps still standing in the rooms in play, the nearest the eye first, as many as fit
+    const [ex, ey] = cam.target;
+    const reach = orbit.distance * 1.6 + 40;
+    lampsLit.length = 0;
+    cave.lamps.forEach((l, k) => { if (lampOn(k) && Math.hypot(l.x - ex, l.y - ey) < reach) lampsLit.push(k); });
+    lampsLit.sort((a, b) => Math.hypot(cave.lamps[a].x - ex, cave.lamps[a].y - ey) - Math.hypot(cave.lamps[b].x - ex, cave.lamps[b].y - ey));
+    for (const k of lampsLit.slice(0, LAMP_LIGHTS)) {
+      const l = cave.lamps[k];
+      const flicker = 0.92 + 0.08 * Math.sin(t * 13 + k * 7) * Math.sin(t * 3.1 + k);
+      lights.add({ position: [l.x, l.y, LAMP_HEIGHT], radius: 34, colour: [1.0, 0.78, 0.5], intensity: 7 * flicker });
     }
-    const pulse = 1 + holePulse * 1.6;
-    lights.add({ position: [HOLE.x, HOLE.y, 1.5], radius: 14 + holePulse * 6, colour: [0.45, 1.0, 0.3], intensity: 2.0 * pulse });
     if (economy.save.done) {
       const v = AREAS[LAST].vein;
       lights.add({ position: [v.x, v.y, 5.5], radius: 12, colour: [1.0, 0.7, 0.3], intensity: 1.6 + 0.4 * Math.sin(t * 7) });
@@ -655,10 +895,11 @@ async function main() {
 
     // the glows, as screen-space layers: the hole, each cracking floor, the magnet's reach
     let n = 0;
-    const p = project(cam.viewProjection, HOLE.x, HOLE.y, 0);
+    const p = holePulse > 0.02 ? project(cam.viewProjection, HOLE.x, HOLE.y, 0) : null;
     if (p) {
+      // the hole is dark like the rest, and flares only as something goes down it
       const size = (HOLE.radius * 2.2 / p[2]) * (1 + holePulse * 0.5);
-      quads.set([p[0], p[1], size * 0.9, 0.4 + holePulse * 0.9, 0.5, 1.0, 0.35, 1.8], n * EFFECT_STRIDE); n++;
+      quads.set([p[0], p[1], size * 0.9, holePulse * 0.9, 0.5, 1.0, 0.35, 1.8], n * EFFECT_STRIDE); n++;
     }
     for (const f of fountains) {
       if (f.glow <= 0) continue;
@@ -670,6 +911,14 @@ async function main() {
       const [sx, sy] = sealPoint(cave, economy.next()!);
       const q = project(cam.viewProjection, sx, sy, 0.2);
       if (q) { quads.set([q[0], q[1], 14 / q[2], 0.5 + 0.3 * Math.sin(t * 8), 1.0, 0.25, 0.1, 1.6], n * EFFECT_STRIDE); n++; }
+    }
+    // each lamp lit near the eye, a glow round its head: the light is in the glass, not on it
+    for (const k of lampsLit) {
+      if (n >= EFFECT_CAPACITY - 1) break;
+      const l = cave.lamps[k];
+      const q = project(cam.viewProjection, l.x, l.y, LAMP_HEIGHT);
+      if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
+      quads.set([q[0], q[1], 5 / q[2], 0.85 + 0.1 * Math.sin(t * 13 + k * 7), 1.0, 0.75, 0.4, 2.0], n * EFFECT_STRIDE); n++;
     }
     if (m && n < EFFECT_CAPACITY) {
       const q = project(cam.viewProjection, m.x, m.y, 0.2);
@@ -684,12 +933,18 @@ async function main() {
   let awake = 0;
   function upload(t: number) {
     const counts = new Array<number>(KINDS).fill(0);
+    const rubble = [0, 0, 0];
     awake = 0;
     const { x, y, z, q, kind, alive, asleep } = world;
     for (let i = 0; i < world.count; i++) {
       if (!alive[i]) continue;
       if (!asleep[i]) awake++;
       const k = kind[i];
+      if (k === BRICK_KIND) {
+        const g = brickGrade[i] - 1;
+        if (rubble[g] * 16 < rubbleM[g].length) placeQuat(rubbleM[g], rubble[g]++, x[i], y[i], z[i], q, i * 4);
+        continue;
+      }
       const m = k === 0 ? coinM : gemM[k];
       if (counts[k] * 16 >= m.length) continue;
       placeQuat(m, counts[k]++, x[i], y[i], z[i], q, i * 4);
@@ -697,6 +952,7 @@ async function main() {
     renderer.move(COINS, coinM, counts[0]);
     for (let k = 1; k <= 4; k++) renderer.move(GEMS + k - 1, gemM[k], counts[k]);
     renderer.move(BARS, gemM[BAR], counts[BAR]);
+    for (let g = 0; g < 3; g++) renderer.move(RUBBLE + g, rubbleM[g], rubble[g]);
 
     place(hullM, 0, dozer.x, dozer.y, 0, dozer.yaw);
     place(darkM, 0, dozer.x, dozer.y, 0, dozer.yaw);
@@ -850,15 +1106,12 @@ async function main() {
     showMute();
     showHorn();
   }
-  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, renderer, orbit, bots, fountains, sound, setCoinDetail, calibration });
+  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, cave, renderer, orbit, bots, fountains, sound, setCoinDetail, calibration });
 
   // ---- what the robo-dozers go for: the room being cleared ----
 
   // the room being cleared, and any chamber broken into off it
-  const foreman = new Foreman(world, nav, bots, origin, (from) => {
-    const room = economy.current();
-    return from === room || (from >= AREAS.length && SECRETS[from - AREAS.length].area === room);
-  });
+  const foreman = new Foreman(world, nav, bots, origin, (from) => from !== NO_SOURCE && areaOfSource(from) === economy.current());
   const choose = (bot: Bot) => foreman.choose(bot, t);
 
   // ---- the pointer ----
@@ -956,6 +1209,7 @@ async function main() {
     const spec = economy.spec();
     const drive = input.read();
     dozer.update(dt, drive, spec, world.load);
+    knockLamps();
     for (const b of bots) b.update(dt, world, world.loads[b.dozer.owner] ?? 0, nav, choose, traffic);
     // no machine drives through another: every pair, twice, so a push out of one
     // that shoves into a third is settled in the same frame
@@ -1056,6 +1310,7 @@ async function main() {
       }
     }
     showPointer(t);
+    if (t >= rubbleAt) { rubbleAt = t + 1; recordRubble(); }
     smoothed += (dt * 1000 - smoothed) * 0.08;
     if ((statsIn -= dt) <= 0) {
       statsIn = 0.25;

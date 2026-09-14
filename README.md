@@ -25,11 +25,23 @@ smashes, and behind it is a hidden chamber with gold bars in it. What is in a
 chamber does not count toward clearing the room, and whatever is still in it
 when the room is sealed is gone with the room.
 
-The drones work the room being cleared, finding their way round the rock and
-the heaps, and give a loaded machine the road. With a belt running they push
-a load to whichever is nearer, the belt or the hole, and leave the belt to
-carry it. Once the West Gallery is cleared too, its vein trickles coins in and
-its floor now and then cracks, glows, and throws up a fountain of them.
+Brick walls are everywhere. Down a corridor off each gallery is a side room
+behind one; in each room is a pen of them round a heap, and a wall standing
+on its own. You can see what is behind them over the top. Drive square into
+a wall hard and it takes a beating, by how good the engine is and how fast
+you hit it: clay brick stands little, stone more, iron-bound a great deal.
+The right engine brings a wall down in one hit, a lesser one in several, and
+the bricks show the damage until the wall comes down. Then the bricks tumble
+and stay where they fall, to be pushed aside, or down the hole to be rid of.
+Some walls have treasure set in them, a gold brick or a gem in the top of
+one, which comes loose with the rest. What is in a pen or a side room, or
+set in a wall, is over and above the room, as a chamber's is, and sealed in
+with it.
+
+The cave is pitch black. What you see by is the dozer's own lights, the
+drones', and the lamps on posts along the rooms' edges, which come on when a
+room opens and go out when it is sealed. Drive into a lamp and it goes over,
+glass everywhere, and stays dark.
 
 A run of coins into the hole is tallied on screen and grows louder — in
 sparkle, light and pitch — the longer it goes on.

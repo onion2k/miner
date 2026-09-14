@@ -5,17 +5,29 @@
  * whatever is still in it. Saved in the browser, so the cave is where you
  * left it.
  */
-import { AREAS, ORDER, SECRETS } from './cave';
+import { AREAS, ORDER, SECRETS, STASHES, WALLS } from './cave';
 import type { DozerSpec } from './dozer';
 import { KINDS, KIND_VALUE } from './physics';
 
 /**
- * Where a body came from, for what is left of it: a room, by its index, or a
- * hidden chamber, after the rooms. A chamber's loot is kept apart from its
- * room's so it never counts toward clearing it.
+ * Where a body came from, for what is left of it: a room, by its index; then
+ * the hidden chambers; then the stashes behind brick walls, side rooms and
+ * pens; then the walls, for the treasure set in them. Everything after the
+ * rooms is kept apart from its room's so it never counts toward clearing it.
  */
-export const SOURCES = AREAS.length + SECRETS.length;
+export const SOURCES = AREAS.length + SECRETS.length + STASHES.length + WALLS.length;
 export const chamberSource = (k: number) => AREAS.length + k;
+export const stashSource = (k: number) => AREAS.length + SECRETS.length + k;
+export const wallSource = (w: number) => AREAS.length + SECRETS.length + STASHES.length + w;
+/** The room a source belongs to, and is sealed with. */
+export function areaOfSource(from: number): number {
+  if (from < AREAS.length) return from;
+  from -= AREAS.length;
+  if (from < SECRETS.length) return SECRETS[from].area;
+  from -= SECRETS.length;
+  if (from < STASHES.length) return STASHES[from].area;
+  return WALLS[from - STASHES.length].area;
+}
 
 export interface Save {
   bank: number;
@@ -37,6 +49,14 @@ export interface Save {
   left: number[][];
   /** Which hidden chambers have been broken into. */
   secrets: boolean[];
+  /** Which brick walls have been knocked down. */
+  walls: boolean[];
+  /** How much of a beating each brick wall standing has taken. */
+  wallDamage: number[];
+  /** Where the bricks off them lie, as x, y, z and the wall's grade, four numbers a brick. */
+  rubble: number[];
+  /** The lamps knocked over, by their place in the cave's list. */
+  lampsBroken: number[];
   /** The last room is cleared too. */
   done: boolean;
 }
@@ -72,14 +92,22 @@ const KEY = 'pushminer-save-v1';
 // The cave holds about 19,000 all told, and nothing refills it until the end, so
 // the prices add up to a little less than that: the whole workshop and a coat
 // of paint, for a player who gets nearly everything in.
-const ENGINE: { maxSpeed: number; accel: number; turnRate: number; cost: number }[] = [
-  { maxSpeed: 11, accel: 14, turnRate: 1.6, cost: 0 },
-  { maxSpeed: 14, accel: 20, turnRate: 1.9, cost: 50 },
-  { maxSpeed: 17, accel: 28, turnRate: 2.2, cost: 150 },
-  { maxSpeed: 21, accel: 38, turnRate: 2.5, cost: 400 },
-  { maxSpeed: 25, accel: 50, turnRate: 2.8, cost: 900 },
-  { maxSpeed: 30, accel: 64, turnRate: 3.1, cost: 1800 },
+// `ram` is how hard the engine hits a brick wall driven square into it at speed: a clay brick wall
+// comes down to one such hit from the start, stone to one from a Mk 3, iron-bound to one from a Mk 5,
+// and any of them to enough hits from a lesser engine
+const ENGINE: { maxSpeed: number; accel: number; turnRate: number; ram: number; cost: number }[] = [
+  { maxSpeed: 11, accel: 14, turnRate: 1.6, ram: 40, cost: 0 },
+  { maxSpeed: 14, accel: 20, turnRate: 1.9, ram: 55, cost: 50 },
+  { maxSpeed: 17, accel: 28, turnRate: 2.2, ram: 110, cost: 150 },
+  { maxSpeed: 21, accel: 38, turnRate: 2.5, ram: 140, cost: 400 },
+  { maxSpeed: 25, accel: 50, turnRate: 2.8, ram: 260, cost: 900 },
+  { maxSpeed: 30, accel: 64, turnRate: 3.1, ram: 330, cost: 1800 },
 ];
+/** What a grade of brick wall is called, and how much beating it stands. */
+export const WALL_NAME = ['', 'clay brick', 'stone', 'iron-bound'];
+export const WALL_STRENGTH = [0, 40, 110, 260];
+/** A hit counts from this speed, and at this one and above is a full one. */
+const RAM_FROM = 3, RAM_FULL = 11;
 const BLADE: { width: number; cost: number }[] = [
   { width: 6.5, cost: 0 }, { width: 8, cost: 80 }, { width: 10, cost: 300 }, { width: 12.5, cost: 800 },
 ];
@@ -113,12 +141,12 @@ export class Economy {
   private wiped = false;
 
   constructor() {
-    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false, room: ORDER[0], left: Array.from({ length: SOURCES }, () => []), secrets: SECRETS.map(() => false), done: false };
+    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false, room: ORDER[0], left: Array.from({ length: SOURCES }, () => []), secrets: SECRETS.map(() => false), walls: WALLS.map(() => false), wallDamage: WALLS.map(() => 0), rubble: [], lampsBroken: [], done: false };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const s = JSON.parse(raw) as Omit<Partial<Save>, 'left'> & { left?: number[] | number[][] };
-        this.save = { ...this.save, ...s, areas: [true, ...(s.areas ?? []).slice(1)], belts: s.belts ?? this.save.belts, left: this.save.left, secrets: SECRETS.map((_, k) => s.secrets?.[k] ?? false) };
+        this.save = { ...this.save, ...s, areas: [true, ...(s.areas ?? []).slice(1)], belts: s.belts ?? this.save.belts, left: this.save.left, secrets: SECRETS.map((_, k) => s.secrets?.[k] ?? false), walls: WALLS.map((_, w) => s.walls?.[w] ?? false), wallDamage: WALLS.map((_, w) => s.wallDamage?.[w] ?? 0) };
         // a save from before an area existed has it shut
         while (this.save.areas.length < AREAS.length) this.save.areas.push(false);
         while (this.save.belts.length < AREAS.length) this.save.belts.push(false);
@@ -191,6 +219,37 @@ export class Economy {
     return { maxSpeed: e.maxSpeed, accel: e.accel, turnRate: e.turnRate, bladeWidth: BLADE[this.save.blade].width, magnetRadius: m.radius, magnetStrength: m.strength };
   }
 
+  /** How much a hit at this speed does to a brick wall, with the engine fitted now; 0 for too slow to count. */
+  ram(speed: number): number {
+    if (speed < RAM_FROM + 1) return 0;
+    return ENGINE[this.save.engine].ram * Math.min(1, (speed - RAM_FROM) / (RAM_FULL - RAM_FROM));
+  }
+
+  /**
+   * A brick wall hit: the damage goes on it, and if it has taken what its
+   * grade stands, down it comes. Returns how much of it is gone, 0 to 1.
+   */
+  hitWall(w: number, damage: number): number {
+    if (this.save.walls[w]) return 1;
+    const strength = WALL_STRENGTH[WALLS[w].grade];
+    this.save.wallDamage[w] = Math.min(strength, this.save.wallDamage[w] + damage);
+    if (this.save.wallDamage[w] >= strength) {
+      this.save.walls[w] = true;
+      this.persist();
+      for (const fn of this.listeners) fn(`wall${w}`);
+      return 1;
+    }
+    this.persist();
+    return this.save.wallDamage[w] / strength;
+  }
+
+  /** A lamp knocked over. */
+  breakLamp(k: number) {
+    if (this.save.lampsBroken.includes(k)) return;
+    this.save.lampsBroken.push(k);
+    this.persist();
+  }
+
   /** A hidden chamber broken into. */
   reveal(k: number) {
     if (this.save.secrets[k]) return;
@@ -208,7 +267,7 @@ export class Economy {
     const e = s.engine + 1 < ENGINE.length ? ENGINE[s.engine + 1] : null;
     out.push({
       id: 'engine', title: `Engine ${e ? `Mk ${s.engine + 2}` : 'maxed'}`,
-      sub: e ? `top speed ${e.maxSpeed}, turns faster` : `Mk ${s.engine + 1}: as fast as it goes`,
+      sub: e ? `top speed ${e.maxSpeed}, turns faster, hits walls ${e.ram >= 2 * ENGINE[s.engine].ram ? 'twice as hard' : 'harder'}` : `Mk ${s.engine + 1}: as fast as it goes`,
       cost: e?.cost ?? 0, owned: !e, available: !!e,
     });
     const b = s.blade + 1 < BLADE.length ? BLADE[s.blade + 1] : null;
