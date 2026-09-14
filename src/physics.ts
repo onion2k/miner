@@ -11,9 +11,9 @@
  * Bodies sleep. A heap at rest is most of the cave, and a heap at rest costs
  * nothing: only an awake body looks for its neighbours, and it wakes what it
  * touches. The blade wakes what it reaches before it reaches it. A sleeper
- * is not looked at one by one either: the blades and belts find the
- * sleepers under them through the spatial hash, so a cave of resting coins
- * costs only its place in the hash.
+ * is not looked at one by one either: the step walks a list of the awake,
+ * sleepers keep their place in a hash of their own from one step to the
+ * next, and the blades and belts find the sleepers under them through it.
  */
 import { COLS, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from './cave';
 
@@ -103,9 +103,27 @@ export class World {
   /** Which tiles are rock right now; the game rewrites it when a gate opens. */
   solid: Uint8Array;
 
+  /**
+   * The awake, in slot order at the top of each step. Anything that might
+   * have changed — woken, spawned, dozed off, removed — is on it too until
+   * the next step sorts it out, which is what keeps the hashes safe to walk.
+   */
+  private readonly awake: Int32Array;
+  private awakeCount = 0;
+  private readonly listed: Uint8Array;
+
   private readonly gx: number; private readonly gy: number;
+  /**
+   * A cell's chain: its awake bodies, hashed afresh each step, run on into
+   * its sleepers. The sleepers do not move, so they keep their place from
+   * step to step, and are linked back as well so they leave it cheaply.
+   */
   private readonly head: Int32Array;
   private readonly next: Int32Array;
+  private readonly sleepHead: Int32Array;
+  private readonly sleepPrev: Int32Array;
+  /** Which cell a body sleeps in, or -1. */
+  private readonly sleepCell: Int32Array;
   private accumulator = 0;
   /** How far behind their frame's end the pushers are this step, in seconds. */
   private lag = 0;
@@ -125,8 +143,12 @@ export class World {
     this.gx = Math.ceil((COLS * TILE) / CELL) + 2;
     this.gy = Math.ceil((ROWS * TILE) / CELL) + 2;
     this.head = new Int32Array(this.gx * this.gy).fill(-1);
-    this.seen = new Uint8Array(n);
     this.next = new Int32Array(n);
+    this.sleepHead = new Int32Array(this.gx * this.gy).fill(-1);
+    this.sleepPrev = new Int32Array(n);
+    this.sleepCell = new Int32Array(n).fill(-1);
+    this.seen = new Uint8Array(n);
+    this.awake = new Int32Array(n); this.listed = new Uint8Array(n);
   }
 
   /** Put a body in the world, awake. Returns its slot, or -1 with the world full. */
@@ -147,6 +169,7 @@ export class World {
     this.wx[i] = 0; this.wy[i] = 0; this.wz[i] = 0;
     this.asleep[i] = 0; this.carried[i] = 0; this.onFloor[i] = 0;
     this.sx[i] = x; this.sy[i] = y; this.sz[i] = z;
+    this.list(i);
     this.live++;
     return i;
   }
@@ -155,6 +178,7 @@ export class World {
   remove(i: number) {
     if (!this.alive[i]) return;
     this.alive[i] = 0; this.carried[i] = 0;
+    this.list(i);
     this.free.push(i);
     this.live--;
   }
@@ -165,16 +189,26 @@ export class World {
     q[o] /= l; q[o + 1] /= l; q[o + 2] /= l; q[o + 3] /= l;
   }
 
+  /** Put a body on the awake list, to be sorted out at the top of the next step. */
+  private list(i: number) {
+    if (this.listed[i]) return;
+    this.listed[i] = 1;
+    this.awake[this.awakeCount++] = i;
+  }
+
   wake(i: number) {
+    if (!this.alive[i]) return;
     this.asleep[i] = 0;
+    this.list(i);
     // a fresh window, so what woke it has time to move it
     this.sx[i] = this.x[i]; this.sy[i] = this.y[i]; this.sz[i] = this.z[i];
   }
 
   /** Wake everything within `radius` of a point — ahead of a blade, say. */
   wakeNear(x: number, y: number, radius: number) {
-    // A sleeper has not moved since the last step hashed it; one that dozed
-    // off in that step may have moved a hair after, which the extra cell covers.
+    // A sleeper is in the sleepers' hash where it lies, or it dozed off in
+    // the last step and is still in the awake hash, a hair from where that
+    // step hashed it, which the extra cell covers.
     const r2 = radius * radius, pad = radius + CELL;
     const { head, next, gx } = this;
     const x0 = this.cellX(x - pad), x1 = this.cellX(x + pad);
@@ -209,13 +243,14 @@ export class World {
   }
 
   private substep(collect: (kind: number, x: number, y: number) => void) {
-    const n = this.count;
-    const { x, y, z, vx, vy, vz, alive, asleep, carried } = this;
+    const { x, y, z, vx, vy, vz, alive, asleep, carried, awake } = this;
     const window = ++this.steps % SLEEP_STEPS === 0;
     this.loadNow.length = 0;
+    this.settle();
     // integrate
-    for (let i = 0; i < n; i++) {
-      if (!alive[i] || asleep[i] || carried[i]) continue;
+    for (let k = 0, n = this.awakeCount; k < n; k++) {
+      const i = awake[k];
+      if (carried[i]) continue;
       vz[i] -= GRAVITY * STEP;
       x[i] += vx[i] * STEP; y[i] += vy[i] * STEP; z[i] += vz[i] * STEP;
       this.onFloor[i] = 0;
@@ -225,7 +260,9 @@ export class World {
     this.place();
     this.sleepers();
     const seen = this.seen;
-    for (let i = 0; i < n; i++) {
+    // what the pairs and the belts and blades woke is on the end of the list, and is stepped too
+    for (let k = 0; k < this.awakeCount; k++) {
+      const i = awake[k];
       if (!alive[i] || carried[i] || asleep[i] || seen[i]) continue;
       this.walls(i);
       this.push(i);
@@ -287,11 +324,11 @@ export class World {
    * touched at all.
    */
   private sleepers() {
-    const { head, next, gx, asleep, seen, seenList } = this;
+    const { sleepHead, next, gx, asleep, seen, seenList } = this;
     const visit = (x0: number, y0: number, x1: number, y1: number, fn: (i: number) => void) => {
       for (let cy = this.cellY(y0), cy1 = this.cellY(y1); cy <= cy1; cy++) {
         for (let cx = this.cellX(x0), cx1 = this.cellX(x1); cx <= cx1; cx++) {
-          for (let i = head[cy * gx + cx]; i >= 0; i = next[i]) {
+          for (let i = sleepHead[cy * gx + cx]; i >= 0; i = next[i]) {
             if (!this.alive[i] || !(asleep[i] || seen[i])) continue;
             if (!seen[i]) { seen[i] = 1; seenList.push(i); }
             fn(i);
@@ -309,19 +346,62 @@ export class World {
     }
   }
 
+  /**
+   * Sorts out the awake list: the dead and the dozed come off it, a sleeper
+   * goes into its cell's sleepers and a woken one comes out. Done here, and
+   * only here, before the hash, so nothing walking a chain ever has a body
+   * taken out from under it.
+   */
+  private settle() {
+    const { awake, listed, alive, asleep, sleepCell } = this;
+    let kept = 0;
+    for (let k = 0; k < this.awakeCount; k++) {
+      const i = awake[k];
+      // out and back in, even for one still asleep: it may have been woken
+      // and moved and dozed off again within the one step
+      if (sleepCell[i] >= 0) this.rouse(i);
+      if (!alive[i]) listed[i] = 0;
+      else if (asleep[i]) { this.doze(i); listed[i] = 0; }
+      else awake[kept++] = i;
+    }
+    this.awakeCount = kept;
+    // in slot order, as a walk over every slot would meet them
+    awake.subarray(0, kept).sort();
+  }
+
+  private doze(i: number) {
+    const c = this.cellOf(this.x[i], this.y[i]);
+    const first = this.sleepHead[c];
+    this.sleepCell[i] = c;
+    this.sleepPrev[i] = -1; this.next[i] = first;
+    if (first >= 0) this.sleepPrev[first] = i;
+    this.sleepHead[c] = i;
+  }
+
+  private rouse(i: number) {
+    const c = this.sleepCell[i], prev = this.sleepPrev[i], next = this.next[i];
+    if (prev >= 0) this.next[prev] = next; else this.sleepHead[c] = next;
+    if (next >= 0) this.sleepPrev[next] = prev;
+    this.sleepCell[i] = -1;
+  }
+
   private hash() {
-    this.head.fill(-1);
-    const { head, next, alive, carried } = this;
-    for (let i = 0; i < this.count; i++) {
-      if (!alive[i] || carried[i]) continue;
+    // each cell starts from its sleepers, and the awake go on in front
+    this.head.set(this.sleepHead);
+    const { head, next, carried, awake } = this;
+    for (let k = 0; k < this.awakeCount; k++) {
+      const i = awake[k];
+      if (carried[i]) continue;
       const c = this.cellOf(this.x[i], this.y[i]);
       next[i] = head[c]; head[c] = i;
     }
   }
 
   private pairs() {
-    const { x, y, z, vx, vy, vz, r, alive, asleep, carried, head, next, gx } = this;
-    for (let i = 0; i < this.count; i++) {
+    const { x, y, z, vx, vy, vz, r, alive, asleep, carried, head, next, gx, awake } = this;
+    // a sleeper woken here goes on the end of the list and waits for the next step to be the outer body
+    for (let k = 0, n = this.awakeCount; k < n; k++) {
+      const i = awake[k];
       if (!alive[i] || asleep[i] || carried[i]) continue;
       const c = this.cellOf(x[i], y[i]);
       const cx = c % gx, cy = (c / gx) | 0;
@@ -329,6 +409,7 @@ export class World {
         const ny = cy + oy; if (ny < 0 || ny >= this.gy) continue;
         for (let ox = -1; ox <= 1; ox++) {
           const nx = cx + ox; if (nx < 0 || nx >= gx) continue;
+          // the awake, then the sleepers — and those woken this step, still among the sleepers
           for (let j = head[ny * gx + nx]; j >= 0; j = next[j]) {
             // an awake pair is done once, from the lower index; a sleeper is
             // never the outer body, so it is done from the awake one
@@ -382,6 +463,7 @@ export class World {
             }
             if (nzz < -0.5) this.onFloor[i] |= 1;
             if (nzz > 0.5) this.onFloor[j] |= 1;
+  
           }
         }
       }
