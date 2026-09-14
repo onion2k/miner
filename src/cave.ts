@@ -414,7 +414,7 @@ export function buildCave(): Cave {
 }
 
 /** How far apart lamps stand, in world units, and how far off the rock face. */
-const LAMP_SPACING = 44, LAMP_OFF_ROCK = 1.4;
+const LAMP_SPACING = 10, LAMP_OFF_ROCK = 1.4;
 
 /**
  * Lamps along the edges of the floor: on open tiles against the rock, the

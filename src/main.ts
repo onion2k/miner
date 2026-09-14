@@ -24,8 +24,8 @@ import { identity, hide, place, placePart, placeQuat, project } from './matrix';
 
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
 const MM_PER_UNIT = 100;
-const LIGHT_CAPACITY = 64;
-const EFFECT_CAPACITY = 64;
+const LIGHT_CAPACITY = 256;
+const EFFECT_CAPACITY = 256;
 /** How many of each kind the cave can hold at once, past the coins; the last two are gold bars and bricks. */
 const GEM_CAPACITY = [0, 320, 240, 260, 160, 60, 900];
 /** Driving into the rock that breaks, or a brick wall: square enough on, as the cosine off straight at it, and fast enough, to smash it. */
@@ -54,7 +54,7 @@ const CALIBRATE_WARMUP = 4;
 const CALIBRATE_SAMPLES = 24;
 
 /** How high a lamp's head stands, how many lamps are lit at once near the eye, and how near a machine has to come to knock one over. */
-const LAMP_HEIGHT = 5.6, LAMP_LIGHTS = 40, LAMP_KNOCK = 4.2;
+const LAMP_HEIGHT = 5.6, LAMP_LIGHTS = 220, LAMP_KNOCK = 4.2;
 
 const CAMERA = { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 };
 
@@ -854,9 +854,6 @@ async function main() {
       });
       if (side === 1) shadowed.push(i);
     }
-    // a work lamp on the cab, so the ground round the machine is not black: in a cave with no
-    // other light it is what the player sees the dozer by, and a little way about it
-    lights.add({ position: [dozer.x - c * 0.5, dozer.y - s * 0.5, 7], radius: 22, colour: [1.0, 0.85, 0.65], intensity: 1.6 });
     // the lamps still standing in the rooms in play, the nearest the eye first, as many as fit
     const [ex, ey] = cam.target;
     const reach = orbit.distance * 1.6 + 40;
@@ -866,7 +863,8 @@ async function main() {
     for (const k of lampsLit.slice(0, LAMP_LIGHTS)) {
       const l = cave.lamps[k];
       const flicker = 0.92 + 0.08 * Math.sin(t * 13 + k * 7) * Math.sin(t * 3.1 + k);
-      lights.add({ position: [l.x, l.y, LAMP_HEIGHT], radius: 34, colour: [1.0, 0.78, 0.5], intensity: 7 * flicker });
+      // close together as they stand, each is a small pool, and the rooms' edges are strings of them
+      lights.add({ position: [l.x, l.y, LAMP_HEIGHT], radius: 20, colour: [1.0, 0.78, 0.5], intensity: 4 * flicker });
     }
     if (economy.save.done) {
       const v = AREAS[LAST].vein;
