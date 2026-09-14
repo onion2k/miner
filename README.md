@@ -4,12 +4,18 @@ A bulldozer in a cave full of coins, and a hole to push them into.
 
 Drive with **W A S D** (or the arrows), shove coins and gems into the hole to
 bank them, and press **B** for the workshop: a bigger engine, a wider blade,
-a stronger magnet, the two locked rooms beyond the gates, a conveyor belt
-for each, and drones that go and fetch things. Drag to orbit the camera,
-wheel to zoom, **C** to put it back, **M** to mute. Progress is saved in the
-browser; the workshop has a *start over* button.
+a stronger magnet, a conveyor belt for the room you are in, and drones that
+go and fetch things. Drag to orbit the camera, wheel to zoom, **C** to put it
+back, **M** to mute. Progress is saved in the browser; the workshop has a
+*start over* button.
 
-Now and then a room's floor cracks, glows, and throws up a fountain of coins.
+The cave is five rooms, and nothing refills them. Bank nineteen parts in
+twenty of what a room holds and the rock at the next gate comes down: the
+Hollow, then the South Gallery, the East Gallery, the North Vault and the West
+Gallery, each with dearer gems than the last. Only the room being cleared is
+in play, so a cave that has been worked through does not weigh on the frame.
+Once the West Gallery is cleared too, its vein trickles coins in and its
+floor now and then cracks, glows, and throws up a fountain of them.
 A run of coins into the hole is tallied on screen and grows louder — in
 sparkle, light and pitch — the longer it goes on.
 
@@ -28,12 +34,12 @@ It needs a browser with WebGPU.
 ## How it is put together
 
     src/main.ts       boot, the scene's groups, lights, particles, the HUD, the frame loop
-    src/cave.ts       the tile grid: rooms, gates, heaps, veins, belt routes
+    src/cave.ts       the tile grid: rooms and the order they open in, gates, heaps, veins, belt routes
     src/physics.ts    the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
     src/dozer.ts      the bulldozer: tank steering, the blade and hull as pushers, load
     src/tools.ts      conveyor belts, drones, and the fountains
     src/audio.ts      every sound, synthesised: clinks, thunks, the engine, the rumble
-    src/economy.ts    the bank, the upgrades, the save, the shop
+    src/economy.ts    the bank, the upgrades, which room is being cleared, the save, the shop
     src/meshes.ts     flat-shaded shapes: coin, gem, box, cone, ball, the hole's collar and pit
     src/matrix.ts     column-major placements
     src/input.ts      the keyboard

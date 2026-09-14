@@ -10,12 +10,12 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer, EFFECT_STRIDE, MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import { LightPool } from 'artshape-render/game/lights';
 import { mergeMeshes } from 'artshape-render/mesh/types';
-import { AREAS, BODY_CAPACITY, HOLE, TILE, buildCave, floorTiles, gateTiles, hash, wallInstances, type Heap, type Vein } from './cave';
+import { AREAS, BODY_CAPACITY, HOLE, ORDER, TILE, buildCave, floorTiles, gateTiles, hash, wallInstances, type Heap, type Vein } from './cave';
 import { World, KIND_NAME, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces, separate } from './dozer';
 import { Input } from './input';
 import { TouchControls, isTouchDevice } from './touch';
-import { Economy, MAX_DRONES, renderShop } from './economy';
+import { CLEAR_SHARE, Economy, MAX_DRONES, renderShop, roomStock } from './economy';
 import { Bot, BOT_SCALE, BOT_SPEC, Fountain, beltOf } from './tools';
 import { Sound } from './audio';
 import { COIN_LADDER, ball, box, coin, collar, cylinder, gem, moved, pit, tile, turned } from './meshes';
@@ -52,7 +52,8 @@ const bootMsg = document.getElementById('bootMsg')!;
 const bankPanel = document.getElementById('bank')!;
 const bankValue = bankPanel.querySelector('b')!;
 const shopBalance = document.getElementById('shopBalance')!;
-const coinCount = document.getElementById('coinCount')!;
+const progressText = document.getElementById('progress')!;
+const shopProgress = document.getElementById('shopProgress')!;
 const statsPanel = document.getElementById('stats')!;
 const helpPanel = document.getElementById('help')!;
 const toast = document.getElementById('toast')!;
@@ -107,8 +108,10 @@ async function main() {
   const dozer = new Dozer(world.solid);
   const input = new Input();
   const sound = new Sound();
+  /** The last room: once the cave is cleared its vein runs and its floor cracks, so there is still something to push. */
+  const LAST = ORDER[ORDER.length - 1];
   const fountains: Fountain[] = [];
-  for (let a = 0; a < AREAS.length; a++) if (economy.save.areas[a]) fountains.push(new Fountain(AREAS[a]));
+  if (economy.save.done) fountains.push(new Fountain(AREAS[LAST]));
   const bots: Bot[] = [];
   for (let i = 0; i < economy.save.drones; i++) bots.push(new Bot(world.solid, i + 1, HOLE.x + 14 + i * 6, HOLE.y + 10));
   for (let a = 1; a < AREAS.length; a++) if (economy.save.belts[a]) world.belts.push(beltOf(AREAS[a].belt!.spec));
@@ -248,44 +251,72 @@ async function main() {
 
   // ---- coins into the cave ----
 
-  const gemCount = [0, 0, 0, 0, 0];
+  // How many of each kind are in the cave, kept in the save so a reload puts back what is left.
+  const saved = economy.save.left.length === 5 ? economy.save.left.slice() : null;
+  const left = economy.save.left = [0, 0, 0, 0, 0];
   function spawn(kind: number, x: number, y: number, z: number, vx = 0, vy = 0, vz = 0): boolean {
-    if (kind > 0 && gemCount[kind] >= GEM_CAPACITY[kind]) return false;
+    if (kind > 0 && left[kind] >= GEM_CAPACITY[kind]) return false;
     const i = world.spawn(kind, x, y, z, vx, vy, vz);
     if (i < 0) return false;
-    if (kind > 0) gemCount[kind]++;
+    left[kind]++;
     return true;
   }
-  function spawnHeap(h: Heap) {
-    const R = Math.sqrt(h.coins) * 0.36 + 1.5, H = Math.sqrt(h.coins) * 0.3 + 1.5;
+  /** A heap, with `share[kind]` of each kind in it: all of them for a room just opened. */
+  function spawnHeap(h: Heap, share = [1, 1, 1, 1, 1]) {
+    const coins = Math.round(h.coins * share[0]);
+    const R = Math.sqrt(coins) * 0.36 + 1.5, H = Math.sqrt(coins) * 0.3 + 1.5;
     const drop = (kind: number) => {
       const z = 1 + Math.random() * H;
       const rr = R * (1 - z / (H + 2)) * Math.sqrt(Math.random()), a = Math.random() * Math.PI * 2;
       spawn(kind, h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr, z);
     };
-    for (let k = 0; k < h.coins; k++) drop(0);
-    for (const [kind, n] of h.gems) for (let k = 0; k < n; k++) drop(kind);
+    for (let k = 0; k < coins; k++) drop(0);
+    for (const [kind, n] of h.gems) for (let k = 0, m = Math.round(n * share[kind]); k < m; k++) drop(kind);
   }
-  for (let a = 0; a < AREAS.length; a++) if (economy.save.areas[a]) AREAS[a].heaps.forEach(spawnHeap);
+
+  // ---- the room being cleared ----
+
+  /** What is in the cave, in coins. */
+  const inCave = () => left.reduce((sum, n, k) => sum + n * KIND_VALUE[k], 0);
+  let room = economy.current();
+  let stock = roomStock(room);
+  /** What was still lying about from earlier rooms when this one opened; it does not count against it. */
+  let strays = 0;
+  // Only the room being cleared is put back, and only as much of it as was left:
+  // the heaps come back smaller, where they started. Strays from earlier rooms are gone.
+  if (!economy.save.done) {
+    const share = stock.kinds.map((n, k) => (saved && n ? Math.min(1, saved[k] / n) : 1));
+    AREAS[room].heaps.forEach((h) => spawnHeap(h, share));
+  }
   // a moment of settling before anyone sees it, so the heaps are heaps
   for (let i = 0; i < 90; i++) world.step(1 / 60, () => {});
+  economy.persist();
 
-  const veinTimers = AREAS.map(() => Math.random());
+  /** How much of the room is cleared, 0 to 1, where 1 opens the next. */
+  function cleared(): number {
+    if (economy.save.done) return 1;
+    const lying = Math.max(0, inCave() - strays);
+    return Math.min(1, (1 - lying / stock.value) / CLEAR_SHARE);
+  }
+  function showProgress() {
+    const text = economy.save.done ? 'the cave is cleared' : `${AREAS[room].name}: ${Math.floor(cleared() * 100)}% cleared`;
+    progressText.textContent = shopProgress.textContent = text;
+  }
+
+  let veinTimer = Math.random();
+  /** The last room's vein, once there is nothing else left: a coin now and then, and a gem now and then. */
   function trickle(dt: number) {
-    if (world.live > BODY_CAPACITY - 60) return;
-    for (let a = 0; a < AREAS.length; a++) {
-      if (!economy.save.areas[a]) continue;
-      const v: Vein = AREAS[a].vein;
-      veinTimers[a] -= dt;
-      if (veinTimers[a] > 0) continue;
-      veinTimers[a] = v.every * (0.7 + Math.random() * 0.6);
-      let kind = 0;
-      const roll = Math.random();
-      let acc = 0;
-      for (const [k, p] of v.gems) { acc += p; if (roll < acc) { kind = k; break; } }
-      const a2 = Math.random() * Math.PI * 2;
-      spawn(kind, v.x + Math.cos(a2) * 0.6, v.y + Math.sin(a2) * 0.6, 6.5, Math.cos(a2) * 3, Math.sin(a2) * 3, 1);
-    }
+    if (!economy.save.done || world.live > BODY_CAPACITY - 60) return;
+    const v: Vein = AREAS[LAST].vein;
+    veinTimer -= dt;
+    if (veinTimer > 0) return;
+    veinTimer = v.every * (0.7 + Math.random() * 0.6);
+    let kind = 0;
+    const roll = Math.random();
+    let acc = 0;
+    for (const [k, p] of v.gems) { acc += p; if (roll < acc) { kind = k; break; } }
+    const a2 = Math.random() * Math.PI * 2;
+    spawn(kind, v.x + Math.cos(a2) * 0.6, v.y + Math.sin(a2) * 0.6, 6.5, Math.cos(a2) * 3, Math.sin(a2) * 3, 1);
   }
 
   // ---- the bank, and the run ----
@@ -297,7 +328,7 @@ async function main() {
   /** How fast value is arriving, in coins a second, smoothed: what the cascade scales by. */
   let flow = 0;
   function collect(kind: number, x: number, y: number) {
-    if (kind > 0) gemCount[kind]--;
+    left[kind]--;
     const value = KIND_VALUE[kind];
     economy.deposit(value);
     gained[kind]++;
@@ -343,20 +374,28 @@ async function main() {
       resetButton.classList.remove('armed');
     }, 4000);
   });
-  economy.onBuy((id) => {
+  economy.onChange((id) => {
     sound.chime();
     if (id.startsWith('area')) {
       const a = +id.slice(4);
+      note(`${AREAS[room].name} cleared · the ${AREAS[a].name} is open: ${AREAS[a].blurb}`, 5);
       world.solid = cave.solid(economy.save.areas);
       dozer.solid = world.solid;
       for (const b of bots) b.dozer.solid = world.solid;
-      AREAS[a].heaps.forEach(spawnHeap);
-      fountains.push(new Fountain(AREAS[a]));
+      room = a;
+      stock = roomStock(a);
+      strays = inCave();
+      AREAS[a].heaps.forEach((h) => spawnHeap(h));
+      // the heaps are in the save now, or a reload before the next coin would find the room empty
+      economy.persist();
       buildStatic();
       // the rock came down: a cloud of it, at each gate tile
       for (const [x, y] of gateTiles(cave, a)) {
         renderer.emit({ position: [x, y, 1.5], velocity: [0, 0, 5], spread: 6, count: 60, life: 1.6, lifeSpread: 0.5, size: 1.2, growth: 1.5, colour: [0.45, 0.4, 0.5], alpha: 0.8, gravity: 0.15, floor: 0 });
       }
+    } else if (id === 'done') {
+      note(`the cave is cleared · the ${AREAS[LAST].name}'s vein runs on`, 6);
+      fountains.push(new Fountain(AREAS[LAST]));
     } else if (id.startsWith('belt')) {
       world.belts.push(beltOf(AREAS[+id.slice(4)].belt!.spec));
       buildStatic();
@@ -430,10 +469,10 @@ async function main() {
     note(`camera: ${cameraMode}`);
   }
   /** A word at the top of the screen for a couple of seconds: what a button just changed. */
-  function note(text: string) {
+  function note(text: string, seconds = 2) {
     cameraNote.textContent = text;
     cameraNote.hidden = false;
-    cameraNoteIn = 2;
+    cameraNoteIn = seconds;
   }
   const cameraNote = document.getElementById('cameraNote')!;
   let cameraNoteIn = 0;
@@ -484,10 +523,9 @@ async function main() {
     }
     const pulse = 1 + holePulse * 1.6;
     lights.add({ position: [HOLE.x, HOLE.y, 1.5], radius: 14 + holePulse * 6, colour: [0.45, 1.0, 0.3], intensity: 2.0 * pulse });
-    for (let a = 0; a < AREAS.length; a++) {
-      if (!economy.save.areas[a]) continue;
-      const v = AREAS[a].vein;
-      lights.add({ position: [v.x, v.y, 5.5], radius: 12, colour: [1.0, 0.7, 0.3], intensity: 1.6 + 0.4 * Math.sin(t * 7 + a) });
+    if (economy.save.done) {
+      const v = AREAS[LAST].vein;
+      lights.add({ position: [v.x, v.y, 5.5], radius: 12, colour: [1.0, 0.7, 0.3], intensity: 1.6 + 0.4 * Math.sin(t * 7) });
     }
     for (const b of bots) {
       const bc = Math.cos(b.yaw), bs = Math.sin(b.yaw);
@@ -673,7 +711,7 @@ async function main() {
   /** The horn's button is there once the horn is bought, and the mute's says which way it is. */
   const showHorn = () => { hornButton.hidden = !(touch && economy.save.horn); };
   const showMute = () => { muteButton.textContent = sound.muted ? '🔇' : '🔊'; muteButton.setAttribute('aria-label', sound.muted ? 'unmute' : 'mute'); };
-  economy.onBuy((id) => { if (id === 'horn') showHorn(); });
+  economy.onChange((id) => { if (id === 'horn') showHorn(); });
   if (touch) {
     const controls = new TouchControls(document.getElementById('trackLeft')!, document.getElementById('trackRight')!, document.getElementById('steer')!);
     input.touch = controls;
@@ -817,11 +855,14 @@ async function main() {
       // the run is over: the tally fades, and the next coin starts a new one
       if (runTimer <= 0) { showRun(); runValue = 0; runCount = 0; gained.fill(0); }
     }
-    if (economy.bank !== lastBank) { lastBank = economy.bank; bankValue.textContent = shopBalance.textContent = `${economy.bank}`; showRun(); }
+    if (economy.bank !== lastBank) {
+      lastBank = economy.bank; bankValue.textContent = shopBalance.textContent = `${economy.bank}`; showRun();
+      if (!economy.save.done && cleared() >= 1) economy.clear();
+      showProgress();
+    }
     smoothed += (dt * 1000 - smoothed) * 0.08;
     if ((statsIn -= dt) <= 0) {
       statsIn = 0.25;
-      coinCount.textContent = `${world.live}`;
       statsPanel.innerHTML = `<span>${smoothed.toFixed(1)}</span> ms · <span>${Math.round(1000 / smoothed)}</span> fps<br>`
         + `<span>${world.live}</span> bodies · <span>${awake}</span> awake · load <span>${world.load}</span><br>`
         + `coins <span>${COIN_LADDER[coinDetail].name}</span>`;

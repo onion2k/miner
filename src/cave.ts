@@ -1,8 +1,10 @@
 /**
  * The cave: a grid of tiles, each rock or open, carved as a few wobbly
  * ellipses joined by corridors. Four of the corridors are blocked by gates —
- * rock the player buys their way through — and each room has heaps of coins,
- * a vein that trickles more in, and somewhere a conveyor could run.
+ * rock that comes down when the room before is cleared — and each room has
+ * heaps of coins, which is all it has, and somewhere a conveyor could run.
+ * The last room also has a vein, which trickles more in once the whole cave
+ * is clear, so there is still something to push.
  *
  * World units: a coin is about two across, a bulldozer about six, the whole
  * cave a couple of hundred across and more than that wide. Z is up and the
@@ -47,11 +49,7 @@ export interface BeltSpec {
 
 export interface Area {
   name: string;
-  /** What opening it costs; the first area is open from the start. */
-  cost: number;
-  /** The area that has to be open before this one can be bought. */
-  after: number;
-  /** What the shop says about it. */
+  /** What is in it, said when it opens. */
   blurb: string;
   heaps: Heap[];
   vein: Vein;
@@ -67,63 +65,67 @@ export function tileCentre(tx: number, ty: number): [number, number] {
 
 export const AREAS: Area[] = [
   {
-    name: 'The Hollow', cost: 0, after: 0, blurb: '',
+    name: 'The Hollow', blurb: 'coins and a few rubies',
     heaps: [
-      { x: -30, y: 8, coins: 840, gems: [[1, 6]] },
-      { x: 26, y: -8, coins: 840, gems: [[1, 6]] },
-      { x: 6, y: 22, coins: 320, gems: [] },
+      { x: -30, y: 8, coins: 840, gems: [[1, 24]] },
+      { x: 26, y: -8, coins: 840, gems: [[1, 22]] },
+      { x: 6, y: 22, coins: 320, gems: [[1, 4]] },
     ],
     vein: { x: -36, y: -6, every: 1.2, coins: 1, gems: [[1, 0.04]] },
     cracks: [[-10, -14], [18, 12], [-28, -12], [34, 4]],
     belt: null,
   },
   {
-    name: 'South Gallery', cost: 300, after: 0,
-    blurb: 'blast the rock south of the hollow: rubies and emeralds',
+    name: 'South Gallery',
+    blurb: 'rubies and emeralds',
     heaps: [
-      { x: -24, y: -52, coins: 960, gems: [[1, 14], [2, 6]] },
-      { x: 22, y: -54, coins: 960, gems: [[1, 10], [2, 8]] },
+      { x: -24, y: -52, coins: 960, gems: [[1, 22], [2, 12]] },
+      { x: 22, y: -54, coins: 960, gems: [[1, 18], [2, 16]] },
     ],
     vein: { x: 40, y: -50, every: 0.9, coins: 1, gems: [[1, 0.08], [2, 0.03]] },
     cracks: [[0, -56], [-40, -50], [36, -58]],
-    belt: { spec: { x0: -2, y0: -46, x1: -2, y1: -8, width: 7, speed: 9 }, cost: 450 },
+    belt: { spec: { x0: -2, y0: -46, x1: -2, y1: -8, width: 7, speed: 9 }, cost: 250 },
   },
   {
-    name: 'North Vault', cost: 1500, after: 1,
-    blurb: 'blast the rock to the north: emeralds, sapphires, diamonds',
+    name: 'North Vault',
+    blurb: 'emeralds, sapphires, diamonds',
     heaps: [
-      { x: -28, y: 52, coins: 1000, gems: [[2, 12], [3, 8], [4, 3]] },
-      { x: 24, y: 54, coins: 1000, gems: [[2, 8], [3, 10], [4, 4]] },
+      { x: -28, y: 52, coins: 1000, gems: [[2, 22], [3, 14], [4, 2]] },
+      { x: 24, y: 54, coins: 1000, gems: [[2, 18], [3, 16], [4, 2]] },
     ],
     vein: { x: -44, y: 54, every: 0.7, coins: 1, gems: [[2, 0.08], [3, 0.05], [4, 0.015]] },
     cracks: [[0, 56], [-44, 50], [40, 52]],
-    belt: { spec: { x0: -2, y0: 46, x1: -2, y1: 8, width: 7, speed: 9 }, cost: 900 },
+    belt: { spec: { x0: -2, y0: 46, x1: -2, y1: 8, width: 7, speed: 9 }, cost: 500 },
   },
   // The two galleries either side: long rooms running north and south, reached through
-  // the alcoves off the hollow. Added after the vault, so a save's areas keep their places.
+  // the alcoves off the hollow. Added after the vault, so a save's areas keep their places;
+  // `ORDER` is the order they open in.
   {
-    name: 'East Gallery', cost: 800, after: 1,
-    blurb: 'blast through the east alcove: rubies and sapphires',
+    name: 'East Gallery',
+    blurb: 'rubies and sapphires',
     heaps: [
-      { x: 104, y: 22, coins: 700, gems: [[1, 12], [3, 6]] },
-      { x: 110, y: -14, coins: 700, gems: [[1, 8], [3, 8]] },
+      { x: 104, y: 22, coins: 700, gems: [[1, 22], [3, 24]] },
+      { x: 110, y: -14, coins: 700, gems: [[1, 18], [3, 26]] },
     ],
     vein: { x: 100, y: -26, every: 0.85, coins: 1, gems: [[1, 0.07], [3, 0.03]] },
     cracks: [[108, 4], [102, 32], [112, -24]],
-    belt: { spec: { x0: 58, y0: 2, x1: 8, y1: 2, width: 7, speed: 10 }, cost: 650 },
+    belt: { spec: { x0: 58, y0: 2, x1: 8, y1: 2, width: 7, speed: 10 }, cost: 400 },
   },
   {
-    name: 'West Gallery', cost: 3000, after: 2,
-    blurb: 'blast through the west alcove: sapphires and diamonds',
+    name: 'West Gallery',
+    blurb: 'sapphires and diamonds',
     heaps: [
-      { x: -104, y: -22, coins: 700, gems: [[3, 12], [4, 5]] },
-      { x: -110, y: 14, coins: 700, gems: [[3, 8], [4, 6]] },
+      { x: -104, y: -22, coins: 700, gems: [[3, 26], [4, 10]] },
+      { x: -110, y: 14, coins: 700, gems: [[3, 24], [4, 11]] },
     ],
     vein: { x: -100, y: 26, every: 0.65, coins: 1, gems: [[3, 0.07], [4, 0.025]] },
     cracks: [[-108, -4], [-102, -32], [-112, 24]],
-    belt: { spec: { x0: -58, y0: -2, x1: -8, y1: -2, width: 7, speed: 10 }, cost: 1200 },
+    belt: { spec: { x0: -58, y0: -2, x1: -8, y1: -2, width: 7, speed: 10 }, cost: 600 },
   },
 ];
+
+/** The order the rooms open in, one when the one before is cleared: by what is in them. */
+export const ORDER = [0, 1, 3, 2, 4];
 
 /** The most bodies the cave can hold: every heap plus what the veins add. */
 export const BODY_CAPACITY = 10000;

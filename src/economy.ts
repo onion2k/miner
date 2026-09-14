@@ -1,10 +1,11 @@
 /**
- * The bank and what it buys: engine, blade, the four locked rooms, a belt
- * for each, and drones. Saved in the browser, so the cave is where you
- * left it.
+ * The bank and what it buys: engine, blade, magnet, a belt for each room,
+ * and drones. The rooms are not bought: each opens when the one before it
+ * is cleared. Saved in the browser, so the cave is where you left it.
  */
-import { AREAS } from './cave';
+import { AREAS, ORDER } from './cave';
 import type { DozerSpec } from './dozer';
+import { KIND_VALUE } from './physics';
 
 export interface Save {
   bank: number;
@@ -20,6 +21,23 @@ export interface Save {
   paints: string[];
   horn: boolean;
   flag: boolean;
+  /** How many of each kind are still in the cave, so a reload puts back what is left and not the lot. Empty when unknown. */
+  left: number[];
+  /** The last room is cleared too. */
+  done: boolean;
+}
+
+/** The share of a room's value that has to be banked before the next one opens: a few strays are forgiven. */
+export const CLEAR_SHARE = 0.95;
+
+/** What a room's heaps are worth, and how many of each kind they hold. */
+export function roomStock(area: number): { value: number; kinds: number[] } {
+  const kinds = [0, 0, 0, 0, 0];
+  for (const h of AREAS[area].heaps) {
+    kinds[0] += h.coins;
+    for (const [k, n] of h.gems) kinds[k] += n;
+  }
+  return { value: kinds.reduce((sum, n, k) => sum + n * KIND_VALUE[k], 0), kinds };
 }
 
 export interface Paint { id: string; name: string; colour: [number, number, number]; roughness: number; cost: number }
@@ -37,27 +55,30 @@ export const FLAG_COST = 120;
 
 const KEY = 'pushminer-save-v1';
 
+// The cave holds about 19,000 all told, and nothing refills it until the end, so
+// the prices add up to a little less than that: the whole workshop and a coat
+// of paint, for a player who gets nearly everything in.
 const ENGINE: { maxSpeed: number; accel: number; turnRate: number; cost: number }[] = [
   { maxSpeed: 11, accel: 14, turnRate: 1.6, cost: 0 },
-  { maxSpeed: 14, accel: 20, turnRate: 1.9, cost: 60 },
-  { maxSpeed: 17, accel: 28, turnRate: 2.2, cost: 200 },
-  { maxSpeed: 21, accel: 38, turnRate: 2.5, cost: 550 },
-  { maxSpeed: 25, accel: 50, turnRate: 2.8, cost: 1400 },
-  { maxSpeed: 30, accel: 64, turnRate: 3.1, cost: 3200 },
+  { maxSpeed: 14, accel: 20, turnRate: 1.9, cost: 50 },
+  { maxSpeed: 17, accel: 28, turnRate: 2.2, cost: 150 },
+  { maxSpeed: 21, accel: 38, turnRate: 2.5, cost: 400 },
+  { maxSpeed: 25, accel: 50, turnRate: 2.8, cost: 900 },
+  { maxSpeed: 30, accel: 64, turnRate: 3.1, cost: 1800 },
 ];
 const BLADE: { width: number; cost: number }[] = [
-  { width: 6.5, cost: 0 }, { width: 8, cost: 90 }, { width: 10, cost: 350 }, { width: 12.5, cost: 1100 },
+  { width: 6.5, cost: 0 }, { width: 8, cost: 80 }, { width: 10, cost: 300 }, { width: 12.5, cost: 800 },
 ];
 const MAGNET: { radius: number; strength: number; cost: number }[] = [
   { radius: 4, strength: 5, cost: 0 },
-  { radius: 6, strength: 9, cost: 120 },
-  { radius: 8.5, strength: 14, cost: 380 },
-  { radius: 11, strength: 20, cost: 950 },
-  { radius: 14, strength: 28, cost: 2200 },
-  { radius: 18, strength: 38, cost: 5000 },
+  { radius: 6, strength: 9, cost: 100 },
+  { radius: 8.5, strength: 14, cost: 300 },
+  { radius: 11, strength: 20, cost: 700 },
+  { radius: 14, strength: 28, cost: 1400 },
+  { radius: 18, strength: 38, cost: 2600 },
 ];
 export const MAX_DRONES = 3;
-const DRONE_COST = [500, 1300, 3000];
+const DRONE_COST = [600, 1200, 2200];
 
 export interface Offer {
   id: string;
@@ -78,7 +99,7 @@ export class Economy {
   private wiped = false;
 
   constructor() {
-    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false };
+    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false, left: [], done: false };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
@@ -87,11 +108,37 @@ export class Economy {
         // a save from before an area existed has it shut
         while (this.save.areas.length < AREAS.length) this.save.areas.push(false);
         while (this.save.belts.length < AREAS.length) this.save.belts.push(false);
+        // A save from when rooms were bought, in any order: everything up to the
+        // furthest room it had is open, and that room is the one being cleared.
+        const furthest = ORDER.reduce((f, a, n) => (this.save.areas[a] ? n : f), 0);
+        for (let n = 0; n <= furthest; n++) this.save.areas[ORDER[n]] = true;
+        for (let n = furthest + 1; n < ORDER.length; n++) this.save.areas[ORDER[n]] = false;
       }
     } catch { /* a browser with no storage plays from the start */ }
   }
 
   get bank() { return this.save.bank; }
+
+  /** The room being cleared: the furthest one open. */
+  current(): number {
+    return ORDER.reduce((c, a) => (this.save.areas[a] ? a : c), ORDER[0]);
+  }
+
+  /** The room that opens when the current one is cleared, or null at the last. */
+  next(): number | null {
+    const n = ORDER.indexOf(this.current()) + 1;
+    return n < ORDER.length ? ORDER[n] : null;
+  }
+
+  /** The current room is cleared: the next one opens, or the cave is done. */
+  clear() {
+    if (this.save.done) return;
+    const next = this.next();
+    if (next === null) this.save.done = true;
+    else this.save.areas[next] = true;
+    this.persist();
+    for (const fn of this.listeners) fn(next === null ? 'done' : `area${next}`);
+  }
 
   deposit(value: number) {
     this.save.bank += value;
@@ -105,8 +152,8 @@ export class Economy {
     return { maxSpeed: e.maxSpeed, accel: e.accel, turnRate: e.turnRate, bladeWidth: BLADE[this.save.blade].width, magnetRadius: m.radius, magnetStrength: m.strength };
   }
 
-  /** Something to do when a purchase lands: the game rebuilds what changed. */
-  onBuy(fn: (id: string) => void) { this.listeners.push(fn); }
+  /** Something to do when a purchase lands or a room opens: the game rebuilds what changed. */
+  onChange(fn: (id: string) => void) { this.listeners.push(fn); }
 
   offers(): Offer[] {
     const s = this.save;
@@ -129,20 +176,18 @@ export class Economy {
       sub: m ? `pulls coins from ${m.radius} away, up from ${MAGNET[s.magnet].radius}` : `reaches ${MAGNET[s.magnet].radius}: nothing escapes it`,
       cost: m?.cost ?? 0, owned: !m, available: !!m,
     });
-    for (let a = 1; a < AREAS.length; a++) {
-      const area = AREAS[a];
-      out.push({
-        id: `area${a}`, title: `Open the ${area.name}`,
-        sub: area.blurb,
-        cost: area.cost, owned: s.areas[a], available: s.areas[area.after],
-      });
-    }
-    for (let a = 1; a < AREAS.length; a++) {
-      const belt = AREAS[a].belt!;
+    // a belt for the room being cleared, and the ones still to come; one for a room
+    // already cleared and never bought is no use to anyone, so it is not offered
+    const current = this.current();
+    for (const a of ORDER) {
+      const belt = AREAS[a].belt;
+      if (!belt) continue;
+      const cleared = s.done || ORDER.indexOf(a) < ORDER.indexOf(current);
+      if (cleared && !s.belts[a]) continue;
       out.push({
         id: `belt${a}`, title: `Conveyor to the ${AREAS[a].name}`,
-        sub: 'push coins onto it and it carries them to the hole',
-        cost: belt.cost, owned: s.belts[a], available: s.areas[a],
+        sub: s.areas[a] ? 'push coins onto it and it carries them to the hole' : 'once the room is open',
+        cost: belt.cost, owned: s.belts[a], available: a === current && !s.done,
       });
     }
     const d = s.drones < MAX_DRONES ? DRONE_COST[s.drones] : null;
@@ -193,7 +238,6 @@ export class Economy {
     else if (id === 'horn') s.horn = true;
     else if (id === 'flag') s.flag = true;
     else if (id.startsWith('paint:')) { s.paints.push(id.slice(6)); s.paint = id.slice(6); }
-    else if (id.startsWith('area')) s.areas[+id.slice(4)] = true;
     else if (id.startsWith('belt')) s.belts[+id.slice(4)] = true;
     this.persist();
     for (const fn of this.listeners) fn(id);
@@ -206,7 +250,7 @@ export class Economy {
     location.reload();
   }
 
-  private persist() {
+  persist() {
     if (this.wiped) return;
     try { localStorage.setItem(KEY, JSON.stringify(this.save)); } catch { /* fine */ }
   }

@@ -26,7 +26,8 @@
            font-variant-numeric: tabular-nums; padding: 8px 18px; }
   #toast small { display: block; font-size: 12px; font-weight: 500; color: var(--dim); margin-top: 4px; }
   #toast.gone { opacity: 0; }
-  #cameraNote { top: 16px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; }
+  #cameraNote { top: 16px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase;
+                width: max-content; max-width: calc(100vw - 32px); text-align: center; }
   #shop { top: 50%; right: 16px; transform: translateY(-50%); pointer-events: auto; width: 320px; }
   #shop[hidden] { display: none; }
   #shop h2 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--dim); }
@@ -113,7 +114,7 @@
   #boot p { margin: 0; color: var(--dim); }
 </style>
 <div id="stage"><canvas id="view"></canvas></div>
-<div class="panel" id="bank" hidden><b>0</b><span class="sub">coins in the cave: <span id="coinCount">0</span></span></div>
+<div class="panel" id="bank" hidden><b>0</b><span class="sub" id="progress"></span></div>
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="toast" hidden></div>
 <div class="panel" id="cameraNote" hidden></div>
@@ -121,7 +122,7 @@
   drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom · <span>V</span> camera mode · <span>C</span> reset camera · <span>M</span> mute · <span>H</span> horn<br>
   push the coins and gems into the hole to bank them
 </div>
-<div class="panel" id="shop" hidden><h2>Workshop<span class="balance">balance <b id="shopBalance">0</b></span></h2><div class="rows"></div><h2 class="later">Paint shop</h2><div class="rows cosmetics"></div><div class="foot"><span class="keys">press <b>B</b> to close</span> <button id="reset" type="button">start over</button></div></div>
+<div class="panel" id="shop" hidden><h2>Workshop<span class="balance">balance <b id="shopBalance">0</b></span></h2><div class="rows"></div><h2 class="later">Paint shop</h2><div class="rows cosmetics"></div><div class="foot"><span><span id="shopProgress"></span><span class="keys"> · press <b>B</b> to close</span></span> <button id="reset" type="button">start over</button></div></div>
 <div id="pad" hidden>
   <button id="muteButton" type="button" aria-label="mute">🔊</button>
   <button id="cameraButton" type="button" aria-label="camera">🎥</button>
