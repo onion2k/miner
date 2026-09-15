@@ -204,3 +204,83 @@ export function fountainDust(x: number, y: number, spraying: boolean): Emit {
     floor: 0,
   };
 }
+
+/** A barrel going off: a flash of fire, sparks flying, a cloud of smoke, and bits of barrel. */
+export function explosion(x: number, y: number, z: number): Emit[] {
+  return [
+    {
+      position: [x, y, z + 0.5],
+      velocity: [0, 0, 4],
+      spread: 10,
+      count: 140,
+      life: 0.85,
+      lifeSpread: 0.35,
+      size: 1.4,
+      growth: 3,
+      colour: [5, 2.2, 0.5],
+      alpha: 0,
+      gravity: -0.2,
+      floor: 0,
+    },
+    {
+      position: [x, y, z + 0.5],
+      velocity: [0, 0, 6],
+      spread: 22,
+      count: 80,
+      life: 1.1,
+      lifeSpread: 0.5,
+      size: 0.12,
+      growth: -0.08,
+      colour: [3.5, 2.2, 0.8],
+      alpha: 0,
+      gravity: 1.2,
+      floor: 0,
+    },
+    {
+      position: [x, y, z + 1],
+      velocity: [0, 0, 4],
+      spread: 6,
+      count: 60,
+      life: 2.6,
+      lifeSpread: 0.6,
+      size: 1.6,
+      growth: 2.2,
+      colour: [0.22, 0.2, 0.2],
+      alpha: 0.75,
+      gravity: -0.05,
+      floor: 0,
+    },
+    {
+      position: [x, y, z + 0.5],
+      velocity: [0, 0, 9],
+      spread: 12,
+      count: 30,
+      life: 1.4,
+      lifeSpread: 0.4,
+      size: 0.3,
+      growth: -0.1,
+      colour: [0.55, 0.1, 0.06],
+      alpha: 1,
+      gravity: 1.6,
+      floor: 0,
+    },
+  ];
+}
+
+/** A lit fuse: a few sparks spitting off the top of the barrel. */
+export function fuseSparks(x: number, y: number, z: number): Emit {
+  return {
+    position: [x, y, z + 1.1],
+    velocity: [0, 0, 2.5],
+    spread: 2.5,
+    count: 3,
+    life: 0.35,
+    lifeSpread: 0.4,
+    size: 0.08,
+    growth: -0.1,
+    colour: [3, 2.2, 0.8],
+    alpha: 0,
+    gravity: 1,
+    floor: 0,
+  };
+}

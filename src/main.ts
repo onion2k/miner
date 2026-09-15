@@ -29,7 +29,7 @@ import {
   tileCentre,
   COLS,
 } from './cave';
-import { World, BRICK_KIND, KIND_RADIUS, type Pusher } from './physics';
+import { World, BARREL_KIND, BRICK_KIND, KIND_RADIUS, type Pusher } from './physics';
 import { Dozer, BLADE_AT, TRACK_GAUGE, separate } from './dozer';
 import { Input } from './input';
 import { TouchControls, isTouchDevice } from './touch';
@@ -50,6 +50,7 @@ import { COIN_LADDER } from './meshes';
 import { floorHeight } from './terrain';
 import { TrackMarks } from './tracks';
 import { NO_SOURCE, Stock, lootHeap } from './stock';
+import { Barrels, FUSE } from './barrels';
 import { Tally } from './tally';
 import { VeinTrickle } from './vein';
 import { Impacts } from './impacts';
@@ -70,8 +71,8 @@ import { airParticle, biomeAt, featureParticle, lampColour } from './biomes';
 const MM_PER_UNIT = 100;
 const LIGHT_CAPACITY = 256;
 const EFFECT_CAPACITY = 256;
-/** How many of each kind the cave can hold at once, past the coins; the last two are gold bars and bricks. */
-const GEM_CAPACITY = [0, 320, 240, 260, 160, 60, 900];
+/** How many of each kind the cave can hold at once, past the coins; the last three are gold bars, bricks and barrels. */
+const GEM_CAPACITY = [0, 320, 240, 260, 160, 60, 900, 40];
 /** The marks the tracks leave in the floor, the player's and the drones': pages of them, and how many a page. */
 const TRACK_PAGES = 16,
   TRACK_PAGE = 1024;
@@ -206,7 +207,14 @@ async function main() {
 
   // ---- what is in the cave ----
 
-  const stock = new Stock(world, GEM_CAPACITY, () => economy.current());
+  const stock = new Stock(world, GEM_CAPACITY, () => economy.current(), cave.barrels);
+  const barrels = new Barrels(world);
+  /** Blasts still lighting the cave, fading. */
+  const blasts: { x: number; y: number; z: number; left: number }[] = [];
+  /** The lit barrels in the bright half of a flash last frame, for a beep as each flash starts. */
+  const flashed = new Set<number>();
+  /** How hard the last blast shook the ground, fading. */
+  let blastShake = 0;
   const saved = { ...save, left: save.left };
   // the save keeps the live counts from here on, so it is never behind
   save.left = stock.left;
@@ -217,6 +225,7 @@ async function main() {
 
   const recordRubble = () => {
     save.rubble = stock.rubble();
+    save.barrels = stock.barrelRecord();
   };
   let rubbleAt = 0;
   addEventListener('pagehide', () => {
@@ -234,8 +243,8 @@ async function main() {
   const tally = new Tally();
   function collect(kind: number, x: number, y: number, i: number) {
     const value = stock.collect(kind, i);
-    // a brick down the hole is only gone
-    if (kind === BRICK_KIND) return;
+    // a brick or a barrel down the hole is only gone: nothing banked, and nothing to show for it
+    if (kind === BRICK_KIND || kind === BARREL_KIND) return;
     economy.deposit(value);
     const heat = tally.add(kind);
     if (kind > 0) sound.thunk(value);
@@ -505,6 +514,8 @@ async function main() {
       vein: save.done ? AREAS[LAST].vein : null,
       sealing: warning ? sealPoint(cave, economy.next()!) : null,
       magnet: world.magnet,
+      fuses: barrels.lit.map((i) => ({ x: world.x[i], y: world.y[i], z: world.z[i], flash: barrels.flashing(i) })),
+      blasts,
       holePulse: tally.holePulse,
     });
     renderer.setLights(lights.lights, lights.shadowed);
@@ -520,6 +531,7 @@ async function main() {
       belts: running(),
       flag: save.flag,
       tracks,
+      barrel: (i) => (barrels.flashing(i) ? 'flash' : barrels.fuseLeft(i) !== null ? 'lit' : 'idle'),
       t,
     });
     tracks.clean();
@@ -612,6 +624,7 @@ async function main() {
     calibration,
     measureFrame,
     trackMarks: tracks,
+    barrels,
   });
 
   // what the robo-dozers go for: the room being cleared, and any chamber broken into off it
@@ -659,6 +672,33 @@ async function main() {
       const e = featureParticle(staticScene.features[lit[Math.floor(Math.random() * lit.length)]]);
       if (e) renderer.emit(e);
     }
+  }
+
+  /**
+   * The fuses burning: a beep and a spit of sparks as each flash starts, faster as each burns down;
+   * and the barrels that have burned down going off, with a flash, a bang and a shake.
+   */
+  function fuseAndBlast(dt: number) {
+    for (const i of barrels.lit) {
+      const flash = barrels.flashing(i);
+      if (flash && !flashed.has(i)) {
+        const left = barrels.fuseLeft(i) ?? 0;
+        sound.fuse(1 - Math.max(0, Math.min(1, left / FUSE)));
+        renderer.emit(fx.fuseSparks(world.x[i], world.y[i], world.z[i]));
+      }
+      if (flash) flashed.add(i);
+      else flashed.delete(i);
+    }
+    for (const blast of barrels.update(dt, (i) => stock.removeBarrel(i))) {
+      emit(fx.explosion(blast.x, blast.y, blast.z));
+      sound.boom();
+      blasts.push({ x: blast.x, y: blast.y, z: blast.z, left: 1 });
+      const near = Math.max(0, 1 - Math.hypot(blast.x - dozer.x, blast.y - dozer.y) / 80);
+      blastShake = Math.max(blastShake, near);
+    }
+    for (const i of [...flashed]) if (barrels.fuseLeft(i) === null) flashed.delete(i);
+    for (let k = blasts.length - 1; k >= 0; k--) if ((blasts[k].left -= dt * 1.2) <= 0) blasts.splice(k, 1);
+    blastShake = Math.max(0, blastShake - dt * 1.5);
   }
 
   let shopOpen = false;
@@ -725,6 +765,13 @@ async function main() {
         );
     }
     world.pushers = pushers;
+    // the player's machine on the move into a barrel lights its fuse; a drone's does not
+    if (Math.abs(dozer.speed) > 0.3 || Math.abs(dozer.yawRate) > 0.3) {
+      if (barrels.hitBy(pushers, dozer.owner).length) {
+        sound.fuse(0);
+        hud.note('the fuse is lit · get clear', 2);
+      }
+    }
     // the heap ahead of the blade wakes before the blade arrives
     const c = Math.cos(dozer.yaw),
       s = Math.sin(dozer.yaw);
@@ -751,13 +798,14 @@ async function main() {
       shaking = Math.max(shaking, f.glow * near * (f.state === 'spray' ? 1 : 0.5));
       if (Math.random() < (f.state === 'spray' ? 0.9 : 0.35)) emit(fx.fountainDust(f.x, f.y, f.state === 'spray'));
     }
-    sound.shake(shaking);
+    sound.shake(Math.max(shaking, blastShake));
     biomeAir();
     sound.drive(drive.throttle, dozer.speed, world.load);
 
     // the coins
     world.step(dt, collect);
     tally.fade(dt);
+    fuseAndBlast(dt);
 
     // the camera, and the picture
     rig.update(dt, performance.now() / 1000, dozer);

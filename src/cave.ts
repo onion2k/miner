@@ -580,6 +580,8 @@ export interface Cave {
   cells: Uint8Array;
   /** The lamps, the same ones every time the cave is built. */
   lamps: Lamp[];
+  /** Where each room's barrels stand when it opens, the same every time. */
+  barrels: BarrelSpot[];
   /**
    * A rock tile's cell is 1; a gate's is 1 until its area is opened, a hidden
    * chamber's, and the rock in front of it, until it is broken into, and a
@@ -659,9 +661,11 @@ export function buildCave(): Cave {
     carveEllipse(cells, c.cx, c.cy, c.rx, c.ry, c.seed, SECRET + k, true);
     carveRect(cells, wall[0], wall[1], wall[2], wall[3], SECRET + k, true);
   });
+  const lamps = placeLamps(cells);
   return {
     cells,
-    lamps: placeLamps(cells),
+    lamps,
+    barrels: placeBarrels(cells, lamps),
     solid(unlocked, revealed = [], broken = []) {
       const out = new Uint8Array(COLS * ROWS);
       for (let i = 0; i < cells.length; i++) {
@@ -702,21 +706,85 @@ const LAMP_SPACING = 10,
  * which come down; every tile is tried in the same order, so the same lamps
  * come every time. A pen has none.
  */
+/** A barrel where it stands when its room opens. */
+export interface BarrelSpot {
+  x: number;
+  y: number;
+  area: number;
+}
+
+/** How many barrels each room has, the hollow first; and how far apart they stand, at least. */
+const BARRELS_IN = [3, 5, 5, 5, 5],
+  BARREL_SPACING = 16;
+
+/**
+ * Where each room's barrels stand: out on the floor the dozer drives, with
+ * floor all round, clear of the heaps, the belts, the lamps, the hole and
+ * anything that comes down or opens; spread about, and the same every time.
+ * Not behind a brick wall, where they would be no use to anyone.
+ */
+function placeBarrels(cells: Uint8Array, lamps: readonly Lamp[]): BarrelSpot[] {
+  const at = (tx: number, ty: number) => (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS ? ROCK : cells[ty * COLS + tx]);
+  // the floor joined to the hole with every gate down and every wall standing
+  const joined = new Uint8Array(COLS * ROWS);
+  const start = Math.floor((HOLE.y - ORIGIN_Y) / TILE) * COLS + Math.floor((HOLE.x - ORIGIN_X) / TILE);
+  const stack = [start];
+  while (stack.length) {
+    const t = stack.pop()!;
+    const c = cells[t];
+    if (joined[t] || !(c === OPEN || (c >= GATE && c < SECRET))) continue;
+    joined[t] = 1;
+    const tx = t % COLS;
+    if (tx > 0) stack.push(t - 1);
+    if (tx < COLS - 1) stack.push(t + 1);
+    if (t >= COLS) stack.push(t - COLS);
+    if (t < COLS * (ROWS - 1)) stack.push(t + COLS);
+  }
+  const candidates: { x: number; y: number; area: number; rank: number }[] = [];
+  for (let ty = 2; ty < ROWS - 2; ty++) {
+    for (let tx = 2; tx < COLS - 2; tx++) {
+      if (!joined[ty * COLS + tx] || at(tx, ty) !== OPEN) continue;
+      let clear = true;
+      for (let oy = -1; oy <= 1 && clear; oy++)
+        for (let ox = -1; ox <= 1; ox++) if (at(tx + ox, ty + oy) !== OPEN) clear = false;
+      if (!clear) continue;
+      const [x, y] = tileCentre(tx, ty);
+      if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 12 || nearHeap(x, y, 5) || nearBelt(x, y, 4)) continue;
+      if (lamps.some((l) => Math.hypot(l.x - x, l.y - y) < 5)) continue;
+      candidates.push({ x, y, area: areaAt(x, y), rank: hash(tx, ty, 91) });
+    }
+  }
+  candidates.sort((a, b) => a.rank - b.rank);
+  const out: BarrelSpot[] = [];
+  for (const c of candidates) {
+    if (out.filter((b) => b.area === c.area).length >= (BARRELS_IN[c.area] ?? 0)) continue;
+    if (out.some((b) => Math.hypot(b.x - c.x, b.y - c.y) < BARREL_SPACING)) continue;
+    out.push({ x: c.x, y: c.y, area: c.area });
+  }
+  return out;
+}
+
+/** Whether a point is within `margin` of the edge of any room's heap. */
+function nearHeap(x: number, y: number, margin = 4): boolean {
+  return AREAS.some((a) => a.heaps.some((h) => Math.hypot(h.x - x, h.y - y) < Math.sqrt(h.coins) * 0.36 + margin));
+}
+
+/** Whether a point is within `margin` of the side of any room's belt. */
+function nearBelt(x: number, y: number, margin = 3): boolean {
+  return AREAS.some((a) => {
+    const b = a.belt?.spec;
+    if (!b) return false;
+    const dx = b.x1 - b.x0,
+      dy = b.y1 - b.y0,
+      len2 = dx * dx + dy * dy;
+    const k = Math.max(0, Math.min(1, ((x - b.x0) * dx + (y - b.y0) * dy) / len2));
+    return Math.hypot(x - (b.x0 + dx * k), y - (b.y0 + dy * k)) < b.width / 2 + margin;
+  });
+}
+
 function placeLamps(cells: Uint8Array): Lamp[] {
   const out: Lamp[] = [];
   const at = (tx: number, ty: number) => (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS ? ROCK : cells[ty * COLS + tx]);
-  const nearHeap = (x: number, y: number, margin = 4) =>
-    AREAS.some((a) => a.heaps.some((h) => Math.hypot(h.x - x, h.y - y) < Math.sqrt(h.coins) * 0.36 + margin));
-  const nearBelt = (x: number, y: number) =>
-    AREAS.some((a) => {
-      const b = a.belt?.spec;
-      if (!b) return false;
-      const dx = b.x1 - b.x0,
-        dy = b.y1 - b.y0,
-        len2 = dx * dx + dy * dy;
-      const k = Math.max(0, Math.min(1, ((x - b.x0) * dx + (y - b.y0) * dy) / len2));
-      return Math.hypot(x - (b.x0 + dx * k), y - (b.y0 + dy * k)) < b.width / 2 + 3;
-    });
   for (let ty = 1; ty < ROWS - 1; ty++) {
     for (let tx = 1; tx < COLS - 1; tx++) {
       if (at(tx, ty) !== OPEN) continue;

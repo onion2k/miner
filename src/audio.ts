@@ -268,6 +268,55 @@ export class Sound {
     src.start(now);
   }
 
+  /** A lit barrel's flash: a short beep, higher and sharper the nearer it is to going (`urgency`, 0 to 1). */
+  fuse(urgency: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator(),
+      gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(760 + urgency * 700, now);
+    gain.gain.setValueAtTime(0.06 + urgency * 0.05, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+    osc.connect(gain).connect(this.master);
+    osc.start(now);
+    osc.stop(now + 0.08);
+  }
+
+  /** A barrel going off: a blast of noise, a deep boom falling under it, and debris pattering down after. */
+  boom() {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 1.8, ctx.sampleRate);
+    const d = buffer.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const t = i / d.length;
+      d[i] = (Math.random() * 2 - 1) * (Math.pow(1 - t, 6) + (Math.random() < 0.003 * (1 - t) ? 0.5 : 0));
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(3000, now);
+    filter.frequency.exponentialRampToValueAtTime(400, now + 0.8);
+    const gain = ctx.createGain();
+    gain.gain.value = 1.0;
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(now);
+    const boom = ctx.createOscillator(),
+      boomGain = ctx.createGain();
+    boom.type = 'sine';
+    boom.frequency.setValueAtTime(120, now);
+    boom.frequency.exponentialRampToValueAtTime(28, now + 1.1);
+    boomGain.gain.setValueAtTime(0.9, now);
+    boomGain.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+    boom.connect(boomGain).connect(this.master);
+    boom.start(now);
+    boom.stop(now + 1.4);
+  }
+
   /** The air horn: two notes a fourth apart, through a resonant filter, held for half a second. */
   horn() {
     const ctx = this.ctx;

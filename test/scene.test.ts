@@ -86,6 +86,8 @@ describe('the lights', () => {
     lamps: cave.lamps,
     lampOn: (k) => cave.lamps[k].area === 0,
     lampColour: () => [1, 0.8, 0.55],
+    fuses: [],
+    blasts: [],
     features: [],
     featureOn: () => true,
     fountains: [],

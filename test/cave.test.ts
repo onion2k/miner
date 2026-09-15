@@ -84,6 +84,27 @@ describe('the cave', () => {
     }
   });
 
+  it('stands a few barrels in every room, out on open floor, clear of the heaps, belts, lamps and hole', () => {
+    AREAS.forEach((area, a) => {
+      const mine = cave.barrels.filter((b) => b.area === a);
+      expect(mine.length, area.name).toBeGreaterThanOrEqual(3);
+      for (const b of mine) {
+        expect(areaAt(b.x, b.y)).toBe(a);
+        const t = tileAt(b.x, b.y);
+        expect(main.has(t), `${area.name} barrel at ${b.x},${b.y} joined to the hole`).toBe(true);
+        expect(cells[t]).toBe(OPEN);
+        expect(Math.hypot(b.x - HOLE.x, b.y - HOLE.y)).toBeGreaterThan(HOLE.radius + 10);
+        for (const h of AREAS.flatMap((r) => r.heaps))
+          expect(Math.hypot(h.x - b.x, h.y - b.y)).toBeGreaterThan(Math.sqrt(h.coins) * 0.36 + 4);
+        for (const l of cave.lamps) expect(Math.hypot(l.x - b.x, l.y - b.y)).toBeGreaterThan(4);
+      }
+    });
+    for (const b of cave.barrels) {
+      const nearest = Math.min(...cave.barrels.filter((o) => o !== b).map((o) => Math.hypot(o.x - b.x, o.y - b.y)));
+      expect(nearest).toBeGreaterThan(15);
+    }
+  });
+
   it('closes each side room off behind its wall, inside its own room', () => {
     STASHES.forEach((st, k) => {
       const inside = flood(tileAt(...stashCentre(k)), (t) => cells[t] === OPEN);

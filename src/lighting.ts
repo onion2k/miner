@@ -62,6 +62,10 @@ export interface LightState {
   /** Where the line that seals the room behind is, while the player is at the next gate. */
   sealing: [number, number] | null;
   magnet: { x: number; y: number; radius: number; strength: number } | null;
+  /** The barrels with their fuses lit, and whether each is in the bright half of a flash. */
+  fuses: readonly { x: number; y: number; z: number; flash: boolean }[];
+  /** Blasts still lighting the cave, and how much of their light is left, 1 to 0. */
+  blasts: readonly { x: number; y: number; z: number; left: number }[];
   /** How bright the hole glows, 0 to 3. */
   holePulse: number;
 }
@@ -193,6 +197,21 @@ export class SceneLights {
       const [sx, sy] = s.sealing;
       lights.add({ position: [sx, sy, 3], radius: 20, colour: [1.0, 0.25, 0.1], intensity: 3 + 2.5 * Math.sin(t * 8) });
     }
+    // a barrel going off lights up everything round it for a moment, and a lit one flashes red
+    for (const b of s.blasts)
+      lights.add({
+        position: [b.x, b.y, b.z + 3],
+        radius: 40,
+        colour: [1.0, 0.6, 0.25],
+        intensity: 90 * b.left * b.left,
+      });
+    for (const f of s.fuses)
+      lights.add({
+        position: [f.x, f.y, f.z + 1.5],
+        radius: 9,
+        colour: [1.0, 0.2, 0.08],
+        intensity: f.flash ? 6 : 1.5,
+      });
     const m = s.magnet;
     if (m)
       lights.add({
@@ -259,6 +278,16 @@ export class SceneLights {
       const q = project(vp, x, y, HOLE_LAMP_HEIGHT - 0.6);
       if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
       put([q[0], q[1], 5 / q[2], 0.9, 0.7, 1.0, 0.6, 2.0]);
+    }
+    for (const f of s.fuses) {
+      if (!f.flash || n >= effectCapacity) continue;
+      const q = project(vp, f.x, f.y, f.z + 1.2);
+      if (q) put([q[0], q[1], 4 / q[2], 0.9, 1.0, 0.3, 0.1, 2.0]);
+    }
+    for (const b of s.blasts) {
+      if (n >= effectCapacity) break;
+      const q = project(vp, b.x, b.y, b.z + 1);
+      if (q) put([q[0], q[1], (36 / q[2]) * (1.5 - b.left * 0.5), b.left * 2.5, 1.0, 0.65, 0.3, 1.2]);
     }
     const m = s.magnet;
     if (m && n < effectCapacity) {

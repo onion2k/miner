@@ -5,7 +5,7 @@
  *
  * Colours are linear RGB; where a fourth number follows, it is roughness.
  */
-import { BAR, BRICK_KIND } from './physics';
+import { BAR, BARREL_KIND, BRICK_KIND } from './physics';
 
 export type Rgb = [number, number, number];
 
@@ -19,6 +19,8 @@ export const GEM_ALBEDO: Rgb[] = [
   [0.9, 0.97, 1.0],
 ];
 export const BAR_COLOUR: Rgb = [1.0, 0.72, 0.18];
+/** A barrel's body, standing; it flashes other colours when its fuse is lit. */
+export const BARREL_COLOUR: Rgb = [0.55, 0.08, 0.05];
 /** The colour of each grade of wall, clay, stone and iron-bound, and how rough. */
 export const WALL_COLOUR: [number, number, number, number][] = [
   [0, 0, 0, 0],
@@ -42,10 +44,11 @@ export const TRACK_MARK: Rgb = [0.185, 0.13, 0.08];
 /** How much of its own colour something in a room not open shows: next to none, so no light spilling through the rock shows there. */
 export const UNSEEN = 0.02;
 
-/** The colour a kind of thing is, loose: a coin, a gem, a gold bar, a clay brick. */
+/** The colour a kind of thing is, loose: a coin, a gem, a gold bar, a clay brick, a barrel. Every kind has one. */
 export function kindColour(kind: number): Rgb {
   if (kind === 0) return COIN_COLOUR;
   if (kind === BAR) return BAR_COLOUR;
   if (kind === BRICK_KIND) return WALL_COLOUR[1].slice(0, 3) as Rgb;
-  return GEM_ALBEDO[kind];
+  if (kind === BARREL_KIND) return BARREL_COLOUR;
+  return GEM_ALBEDO[kind] ?? COIN_COLOUR;
 }

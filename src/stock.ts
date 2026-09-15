@@ -8,9 +8,19 @@
  * It keeps its own counts rather than asking the world, and hands the counts
  * of what is left to the save as they are, so the save is never behind.
  */
-import { AREAS, SECRETS, STASHES, WALLS, chamberCentre, stashCentre, tileCentre, type Heap } from './cave';
+import {
+  AREAS,
+  SECRETS,
+  STASHES,
+  WALLS,
+  chamberCentre,
+  stashCentre,
+  tileCentre,
+  type BarrelSpot,
+  type Heap,
+} from './cave';
 import { SOURCES, areaOfSource, chamberSource, roomStock, stashSource, wallSource } from './economy';
-import { BRICK_KIND, KINDS, KIND_VALUE, type World } from './physics';
+import { BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, KIND_VALUE, type World } from './physics';
 
 /** Where a body came from when it came from nowhere that counts: a brick. */
 export const NO_SOURCE = 255;
@@ -51,6 +61,8 @@ export interface SavedStock {
   walls: readonly boolean[];
   /** Every brick lying about, four numbers each: x, y, z and the grade of wall it came from. */
   rubble: readonly number[];
+  /** Every barrel still about, four numbers each: x, y, z and its room; null for none ever placed. */
+  barrels: readonly number[] | null;
 }
 
 export class Stock {
@@ -58,6 +70,8 @@ export class Stock {
   readonly origin: Uint8Array;
   /** The grade of wall each brick came from, by slot. */
   readonly brickGrade: Uint8Array;
+  /** The room each barrel belongs to, and is sealed with, by slot. */
+  readonly home: Uint8Array;
   /** How many of each kind are in the world. */
   readonly kinds = new Array<number>(KINDS).fill(0);
   /** How many of each kind are left from each source. */
@@ -67,16 +81,19 @@ export class Stock {
   /**
    * `capacity[kind]` is how many of each kind past the coins may be in the
    * world at once, for drawing; `current` is the room being cleared, which is
-   * where anything spawned without a source is counted.
+   * where anything spawned without a source is counted. `barrels` is where
+   * each room's barrels stand when it opens.
    */
   constructor(
     private readonly world: World,
     private readonly capacity: readonly number[],
     private readonly current: () => number,
+    private readonly barrels: readonly BarrelSpot[] = [],
     private readonly random: () => number = Math.random,
   ) {
     this.origin = new Uint8Array(world.capacity);
     this.brickGrade = new Uint8Array(world.capacity);
+    this.home = new Uint8Array(world.capacity);
   }
 
   /** A body into the world from a source, if there is room for another of its kind. */
@@ -99,6 +116,24 @@ export class Stock {
     this.brickGrade[i] = grade;
     this.kinds[BRICK_KIND]++;
     return i;
+  }
+
+  /** A barrel for a room, standing at (x, y): counted in the world, from no source, since it is worth nothing. Its slot, or -1. */
+  spawnBarrel(area: number, x: number, y: number, z = KIND_RADIUS[BARREL_KIND] + 0.05): number {
+    if (this.kinds[BARREL_KIND] >= (this.capacity[BARREL_KIND] ?? Infinity)) return -1;
+    const i = this.world.spawn(BARREL_KIND, x, y, z);
+    if (i < 0) return -1;
+    this.origin[i] = NO_SOURCE;
+    this.home[i] = area;
+    this.kinds[BARREL_KIND]++;
+    return i;
+  }
+
+  /** A barrel gone off, by its slot: out of the world and the counts. */
+  removeBarrel(i: number) {
+    if (!this.world.alive[i] || this.world.kind[i] !== BARREL_KIND) return;
+    this.world.remove(i);
+    this.kinds[BARREL_KIND]--;
   }
 
   /** A heap from a source, with `share[kind]` of each kind in it: all of them for one just opened. */
@@ -161,11 +196,21 @@ export class Stock {
       const [x, y, z, grade] = saved.rubble.slice(k, k + 4);
       if (this.spawnBrick(grade, x, y, z) < 0) break;
     }
+    // the barrels where they were left, or for a save from before there were any, each room's where they start
+    if (saved.barrels === null) {
+      for (const b of this.barrels) if (inPlay.includes(b.area)) this.spawnBarrel(b.area, b.x, b.y);
+    } else {
+      for (let k = 0; k + 3 < saved.barrels.length; k += 4) {
+        const [x, y, z, area] = saved.barrels.slice(k, k + 4);
+        if (inPlay.includes(area)) this.spawnBarrel(area, x, y, z);
+      }
+    }
   }
 
-  /** A room just opened: its heaps, and what is in its side rooms, to be seen over their walls. */
+  /** A room just opened: its heaps, its barrels, and what is in its side rooms, to be seen over their walls. */
   openRoom(area: number) {
     AREAS[area].heaps.forEach((h) => this.spawnHeap(area, h));
+    for (const b of this.barrels) if (b.area === area) this.spawnBarrel(area, b.x, b.y);
     STASHES.forEach((stash, k) => {
       if (stash.area === area) this.spawnHeap(stashSource(k), stashHeap(k));
     });
@@ -177,7 +222,7 @@ export class Stock {
    */
   collect(kind: number, i: number): number {
     this.kinds[kind]--;
-    if (kind === BRICK_KIND) return 0;
+    if (kind === BRICK_KIND || kind === BARREL_KIND) return 0;
     this.left[this.origin[i]][kind]--;
     return KIND_VALUE[kind];
   }
@@ -190,7 +235,14 @@ export class Stock {
   seal(area: number, gone: (x: number, y: number, z: number) => void = () => {}) {
     const { world } = this;
     for (let i = 0; i < world.count; i++) {
-      if (!world.alive[i] || this.origin[i] === NO_SOURCE || areaOfSource(this.origin[i]) !== area) continue;
+      if (!world.alive[i]) continue;
+      if (world.kind[i] === BARREL_KIND) {
+        if (this.home[i] !== area) continue;
+        gone(world.x[i], world.y[i], world.z[i]);
+        this.removeBarrel(i);
+        continue;
+      }
+      if (this.origin[i] === NO_SOURCE || areaOfSource(this.origin[i]) !== area) continue;
       gone(world.x[i], world.y[i], world.z[i]);
       this.kinds[world.kind[i]]--;
       this.left[this.origin[i]][world.kind[i]]--;
@@ -206,6 +258,17 @@ export class Stock {
   /** How much of a room is banked, 0 to 1. */
   banked(area: number): number {
     return Math.max(0, Math.min(1, 1 - this.lying(area) / this.stocks[area].value));
+  }
+
+  /** Where every barrel is, four numbers each with its room, for the save. */
+  barrelRecord(): number[] {
+    const { world } = this;
+    const out: number[] = [];
+    for (let i = 0; i < world.count; i++) {
+      if (!world.alive[i] || world.kind[i] !== BARREL_KIND) continue;
+      out.push(+world.x[i].toFixed(2), +world.y[i].toFixed(2), +world.z[i].toFixed(2), this.home[i]);
+    }
+    return out;
   }
 
   /** Where every brick lies, four numbers each, for the save. */

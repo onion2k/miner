@@ -14,8 +14,9 @@ import { AREAS } from './cave';
 import { BLADE_HEIGHT, TRACK_GAUGE, bladePieces, type Dozer } from './dozer';
 import { bar, ball, box, coin, cylinder, gem, moved, square, turned } from './meshes';
 import { place, placePart, placeQuat } from './matrix';
-import { BAR_COLOUR, COIN_COLOUR, GEM_ALBEDO, TRACK_MARK, WALL_COLOUR, type Rgb } from './palette';
-import { BAR, BRICK_KIND, KINDS, KIND_RADIUS, type World } from './physics';
+import { BARREL_COLOUR, BAR_COLOUR, COIN_COLOUR, GEM_ALBEDO, TRACK_MARK, WALL_COLOUR, type Rgb } from './palette';
+import { BAR, BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, type World } from './physics';
+import { MATERIAL_STRIDE } from 'artshape-render/game/renderer';
 import { BRICK_SIZE } from './walls';
 
 /** What the moving scene does to the renderer. */
@@ -53,6 +54,8 @@ export interface DynamicFrame {
   flag: boolean;
   /** The track marks: each page's count, and which pages have changed. */
   tracks: { counts: readonly number[]; dirty: ReadonlySet<number> };
+  /** How a barrel is, by slot: standing, its fuse lit, or lit and in the bright half of a flash. */
+  barrel: (i: number) => 'idle' | 'lit' | 'flash';
   t: number;
 }
 
@@ -78,7 +81,13 @@ const COINS = 0,
   FLAG = 14,
   BARS = 15,
   RUBBLE = 16,
-  TRACKS = 19;
+  BARRELS = 19,
+  HOOPS = 20,
+  TRACKS = 21;
+/** A barrel's colour standing, lit, and in a flash; roughness last. */
+const BARREL_IDLE = [...BARREL_COLOUR, 0.5],
+  BARREL_LIT = [0.8, 0.12, 0.06, 0.4],
+  BARREL_FLASH = [3.2, 2.6, 1.0, 0.3];
 
 /** How far a tread bar is along its track, for the run the track has done; the spacing of the tread bars, too. */
 export const TREAD_PITCH = TREAD_LOOP / TREAD_BARS;
@@ -100,6 +109,8 @@ export class DynamicScene {
   private readonly flagM = new Float32Array(FLAG_SLATS * 16);
   private readonly counts = new Array<number>(KINDS).fill(0);
   private readonly rubble = [0, 0, 0];
+  private readonly barrelM: Float32Array;
+  private readonly barrelMat: Float32Array<ArrayBuffer>;
 
   constructor(
     private readonly target: DynamicTarget,
@@ -109,6 +120,8 @@ export class DynamicScene {
     this.coinM = new Float32Array(bodyCapacity * 16);
     this.gemM = kindCapacity.map((n) => new Float32Array(Math.max(1, n) * 16));
     this.rubbleM = [1, 2, 3].map(() => new Float32Array(kindCapacity[BRICK_KIND] * 16));
+    this.barrelM = new Float32Array(Math.max(1, kindCapacity[BARREL_KIND]) * 16);
+    this.barrelMat = new Float32Array(Math.max(1, kindCapacity[BARREL_KIND]) * MATERIAL_STRIDE);
     this.treadM = new Float32Array((1 + bots) * TREAD_BARS * 2 * 16);
     this.botHullM = new Float32Array(bots * 16);
     this.botDarkM = new Float32Array(bots * 16);
@@ -194,6 +207,15 @@ export class DynamicScene {
         albedo: WALL_COLOUR[grade].slice(0, 3) as Rgb,
         roughness: WALL_COLOUR[grade][3],
       })),
+      // the barrels, where the physics holds their balls: the body, which flashes when lit, and its hoops
+      { mesh: barrelBody(KIND_RADIUS[BARREL_KIND]), matrices: this.barrelM, materials: this.barrelMat, count: 0 },
+      {
+        mesh: barrelHoops(KIND_RADIUS[BARREL_KIND]),
+        matrices: this.barrelM,
+        count: 0,
+        albedo: [0.85, 0.65, 0.08] as Rgb,
+        roughness: 0.45,
+      },
       // the marks the tracks have left, a page a group, so a new mark writes one page and not all of them
       ...options.trackPages.map((matrices) => ({
         mesh: square(),
@@ -227,6 +249,7 @@ export class DynamicScene {
   /** Everything where it is this frame. How many bodies are awake, for the counters. */
   write(f: DynamicFrame): number {
     const awake = this.bodies(f.world, f.brickGrade);
+    this.barrels(f.world, f.barrel);
     this.machines(f);
     this.stripes(f.belts, f.t);
     this.pennant(f.dozer, f.flag, f.t);
@@ -262,6 +285,23 @@ export class DynamicScene {
     this.target.move(BARS, gemM[BAR], counts[BAR]);
     for (let g = 0; g < 3; g++) this.target.move(RUBBLE + g, rubbleM[g], rubble[g]);
     return awake;
+  }
+
+  /** The barrels where they are, each coloured for how it is. */
+  private barrels(world: World, state: DynamicFrame['barrel']) {
+    const { barrelM, barrelMat } = this;
+    const { x, y, z, q, kind, alive } = world;
+    let n = 0;
+    for (let i = 0; i < world.count && n * 16 < barrelM.length; i++) {
+      if (!alive[i] || kind[i] !== BARREL_KIND) continue;
+      placeQuat(barrelM, n, x[i], y[i], z[i], q, i * 4);
+      const s = state(i);
+      barrelMat.set(s === 'flash' ? BARREL_FLASH : s === 'lit' ? BARREL_LIT : BARREL_IDLE, n * MATERIAL_STRIDE);
+      n++;
+    }
+    this.target.move(BARRELS, barrelM, n);
+    this.target.move(HOOPS, barrelM, n);
+    if (n) this.target.tint(BARRELS, barrelMat);
   }
 
   private machines({ dozer, bots }: DynamicFrame) {
@@ -369,6 +409,28 @@ function bladeMesh(width: number): Mesh {
       ),
     ),
   );
+}
+
+/**
+ * A barrel, about its middle, which is where the physics holds its ball: a
+ * body bulging at its waist, `radius` from the middle to its ends.
+ */
+function barrelBody(radius: number): Mesh {
+  const h = radius * 1.9;
+  return mergeMeshes([
+    moved(cylinder(radius * 0.8, h * 0.22, 14), 0, 0, -h / 2),
+    moved(cylinder(radius * 0.88, h * 0.56, 14), 0, 0, -h * 0.28),
+    moved(cylinder(radius * 0.8, h * 0.22, 14), 0, 0, h * 0.28),
+  ]);
+}
+
+/** A barrel's two hoops, standing proud of its body a little above and below its waist. */
+function barrelHoops(radius: number): Mesh {
+  const h = radius * 1.9;
+  return mergeMeshes([
+    moved(cylinder(radius * 0.92, h * 0.07, 14), 0, 0, -h * 0.25),
+    moved(cylinder(radius * 0.92, h * 0.07, 14), 0, 0, h * 0.18),
+  ]);
 }
 
 /** The pennant is red, unless the hull is: then it is white, so it shows. */

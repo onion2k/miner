@@ -46,6 +46,14 @@ Some walls have treasure set in them, a gold brick or a gem in the top of
 one, which comes loose with the rest. What is in a side room, or set in its
 wall, is over and above the room, as a chamber's is, and sealed in with it.
 
+Barrels stand about each room. Push one and it goes where it is pushed; hit
+one with the dozer and its fuse is lit. It flashes, faster and faster, beeping,
+and three seconds later it goes off with a bang and a flash that lights the
+cave, throwing every coin and gem near it outward and up. A barrel caught in a
+blast goes off soon after, so a row of them goes up one after another. Only the
+player lights a fuse; the drones push barrels about without setting them off.
+Barrels are worth nothing down the hole, and are sealed in with their room.
+
 The cave is pitch black. What you see by is the dozer's own lights, the
 drones', and the lamps on posts along the rooms' edges, which come on when a
 room opens and go out when it is sealed. Drive into a lamp and it goes over,
@@ -142,6 +150,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/lamps.ts          which lamps are lit, knocked over, and worth lighting this frame
     src/impacts.ts        what driving into a wall or a chamber's rock does
     src/tally.ts          a run of things into the hole, and how hot it is
+    src/barrels.ts        barrels: fuses lit by the player, flashing, and the blast that throws what is near
     src/vein.ts           the last room's vein, once the cave is cleared
     src/physics.ts        the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
     src/dozer.ts          the bulldozer: tank steering, the blade and hull as pushers, load

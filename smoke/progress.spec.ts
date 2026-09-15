@@ -16,7 +16,16 @@ import { AREAS, ORDER, SECRETS, WALLS, WINGS, buildCave, sealPoint } from '../sr
 
 interface Exposed {
   calibration: number[];
-  world: { live: number };
+  world: {
+    live: number;
+    count: number;
+    alive: Uint8Array;
+    kind: Uint8Array;
+    x: Float32Array;
+    y: Float32Array;
+    z: Float32Array;
+    wake(i: number): void;
+  };
   dozer: { x: number; y: number; yaw: number; speed: number };
   economy: {
     save: {
@@ -27,17 +36,20 @@ interface Exposed {
       rubble: number[];
       horn: boolean;
       done: boolean;
+      barrels: number[] | null;
     };
     current(): number;
     open(): void;
     reveal(k: number): void;
     hitWall(w: number, damage: number): number;
     deposit(value: number): void;
+    readonly bank: number;
     buy(id: string): boolean;
   };
   cave: { lamps: { x: number; y: number; area: number }[] };
   bots: { x: number; y: number }[];
   fountains: unknown[];
+  barrels: { lit: number[]; light(i: number, seconds: number): void };
 }
 
 const cave = buildCave();
@@ -75,6 +87,53 @@ test('the whole cave: rooms, chambers, walls, lamps, a drone, the horn, and the 
   await game(page, (g, [x, y]) => Object.assign(g.dozer, { x, y, speed: 0 }), [cave.lamps[lamp].x, cave.lamps[lamp].y]);
   await settle();
   expect(await game(page, (g, k) => g.economy.save.lampsBroken.includes(k), lamp), 'lamp knocked over').toBe(true);
+
+  // a barrel in the hollow driven into: its fuse lit, then gone off
+  const barrel = cave.barrels.find((b) => b.area === 0)!;
+  await game(page, (g, [x, y]) => Object.assign(g.dozer, { x, y: y - 8, yaw: Math.PI / 2, speed: 0 }), [
+    barrel.x,
+    barrel.y,
+  ]);
+  const barrelsBefore = await game(page, (g) => g.barrels.lit.length, null);
+  expect(barrelsBefore).toBe(0);
+  await page.keyboard.down('w');
+  await expect
+    .poll(() => game(page, (g) => g.barrels.lit.length, null), { message: 'fuse lit', timeout: 5000 })
+    .toBe(1);
+  await page.keyboard.up('w');
+  await expect
+    .poll(() => game(page, (g) => g.economy.save.barrels?.length ?? -1, null), {
+      message: 'barrel gone off',
+      timeout: 8000,
+    })
+    .toBe((cave.barrels.filter((b) => b.area === 0).length - 1) * 4);
+
+  // the other barrels pushed down the hole, one lit and one not: gone, and nothing banked for them
+  const bankBefore = await game(page, (g) => g.economy.bank, null);
+  await game(
+    page,
+    (g) => {
+      let n = 0;
+      for (let i = 0; i < g.world.count && n < 2; i++) {
+        if (!g.world.alive[i] || g.world.kind[i] !== 7) continue;
+        if (n === 0) g.barrels.light(i, 10);
+        g.world.x[i] = n * 0.5;
+        g.world.y[i] = 0;
+        g.world.z[i] = 1.5;
+        g.world.wake(i);
+        n++;
+      }
+    },
+    null,
+  );
+  await expect
+    .poll(() => game(page, (g) => g.economy.save.barrels?.length ?? -1, null), {
+      message: 'barrels down the hole',
+      timeout: 8000,
+    })
+    .toBe(Math.max(0, cave.barrels.filter((b) => b.area === 0).length - 3) * 4);
+  expect(await game(page, (g) => g.barrels.lit.length, null), 'the lit one forgotten').toBe(0);
+  expect(await game(page, (g) => g.economy.bank, null), 'nothing banked for a barrel').toBe(bankBefore);
 
   // a drone, bought and working
   await game(page, (g) => g.economy.deposit(5000), null);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { KIND_VALUE } from '../src/physics';
+import { KINDS, KIND_NAME, KIND_VALUE } from '../src/physics';
+import { kindColour } from '../src/palette';
 import { Tally } from '../src/tally';
 
 describe('the tally of a run', () => {
@@ -31,5 +32,15 @@ describe('the tally of a run', () => {
     for (let f = 0; f < 120; f++) tally.fade(1 / 60);
     expect(tally.holePulse).toBe(0);
     expect(tally.heat).toBeLessThan(0.01);
+  });
+});
+
+describe('the colour of each kind of thing', () => {
+  it('is there for every kind, so nothing going down the hole is without one', () => {
+    for (let k = 0; k < KINDS; k++) {
+      const c = kindColour(k);
+      expect(c, KIND_NAME[k]).toHaveLength(3);
+      for (const v of c) expect(Number.isFinite(v), KIND_NAME[k]).toBe(true);
+    }
   });
 });

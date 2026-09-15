@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AREAS, BODY_CAPACITY, HOLE, ORDER, SECRETS, STASHES, WALLS, buildCave } from '../src/cave';
 import { SOURCES, chamberSource, roomStock, stashSource } from '../src/economy';
-import { BRICK_KIND, KINDS, KIND_VALUE, World } from '../src/physics';
+import { BARREL_KIND, BRICK_KIND, KINDS, KIND_VALUE, World } from '../src/physics';
 import { NO_SOURCE, Stock, lootHeap, type Progress, type SavedStock } from '../src/stock';
 import { withSeed } from './helpers';
 
@@ -21,6 +21,7 @@ const nothingSaved = (over: Partial<SavedStock> = {}): SavedStock => ({
   secrets: SECRETS.map(() => false),
   walls: WALLS.map(() => false),
   rubble: [],
+  barrels: [],
   ...over,
 });
 const total = (stock: Stock, from: number) => stock.left[from].reduce((s, n, k) => s + n * KIND_VALUE[k], 0);
@@ -104,6 +105,46 @@ describe('the stock', () => {
     expect([1, 2, 3].map(() => stock.spawn(1, -30, 10, 1))).toEqual([true, true, false]);
     expect(stock.spawnBrick(1, -30, 12, 1)).toBeGreaterThanOrEqual(0);
     expect(stock.spawnBrick(1, -30, 14, 1)).toBe(-1);
+  });
+
+  it('stands each room’s barrels where they start, for a save that has never had any, and where they were left otherwise', () => {
+    const barrelsIn = (world: World, stock: Stock) =>
+      [...Array(world.count).keys()]
+        .filter((i) => world.alive[i] && world.kind[i] === BARREL_KIND)
+        .map((i) => stock.home[i]);
+    const fresh1 = fresh();
+    const placed = new Stock(fresh1, CAPACITY, () => ORDER[1], cave.barrels);
+    placed.restore(nothingSaved({ barrels: null }), at(1, true));
+    const expected = cave.barrels.filter((b) => b.area === ORDER[1] || b.area === ORDER[2]).length;
+    expect(barrelsIn(fresh1, placed)).toHaveLength(expected);
+    const record = placed.barrelRecord();
+    expect(record).toHaveLength(expected * 4);
+    // put back from what was saved, not from where they start
+    const fresh2 = fresh();
+    const again = new Stock(fresh2, CAPACITY, () => ORDER[1], cave.barrels);
+    again.restore(nothingSaved({ barrels: record.slice(0, 4) }), at(1, true));
+    expect(barrelsIn(fresh2, again)).toEqual([record[3]]);
+    // and none for a room not in play
+    const fresh3 = fresh();
+    const none = new Stock(fresh3, CAPACITY, () => ORDER[1], cave.barrels);
+    none.restore(nothingSaved({ barrels: [-30, 10, 1.1, ORDER[4]] }), at(1));
+    expect(barrelsIn(fresh3, none)).toEqual([]);
+  });
+
+  it('counts a barrel for nothing, down the hole or gone off, and seals it in with its room', () => {
+    const world = fresh();
+    const stock = new Stock(world, CAPACITY, () => ORDER[1], cave.barrels);
+    stock.openRoom(ORDER[1]);
+    const mine = [...Array(world.count).keys()].filter((i) => world.alive[i] && world.kind[i] === BARREL_KIND);
+    expect(mine.length).toBeGreaterThan(0);
+    expect(stock.lying(ORDER[1])).toBe(roomStock(ORDER[1]).value);
+    expect(stock.collect(BARREL_KIND, mine[0])).toBe(0);
+    world.remove(mine[0]);
+    stock.removeBarrel(mine[1]);
+    expect(world.alive[mine[1]]).toBe(0);
+    stock.seal(ORDER[1]);
+    expect(stock.kinds[BARREL_KIND]).toBe(0);
+    expect(stock.barrelRecord()).toEqual([]);
   });
 
   it('takes a sealed room out of the world, with its chamber, and leaves the rest', () => {

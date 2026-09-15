@@ -57,6 +57,12 @@ export interface Save {
   rubble: number[];
   /** The lamps knocked over, by their place in the cave's list. */
   lampsBroken: number[];
+  /**
+   * The barrels still about, as x, y, z and the room each belongs to, four
+   * numbers a barrel; null in a save from before there were barrels, which
+   * puts each room's back where it started.
+   */
+  barrels: number[] | null;
   /** The last room is cleared too. */
   done: boolean;
 }
@@ -170,6 +176,7 @@ export class Economy {
       walls: WALLS.map(() => false),
       wallDamage: WALLS.map(() => 0),
       rubble: [],
+      barrels: null,
       lampsBroken: [],
       done: false,
     };
