@@ -477,14 +477,15 @@ export function renderShop(rows: HTMLElement, economy: Economy, offers = economy
   const bank = economy.bank;
   const existing = Array.from(rows.children) as HTMLButtonElement[];
   offers.forEach((o, i) => {
-    let btn = existing[i];
+    let btn = existing[i] as HTMLButtonElement | undefined;
     if (!btn) {
-      btn = document.createElement('button');
-      btn.addEventListener('click', () => {
-        if (economy.buy(btn.dataset.id!))
+      const made = document.createElement('button');
+      made.addEventListener('click', () => {
+        if (economy.buy(made.dataset.id!))
           renderShop(rows, economy, rows.classList.contains('cosmetics') ? economy.cosmetics() : undefined);
       });
-      rows.appendChild(btn);
+      rows.appendChild(made);
+      btn = made;
     }
     btn.dataset.id = o.id;
     const wearable = o.owned && o.active === false;

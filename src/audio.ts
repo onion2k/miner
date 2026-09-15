@@ -32,8 +32,9 @@ export class Sound {
       if (this.ctx.state === 'suspended') void this.ctx.resume();
       return;
     }
-    const Ctx =
-      window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    // older Safari has it only under its prefix, and a browser with no audio has neither
+    const w = window as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+    const Ctx = w.AudioContext ?? w.webkitAudioContext;
     if (!Ctx) return;
     this.ctx = new Ctx();
     this.master = this.ctx.createGain();

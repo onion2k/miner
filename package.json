@@ -5,18 +5,34 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "sim": "esbuild scripts/sim.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/sim.mjs --log-level=warning && node node_modules/.cache/sim/sim.mjs"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "sim": "esbuild scripts/sim.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/sim.mjs --log-level=warning && node node_modules/.cache/sim/sim.mjs",
+    "sim:check": "esbuild scripts/sim-check.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/sim-check.mjs --log-level=warning && node node_modules/.cache/sim/sim-check.mjs",
+    "check:quick": "prettier --check . --log-level warn && npm run --silent typecheck && eslint . && vitest run --reporter dot",
+    "check": "npm run --silent check:quick && npm run --silent sim:check",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "artshape-render": "github:onion2k/artshape-render#v0.16.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.20.2",
     "@webgpu/types": "^0.1.72",
     "esbuild": "^0.25.12",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "typescript-eslint": "^8.70.0",
+    "vite": "^6.0.7",
+    "vitest": "^3.2.7"
   }
 }

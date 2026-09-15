@@ -1,0 +1,5 @@
+#!/bin/sh
+# Everything quick before a commit: formatting, types, lint and the unit tests.
+# The drone regression gate takes longer; run `npm run check` for that too.
+# Skip in an emergency with `git commit --no-verify`.
+exec npm run --silent check:quick

@@ -71,6 +71,33 @@ seeds of this take seconds. It reports what was banked, how each push ended,
 and how much the drones got in each other's way — see the top of
 `scripts/sim.ts`.
 
+## Keeping it working
+
+    npm run check          # everything: formatting, types, lint, unit tests, and the drone gate
+    npm run check:quick    # all but the drone gate; what runs before each commit
+    npm test               # the unit tests
+    npm run lint
+    npm run format         # Prettier over the lot
+    npm run sim:check      # the drones held to their baseline
+    npm run sim:check -- --update
+
+`npm install` points git at `.githooks`, whose pre-commit hook runs
+`check:quick` (a few seconds). `git commit --no-verify` skips it.
+
+The unit tests in `test/` cover what runs without WebGPU: the cave's layout
+rules (every heap reachable, each room shut off by its gate, side rooms and
+chambers sealed in rock), the physics' sleep bookkeeping while blades churn a
+heap, the dozer never ending up in rock, the way to the hole from every room,
+the save and the order rooms open and seal in, and that the drawn rock never
+stands over floor the dozer can drive on.
+
+The drone gate runs six scenarios, eight seeds each, side by side, and fails
+if what the drones bank, or how often they lose a load or get in each other's
+way, has got worse than `scripts/sim-baseline.json` by more than a tolerance.
+A run is the same from the same seed, so any change to the physics, cave or
+drones moves the figures; when a change makes them better, `--update` holds
+the next change to the better figures.
+
 ## How it is put together
 
     src/main.ts       boot, the scene's groups, lights, particles, the HUD, the frame loop
@@ -81,6 +108,8 @@ and how much the drones got in each other's way — see the top of
     src/tools.ts      conveyor belts, drones, and the fountains
     src/nav.ts        the way round the rock and the heaps, for the drones
     scripts/sim.ts    the drones without the picture, for measuring them
+    scripts/sim-check.ts  the drones held to a baseline
+    test/             unit tests, run by Vitest
     src/audio.ts      every sound, synthesised: clinks, thunks, the engine, the rumble
     src/economy.ts    the bank, the upgrades, which room is being cleared, the save, the shop
     src/meshes.ts     flat-shaded shapes: coin, gem, box, cone, ball, stone, the hole's collar and pit

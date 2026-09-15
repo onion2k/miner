@@ -158,8 +158,8 @@ const shopPanel = document.getElementById('shop')!;
 const shopRows = shopPanel.querySelector('.rows') as HTMLElement;
 const shopCosmetics = shopPanel.querySelector('.rows.cosmetics') as HTMLElement;
 
-main().catch((err) => {
-  bootMsg.textContent = String(err?.message ?? err);
+main().catch((err: unknown) => {
+  bootMsg.textContent = err instanceof Error ? err.message : String(err);
   console.error(err);
 });
 
