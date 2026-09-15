@@ -87,6 +87,10 @@ const RETRIES = 2;
  */
 export class Bot {
   readonly dozer: Dozer;
+  /** The machine's spec as it is now: a drone's is fixed; the player's changes as upgrades are bought. */
+  private readonly spec: () => DozerSpec;
+  /** How big the machine is against a drone, for how much room it needs and how far back it sets up. */
+  private readonly size: number;
   state: BotState = 'seek';
   /** The coin it is after, and where it sets up to push it. */
   coin = -1;
@@ -102,11 +106,29 @@ export class Bot {
   private readonly shunned = new Map<number, number>();
   private clock = 0;
 
-  constructor(solid: Uint8Array, owner: number, x: number, y: number) {
-    this.dozer = new Dozer(solid, BOT_SCALE, owner);
-    this.dozer.x = x;
-    this.dozer.y = y;
-    this.dozer.yaw = Math.random() * Math.PI * 2;
+  /**
+   * A drone of its own at (x, y); or, given `machine`, the same mind driving
+   * another machine that already exists — the player's dozer, for the
+   * autopilot — at that machine's size and to its spec.
+   */
+  constructor(
+    solid: Uint8Array,
+    owner: number,
+    x: number,
+    y: number,
+    machine?: { dozer: Dozer; spec: () => DozerSpec },
+  ) {
+    if (machine) {
+      this.dozer = machine.dozer;
+      this.spec = machine.spec;
+    } else {
+      this.dozer = new Dozer(solid, BOT_SCALE, owner);
+      this.dozer.x = x;
+      this.dozer.y = y;
+      this.dozer.yaw = Math.random() * Math.PI * 2;
+      this.spec = () => BOT_SPEC;
+    }
+    this.size = this.dozer.scale / BOT_SCALE;
   }
 
   get x() {
@@ -138,7 +160,14 @@ export class Bot {
    * knows which room is being worked and what the other machines are after.
    */
   update(dt: number, world: World, load: number, nav: Nav, choose: (bot: Bot) => number, traffic: Traffic) {
+    this.dozer.update(dt, this.decide(dt, world, load, nav, choose, traffic), this.spec(), load);
+  }
+
+  /** What to do with the controls this step, without doing it: for a machine something else drives, the player's. */
+  decide(dt: number, world: World, load: number, nav: Nav, choose: (bot: Bot) => number, traffic: Traffic): Drive {
     const d = this.dozer;
+    const clearance = CLEARANCE * this.size,
+      loadedClearance = LOADED_CLEARANCE * this.size;
     let drive: Drive = { throttle: 0, steer: 0 };
     this.timer -= dt;
     this.clock += dt;
@@ -172,9 +201,9 @@ export class Bot {
         const [tx, ty] = this.setUp;
         const dist = Math.hypot(tx - d.x, ty - d.y);
         const aim =
-          dist < 10 && nav.clear(d.x, d.y, tx, ty, CLEARANCE)
+          dist < 10 && nav.clear(d.x, d.y, tx, ty, clearance)
             ? this.setUp
-            : nav.ahead(this.way!, d.x, d.y, CLEARANCE, 6);
+            : nav.ahead(this.way!, d.x, d.y, clearance, 6);
         if (!aim) {
           this.shun(this.coin, 20);
           this.reset();
@@ -200,8 +229,8 @@ export class Bot {
         const dist = Math.hypot(HOLE.x - d.x, HOLE.y - d.y);
         // to the hole or a belt, whichever is nearer, as the way goes; aimed from the machine's middle,
         // clear by the width of a loaded blade, so its corners do not catch a corridor's
-        const toHole = nav.dropIsHole(d.x, d.y) && nav.clear(d.x, d.y, HOLE.x, HOLE.y, LOADED_CLEARANCE);
-        const aim = toHole ? [HOLE.x, HOLE.y] : nav.ahead(nav.toDrop, d.x, d.y, LOADED_CLEARANCE, 5);
+        const toHole = nav.dropIsHole(d.x, d.y) && nav.clear(d.x, d.y, HOLE.x, HOLE.y, loadedClearance);
+        const aim = toHole ? [HOLE.x, HOLE.y] : nav.ahead(nav.toDrop, d.x, d.y, loadedClearance, 5);
         if (!aim) {
           this.retreat();
           break;
@@ -213,7 +242,7 @@ export class Bot {
         const c = Math.cos(d.yaw),
           s = Math.sin(d.yaw);
         const onBelt =
-          this.timer < 29.2 && nav.onBelt(d.x + c * BLADE_AT * BOT_SCALE, d.y + s * BLADE_AT * BOT_SCALE, -1) !== null;
+          this.timer < 29.2 && nav.onBelt(d.x + c * BLADE_AT * d.scale, d.y + s * BLADE_AT * d.scale, -1) !== null;
         if (dist < STOP_AT || onBelt || this.timer <= 0 || (this.timer < 28 && this.empty > 1.5)) this.retreat();
         else if (this.stalled(dt, nav.distance(nav.toDrop, d.x, d.y))) {
           // caught on a corner, most likely: a little way back and at it again, load and all
@@ -236,12 +265,11 @@ export class Bot {
         if (this.timer <= 0) this.reset();
         break;
     }
-    drive = this.giveWay(drive, traffic, nav);
-    d.update(dt, drive, BOT_SPEC, load);
+    return this.giveWay(drive, traffic, nav);
   }
 
   /** Where to set up to push a coin: behind it, against the way it is to go, to the hole or a belt. Null if that is rock, or there is no way. */
-  private setUpFor(world: World, nav: Nav, i: number): [number, number] | null {
+  setUpFor(world: World, nav: Nav, i: number): [number, number] | null {
     const cx = world.x[i],
       cy = world.y[i];
     if (!Number.isFinite(nav.distance(nav.toDrop, cx, cy))) return null;
@@ -260,14 +288,15 @@ export class Bot {
     // or at a slant, where straight behind is rock — a hidden chamber, a corner — since a push from
     // the side still moves it out to where it can be pushed again.
     const dear = KIND_VALUE[world.kind[i]] >= DEAR;
-    for (const back of [SET_BACK, SET_BACK * 0.6]) {
+    for (const back of [SET_BACK * this.size, SET_BACK * 0.6 * this.size]) {
       for (const turn of dear ? [0, 0.5, -0.5, 1, -1] : [0]) {
         const c = Math.cos(turn),
           s = Math.sin(turn);
         const sx = cx - (ux * c - uy * s) * back,
           sy = cy - (ux * s + uy * c) * back;
         const t = nav.tileOf(sx, sy);
-        if (nav.clear(sx, sy, sx, sy, CLEARANCE * 0.8) && t >= 0 && (dear || nav.crowd[t] <= BURIED)) return [sx, sy];
+        if (nav.clear(sx, sy, sx, sy, CLEARANCE * 0.8 * this.size) && t >= 0 && (dear || nav.crowd[t] <= BURIED))
+          return [sx, sy];
       }
     }
     return null;
@@ -307,18 +336,24 @@ export class Bot {
     const myC = Math.cos(this.yaw),
       myS = Math.sin(this.yaw);
     // where this one is going: its speed now, or, setting off, the pace its drive asks for
-    const mySpeed = Math.abs(this.dozer.speed) > 0.5 ? this.dozer.speed : want.throttle * BOT_SPEC.maxSpeed * 0.5;
+    const mySpeed = Math.abs(this.dozer.speed) > 0.5 ? this.dozer.speed : want.throttle * this.spec().maxSpeed * 0.5;
+    const myWidth = BOT_WIDTH * this.size,
+      clearance = CLEARANCE * this.size;
     const movers: Mover[] = [
-      {
-        x: traffic.player.x,
-        y: traffic.player.y,
-        yaw: traffic.player.yaw,
-        speed: traffic.player.speed,
-        priority: 0,
-        rank: 0,
-        width: PLAYER_WIDTH,
-        player: true,
-      },
+      ...(traffic.player === this.dozer
+        ? []
+        : [
+            {
+              x: traffic.player.x,
+              y: traffic.player.y,
+              yaw: traffic.player.yaw,
+              speed: traffic.player.speed,
+              priority: 0,
+              rank: 0,
+              width: PLAYER_WIDTH,
+              player: true,
+            },
+          ]),
       ...traffic.bots
         .filter((b) => b !== this)
         .map((b) => ({
@@ -338,7 +373,7 @@ export class Bot {
         dy = this.y - o.y;
       const d = Math.hypot(dx, dy);
       if (d > LOOK + 4) continue;
-      const lane = (o.width + BOT_WIDTH) / 2 + 1;
+      const lane = (o.width + myWidth) / 2 + 1;
       // a loaded machine that has stopped is about to go on, the way it faces
       const oSpeed = Math.abs(o.speed) > 0.5 ? o.speed : o.priority === 1 ? 3 : 0;
       // how near the two come in the next few seconds, each going on as it is
@@ -373,15 +408,15 @@ export class Bot {
         s = Math.sin(yieldTo.yaw) * goes;
       const across = -s * (this.x - yieldTo.x) + c * (this.y - yieldTo.y);
       const side = across >= 0 ? 1 : -1;
-      const lane = (yieldTo.width + BOT_WIDTH) / 2 + 2;
+      const lane = (yieldTo.width + myWidth) / 2 + 2;
       for (const k of [side, -side]) {
         // out to the side, far enough to clear it and its load, and a little on the way it is going
         const px = this.x - s * k * (lane - Math.abs(across) + 1) + c * 2,
           py = this.y + c * k * (lane - Math.abs(across) + 1) + s * 2;
-        if (nav.clear(this.x, this.y, px, py, CLEARANCE)) return this.toward(px, py, 0.8);
+        if (nav.clear(this.x, this.y, px, py, clearance)) return this.toward(px, py, 0.8);
       }
       // no room at the side, a corridor say: go the way it is going, ahead of it, until there is
-      const ahead = nav.ahead(nav.toHole, this.x, this.y, CLEARANCE, 3);
+      const ahead = nav.ahead(nav.toHole, this.x, this.y, clearance, 3);
       const alongMine = myC * c + myS * s;
       return {
         throttle: alongMine >= 0 ? 0.9 : -0.9,
@@ -396,11 +431,11 @@ export class Bot {
         dy = blocker.y - this.y;
       const across = -s * dx + c * dy;
       const side = across >= 0 ? -1 : 1;
-      const lane = (blocker.width + BOT_WIDTH) / 2 + 2;
+      const lane = (blocker.width + myWidth) / 2 + 2;
       const reach = Math.max(4, c * dx + s * dy);
       const px = this.x + c * reach - s * side * lane,
         py = this.y + s * reach + c * side * lane;
-      if (want.throttle > 0 && nav.clear(this.x, this.y, px, py, CLEARANCE)) return this.toward(px, py, 0.7);
+      if (want.throttle > 0 && nav.clear(this.x, this.y, px, py, clearance)) return this.toward(px, py, 0.7);
       // no way round: close up no nearer than a machine's length, at its pace
       return { throttle: blockerAt < 6 ? 0 : want.throttle * 0.4, steer: want.steer };
     }
@@ -427,7 +462,7 @@ export class Bot {
     return (this.since += dt) > NO_HEADWAY;
   }
 
-  private shun(i: number, seconds: number) {
+  shun(i: number, seconds: number) {
     if (i < 0) return;
     this.shunned.set(i, this.clock + seconds);
     if (this.shunned.size > 64) for (const [k, until] of this.shunned) if (until <= this.clock) this.shunned.delete(k);
