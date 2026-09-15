@@ -41,7 +41,7 @@ drones', and the lamps on posts along the rooms' edges, which come on when a
 room opens and go out when it is sealed. Drive into a lamp and it goes over,
 glass everywhere, and stays dark.
 
-The dozer's tracks press into the floor where it drives, and the marks stay,
+The dozer's tracks, and the drones', press into the floor where they drive, and the marks stay,
 the oldest fading away as new ones are made.
 
 A run of coins into the hole is tallied on screen and grows louder — in

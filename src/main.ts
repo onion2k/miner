@@ -113,8 +113,8 @@ const GEM_ALBEDO: [number, number, number][] = [
 const NO_SOURCE = 255;
 const BOT_CAPACITY = MAX_DRONES;
 const TREAD_BARS = 9;
-/** The marks the tracks leave in the floor: pages of them, and how many a page. */
-const TRACK_PAGES = 8,
+/** The marks the tracks leave in the floor, the player's and the drones': pages of them, and how many a page. */
+const TRACK_PAGES = 16,
   TRACK_PAGE = 1024;
 /** The colour of the floor where a track has pressed it down. */
 const TRACK_MARK: [number, number, number] = [0.185, 0.13, 0.08];
@@ -1934,7 +1934,10 @@ async function main() {
     dozer.update(dt, drive, spec, world.load);
     tracks.update(dozer, dozer);
     knockLamps();
-    for (const b of bots) b.update(dt, world, world.loads[b.dozer.owner] ?? 0, nav, choose, traffic);
+    for (const b of bots) {
+      b.update(dt, world, world.loads[b.dozer.owner] ?? 0, nav, choose, traffic);
+      tracks.update(b, b.dozer);
+    }
     // no machine drives through another: every pair, twice, so a push out of one
     // that shoves into a third is settled in the same frame
     const machines = [dozer, ...bots.map((b) => b.dozer)];
