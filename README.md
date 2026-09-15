@@ -125,3 +125,56 @@ it gets there.
 
 The blade's load slows the engine: a heap in front of the blade is a heap
 the engine has to move, and that is what the engine upgrades are for.
+
+## Where it is going: the physics on its own
+
+The renderer is already a project of its own,
+[artshape-render](https://github.com/onion2k/artshape-render), and the game
+only uses it through its interface. The physics is meant to go the same way:
+a package the game depends on, knowing nothing about coins, caves or bank
+balances. It has not moved yet. For now it lives here, and it is still tied
+to the game in a handful of places, which are the work to be done first:
+
+- **The cave.** It imports the tile grid's size, origin and tile size from
+  `cave.ts`, to size its hash and to collide with the rock. The rock should
+  be handed to it as a grid of solid tiles when a world is made.
+- **The hole.** There is exactly one, taken from `HOLE`, rim slope and all.
+  The places things fall out of the world should be handed in, as many as
+  there are.
+- **The kinds of thing.** `KIND_VALUE`, `KIND_NAME`, `BAR` and `BRICK_KIND`
+  are the economy's, not the physics'. All the physics needs of a kind is its
+  radius.
+- **Chance.** `spawn` calls `Math.random`, which the drone sim has to swap
+  out to get a repeatable run. A world should take its own random source.
+- **The tuning.** Gravity, friction, restitution, sleep thresholds, and how
+  stiff the belts and blades are, are constants tuned for coins at this
+  scale. They should be options, with today's values as the defaults.
+
+Moving it will change how the rest of the game is built: it will make a
+world by handing the physics its rock, its holes and its kinds, and read
+back what fell in, rather than the physics reaching into the game for them.
+The plan is to cut those ties first, inside this repo, with the physics
+importing nothing from the game, and to lift it into its own package once a
+second game or demo wants it.
+
+### No tight coupling, anywhere
+
+That goes for every part of the game, not just the physics. Build each
+piece so it could be lifted out:
+
+- A module takes what it needs as arguments or options, when it is made or
+  called; it does not import the game's constants, content or state to find
+  it out for itself.
+- Game content — rooms, prices, values, names — stays in the modules that
+  own it (`cave.ts`, `economy.ts`), and flows out from there. Nothing lower
+  down, like the physics, the navigation or the machines, should hold any.
+- Talk across boundaries through small interfaces and plain data (a
+  `Pusher`, a `Belt`, a callback for what fell in), not by reaching into
+  another module's internals.
+- Nothing global that a caller cannot replace: chance, time and storage are
+  handed in, so a module can be run headless, repeatably, and tested alone.
+- `main.ts` is the one place that knows about everything, and wires it
+  together.
+
+New code should follow this now, and existing code should move toward it
+when it is next worked on.

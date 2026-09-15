@@ -14,6 +14,11 @@
  * is not looked at one by one either: the step walks a list of the awake,
  * sleepers keep their place in a hash of their own from one step to the
  * next, and the blades and belts find the sleepers under them through it.
+ *
+ * This is meant to become a package of its own, as the renderer is, knowing
+ * nothing of the game: see "Where it is going" in the README. Until then,
+ * add nothing here that ties it closer to the cave, the economy or the
+ * machines; hand things in instead.
  */
 import { COLS, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from './cave';
 
