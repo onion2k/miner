@@ -76,13 +76,16 @@ and how much the drones got in each other's way — see the top of
 
 ## Keeping it working
 
-    npm run check          # everything: formatting, types, lint, unit tests, and the drone gate
-    npm run check:quick    # all but the drone gate; what runs before each commit
+    npm run check          # everything: formatting, types, lint, unit tests, the drone gate, the physics bench, the smoke test
+    npm run check:quick    # formatting, types, lint and unit tests; what runs before each commit
     npm test               # the unit tests
     npm run lint
     npm run format         # Prettier over the lot
     npm run sim:check      # the drones held to their baseline
     npm run sim:check -- --update
+    npm run bench          # the physics' time a frame held to its baseline
+    npm run bench -- --update
+    npm run smoke          # the game in a real browser (once: npx playwright install chromium)
 
 `npm install` points git at `.githooks`, whose pre-commit hook runs
 `check:quick` (a few seconds). `git commit --no-verify` skips it.
@@ -101,6 +104,21 @@ A run is the same from the same seed, so any change to the physics, cave or
 drones moves the figures; when a change makes them better, `--update` holds
 the next change to the better figures.
 
+The physics bench times three scenarios over the whole cave with every room's
+heaps in it: at rest, blades and belts churning the heaps, and a heap of four
+thousand coins falling at once. Each runs several times in a worker of its own
+and the fastest counts. It is held to `scripts/bench-baseline.json` as a
+multiple of a fixed piece of arithmetic timed alongside it, so the baseline
+means something on a faster or slower machine, and fails at 20% slower (and at
+least 0.05 ms a frame).
+
+The smoke test (`smoke/`) serves the game with Vite and plays it in Chromium's
+headless mode on the machine's own GPU, a fresh save each time: it boots with
+no errors, draws a picture that is not black, drives the dozer and sees tracks
+laid, opens and shuts the workshop, keeps the cave across a reload, and boots
+on a phone-sized screen with the touch controls. Screenshots of each go in
+`test-results/` when a test fails, with a trace to step through.
+
 ## How it is put together
 
     src/main.ts       boot, the scene's groups, lights, particles, the HUD, the frame loop
@@ -113,7 +131,9 @@ the next change to the better figures.
     src/nav.ts        the way round the rock and the heaps, for the drones
     scripts/sim.ts    the drones without the picture, for measuring them
     scripts/sim-check.ts  the drones held to a baseline
+    scripts/physics-bench.ts  the physics' time a frame, held to a baseline
     test/             unit tests, run by Vitest
+    smoke/            the game in a real browser, run by Playwright
     src/audio.ts      every sound, synthesised: clinks, thunks, the engine, the rumble
     src/economy.ts    the bank, the upgrades, which room is being cleared, the save, the shop
     src/meshes.ts     flat-shaded shapes: coin, gem, box, cone, ball, stone, the hole's collar and pit

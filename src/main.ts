@@ -1787,6 +1787,7 @@ async function main() {
     sound,
     setCoinDetail,
     calibration,
+    trackMarks: tracks,
   });
 
   // ---- what the robo-dozers go for: the room being cleared ----
