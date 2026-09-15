@@ -198,6 +198,13 @@ export function memoryStore(json: string | null = null): SaveStore & { json: str
   };
 }
 
+/** What the whole workshop costs: every engine, blade and magnet, every drone and every room's belt; paint aside. */
+export function workshopTotal(): number {
+  const sum = (xs: readonly { cost: number }[]) => xs.reduce((n, x) => n + x.cost, 0);
+  const belts = AREAS.reduce((n, a) => n + (a.belt?.cost ?? 0), 0);
+  return sum(ENGINE) + sum(BLADE) + sum(MAGNET) + DRONE_COST.reduce((n, c) => n + c, 0) + belts;
+}
+
 export class Economy {
   save: Save;
   private listeners: ((id: string) => void)[] = [];

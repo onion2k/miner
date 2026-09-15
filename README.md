@@ -94,13 +94,17 @@ and how much the drones got in each other's way — see the top of
 
 ## Keeping it working
 
-    npm run check          # everything: formatting, types, lint, unit tests, the drone gate, the physics bench, the smoke test
+    npm run check          # everything: formatting, types, lint, unit tests, the fuzzer, the drone gate, the balance gate, the physics bench, the smoke test
     npm run check:quick    # formatting, types, lint and unit tests; what runs before each commit
     npm test               # the unit tests
     npm run lint
     npm run format         # Prettier over the lot
     npm run sim:check      # the drones held to their baseline
     npm run sim:check -- --update
+    npm run balance        # the whole game played through by the autopilot, seeds 1-6, thorough and rushed
+    npm run balance -- --profile thorough --seeds 1-12 --purchases
+    npm run balance:check  # the first two rooms' pacing held to its baseline
+    npm run balance:check -- --update
     npm run fuzz           # the game played at random, the rules that must hold checked
     npm run fuzz -- --seed 17
     npm run bench          # the physics' time a frame held to its baseline
@@ -123,6 +127,21 @@ way, has got worse than `scripts/sim-baseline.json` by more than a tolerance.
 A run is the same from the same seed, so any change to the physics, cave or
 drones moves the figures; when a change makes them better, `--update` holds
 the next change to the better figures.
+
+The balance run (`scripts/balancer.ts`) plays the whole game through, from a
+new save to the cave cleared, with the autopilot (`src/autopilot.ts`) at the
+controls: the drones' own mind driving the player's dozer, buying the cheapest
+thing in the workshop as soon as it can, and going on when it is done with a
+room. Played `thorough` it breaks into every chamber and wall and clears each
+room to its last twentieth; played `rusher` it goes on as soon as the next
+gate opens. It reports how long each room took, when each purchase came and
+how far apart, and what was banked, spent and left over, for tuning prices
+and loot against. The autopilot is not a person: its minutes are its own, and
+say how the game paces, not how long a player will take. The balance gate
+plays the Hollow and the South Gallery both ways, six seeds each, and fails if
+the rooms' times, what was banked or how much was bought moved beyond a
+tolerance either way, since quicker is as much a change to the balance as
+slower.
 
 The fuzzer (`scripts/fuzzer.ts`) plays the real game without the picture, at
 random, from a seed: driving about and charging walls, chambers, lamps and
@@ -177,6 +196,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/physics.ts        the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
     src/dozer.ts          the bulldozer: tank steering, the blade and hull as pushers, load
     src/tools.ts          conveyor belts, drones, and the fountains
+    src/autopilot.ts      the player's dozer driven by the drones' mind, for playing the whole game through
     src/nav.ts            the way round the rock and the heaps, for the drones
     src/terrain.ts        the cave to look at: the rock and floor as one faceted surface over the tiles, and the stones on it
     src/biomes.ts         each gallery's world: its palette and rock, how it blends in, what stands in it, its lights and air
@@ -198,6 +218,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     scripts/sim.ts        the drones without the picture, for measuring them
     scripts/sim-check.ts  the drones held to a baseline
     scripts/fuzzer.ts     the game played at random, its rules checked; fuzz.ts runs it over seeds
+    scripts/balancer.ts   the whole game played through by the autopilot; balance.ts runs it over seeds and gates it
     scripts/physics-bench.ts  the physics' time a frame, held to a baseline
     test/                 unit tests, run by Vitest
     smoke/                the game in a real browser, run by Playwright

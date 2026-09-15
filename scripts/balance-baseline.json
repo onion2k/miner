@@ -1,0 +1,14 @@
+{
+  "thorough": {
+    "room 1 minutes": 15.99,
+    "room 2 minutes": 17.42,
+    "banked": 7586,
+    "purchases": 14.17
+  },
+  "rusher": {
+    "room 1 minutes": 10.73,
+    "room 2 minutes": 10.09,
+    "banked": 6197,
+    "purchases": 13.33
+  }
+}

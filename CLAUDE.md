@@ -10,15 +10,17 @@ without breaking it.
 
     npm run dev            the game at http://localhost:5194
     npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~15 s)
-    npm run check          all of it: check:quick, fuzz, drone gate, physics bench, smoke (~2 min)
+    npm run check          all of it: check:quick, fuzz, drone gate, balance gate, physics bench, smoke (~2.5 min)
     npm test               unit tests (Vitest, test/)
     npm run fuzz           the game played at random, rules checked (scripts/fuzz.ts)
     npm run fuzz -- --seed N           one failing seed again, with what led up to it
     npm run sim:check      the drones held to scripts/sim-baseline.json
+    npm run balance        the whole game played through by the autopilot: room times, purchases, bank
+    npm run balance:check  the first two rooms' pacing held to scripts/balance-baseline.json
     npm run bench          the physics' frame time held to scripts/bench-baseline.json
     npm run smoke          the game in headless Chromium on the real GPU (Playwright, smoke/)
 
-`--update` on `sim:check` or `bench` writes a new baseline. Only do that when a
+`--update` on `sim:check`, `balance:check` or `bench` writes a new baseline. Only do that when a
 change is meant to move the figures, and say so in the commit.
 
 ## How the code is laid out
