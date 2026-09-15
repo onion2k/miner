@@ -41,6 +41,9 @@ drones', and the lamps on posts along the rooms' edges, which come on when a
 room opens and go out when it is sealed. Drive into a lamp and it goes over,
 glass everywhere, and stays dark.
 
+The dozer's tracks press into the floor where it drives, and the marks stay,
+the oldest fading away as new ones are made.
+
 A run of coins into the hole is tallied on screen and grows louder — in
 sparkle, light and pitch — the longer it goes on.
 
@@ -105,6 +108,7 @@ the next change to the better figures.
     src/terrain.ts    the cave to look at: the rock and floor as one faceted surface over the tiles, and the stones on it
     src/physics.ts    the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
     src/dozer.ts      the bulldozer: tank steering, the blade and hull as pushers, load
+    src/tracks.ts     the marks the tracks press into the floor, kept a page at a time, the oldest fading
     src/tools.ts      conveyor belts, drones, and the fountains
     src/nav.ts        the way round the rock and the heaps, for the drones
     scripts/sim.ts    the drones without the picture, for measuring them

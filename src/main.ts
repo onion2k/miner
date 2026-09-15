@@ -62,8 +62,24 @@ import {
 import { Bot, BOT_SCALE, BOT_SPEC, Foreman, Fountain, beltOf } from './tools';
 import { Nav } from './nav';
 import { Sound } from './audio';
-import { COIN_LADDER, ball, bar, box, coin, collar, cone, cylinder, gem, lump, moved, pit, turned } from './meshes';
-import { buildTerrain, type Terrain } from './terrain';
+import {
+  COIN_LADDER,
+  ball,
+  bar,
+  box,
+  coin,
+  collar,
+  cone,
+  cylinder,
+  gem,
+  lump,
+  moved,
+  pit,
+  square,
+  turned,
+} from './meshes';
+import { buildTerrain, floorHeight, type Terrain } from './terrain';
+import { TrackMarks } from './tracks';
 import { identity, hide, place, placePart, placeQuat, project } from './matrix';
 
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
@@ -97,6 +113,11 @@ const GEM_ALBEDO: [number, number, number][] = [
 const NO_SOURCE = 255;
 const BOT_CAPACITY = MAX_DRONES;
 const TREAD_BARS = 9;
+/** The marks the tracks leave in the floor: pages of them, and how many a page. */
+const TRACK_PAGES = 8,
+  TRACK_PAGE = 1024;
+/** The colour of the floor where a track has pressed it down. */
+const TRACK_MARK: [number, number, number] = [0.185, 0.13, 0.08];
 const STRIPE_CAPACITY = 160;
 /** The pennant: a pole and this many slats waving behind it. */
 const FLAG_SLATS = 5;
@@ -532,7 +553,8 @@ async function main() {
     POLE = 13,
     FLAG = 14,
     BARS = 15,
-    RUBBLE = 16;
+    RUBBLE = 16,
+    TRACKS = 19;
   /** The dynamic group a kind of thing is drawn in; bricks by the grade of the wall they came from. */
   const groupOf = (kind: number, grade = 1) => (kind === BAR ? BARS : kind === BRICK_KIND ? RUBBLE + grade - 1 : kind);
   /** The grade of wall each brick in the world came from, by slot. */
@@ -592,6 +614,21 @@ async function main() {
   // the robo-dozer's beacon, on the cab roof, so it reads as a machine and not a second player
   const botExtras = mergeMeshes([moved(ball(0.45, 5, 8), -1.5, 0, 4.2), moved(cylinder(0.12, 0.6, 6), -1.5, 0, 3.6)]);
   const gemMesh = gem(1.05, 2.3);
+  // A mark a grouser apart, the width of a track, on the floor wherever there is floor: not over the
+  // hole, and not on rock, where a machine pushed into it for a moment is not really standing.
+  const tracks = new TrackMarks({
+    pageSize: TRACK_PAGE,
+    pages: TRACK_PAGES,
+    gauge: TRACK_GAUGE,
+    spacing: 6.4 / TREAD_BARS,
+    length: 0.32,
+    width: 1.6,
+    ground: (x, y) => {
+      if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 0.6) return null;
+      const t = nav.tileOf(x, y);
+      return t < 0 || world.solid[t] ? null : floorHeight(x, y);
+    },
+  });
   let coinDetail = 0;
   const dynamic: GameGroup[] = [
     { mesh: coin(0.52, 0.26, coinDetail), matrices: coinM, count: 0, albedo: [1.0, 0.56, 0.08], roughness: 0.26 },
@@ -630,6 +667,8 @@ async function main() {
       albedo: WALL_COLOUR[grade].slice(0, 3) as [number, number, number],
       roughness: WALL_COLOUR[grade][3],
     })),
+    // the marks the tracks have left, a page a group, so a new mark writes one page and not all of them
+    ...tracks.matrices.map((matrices) => ({ mesh: square(), matrices, count: 0, albedo: TRACK_MARK, roughness: 0.98 })),
   ];
   /** The pennant is red, unless the hull is: then it is white, so it shows. */
   function flagColour(): [number, number, number] {
@@ -1551,6 +1590,12 @@ async function main() {
       }
     });
     renderer.move(TREADS, treadM, (1 + bots.length) * TREAD_BARS * 2);
+    // only the pages of track marks that changed; the count kept on the group too, for when the groups are set again
+    for (const p of tracks.dirty) {
+      dynamic[TRACKS + p].count = tracks.counts[p];
+      renderer.move(TRACKS + p, tracks.matrices[p], tracks.counts[p]);
+    }
+    tracks.clean();
 
     bots.forEach((b, i) => {
       placePart(botHullM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, BOT_SCALE, BOT_SCALE, BOT_SCALE);
@@ -1887,6 +1932,7 @@ async function main() {
     const spec = economy.spec();
     const drive = input.read();
     dozer.update(dt, drive, spec, world.load);
+    tracks.update(dozer, dozer);
     knockLamps();
     for (const b of bots) b.update(dt, world, world.loads[b.dozer.owner] ?? 0, nav, choose, traffic);
     // no machine drives through another: every pair, twice, so a push out of one

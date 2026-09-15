@@ -243,6 +243,13 @@ export function ball(radius: number, rings = 6, segments = 10): Mesh {
   return b.build();
 }
 
+/** A flat unit square at z = 0, facing up, centred: stretched to size where it is placed. */
+export function square(): Mesh {
+  const b = new MeshBuilder();
+  face(b, [-0.5, -0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 0], [-0.5, 0.5, 0]);
+  return b.build();
+}
+
 /** A thin flat disc at z = 0, facing up, for a rotor. */
 export function disc(radius: number, segments = 10): Mesh {
   const b = new MeshBuilder();
