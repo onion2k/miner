@@ -281,21 +281,13 @@ export function hash(a: number, b: number, c = 0): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/**
- * A lamp on a post. `area` is the room it lights, which is when it is lit.
- * A `sturdy` one is a short lamp round the hole: it marks the hole in the dark,
- * and a machine pushing a load in drives over it without knocking it down.
- */
+/** A lamp on a post. `area` is the room it lights, which is when it is lit. */
 export interface Lamp {
   x: number; y: number;
   area: number;
   /** How high its head stands. */
   height: number;
-  sturdy: boolean;
 }
-
-/** The lamps round the hole: how far out from its middle, how tall, and at what angles, clear of where the belts come in. */
-const HOLE_LAMPS = { out: 10.5, height: 2.4, angles: [44, 74, 134, 164, 224, 314] };
 
 export interface Cave {
   cells: Uint8Array;
@@ -419,7 +411,7 @@ function placeLamps(cells: Uint8Array): Lamp[] {
       const x = cx - (nx / len) * (TILE / 2 - LAMP_OFF_ROCK), y = cy - (ny / len) * (TILE / 2 - LAMP_OFF_ROCK);
       if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 8 || nearHeap(x, y) || nearBelt(x, y)) continue;
       if (out.some((l) => Math.hypot(l.x - x, l.y - y) < LAMP_SPACING)) continue;
-      out.push({ x, y, area: areaAt(x, y), height: LAMP_HEIGHT, sturdy: false });
+      out.push({ x, y, area: areaAt(x, y), height: LAMP_HEIGHT });
     }
   }
   // and across the middle of the floor, on a grid, so nowhere is out of reach of one: not in a heap,
@@ -435,13 +427,8 @@ function placeLamps(cells: Uint8Array): Lamp[] {
       const [x, y] = tileCentre(tx, ty);
       if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 10 || nearHeap(x, y, 1.5) || nearBelt(x, y)) continue;
       if (out.some((l) => Math.hypot(l.x - x, l.y - y) < 12)) continue;
-      out.push({ x, y, area: areaAt(x, y), height: LAMP_HEIGHT, sturdy: false });
+      out.push({ x, y, area: areaAt(x, y), height: LAMP_HEIGHT });
     }
-  }
-  // the ring round the hole, last, so the others keep their places in the list
-  for (const deg of HOLE_LAMPS.angles) {
-    const a = (deg * Math.PI) / 180;
-    out.push({ x: HOLE.x + Math.cos(a) * HOLE_LAMPS.out, y: HOLE.y + Math.sin(a) * HOLE_LAMPS.out, area: 0, height: HOLE_LAMPS.height, sturdy: true });
   }
   return out;
 }

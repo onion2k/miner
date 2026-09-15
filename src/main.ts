@@ -55,6 +55,15 @@ const CALIBRATE_SAMPLES = 24;
 
 /** How high a lamp's head stands, how many lamps are lit at once near the eye, and how near a machine has to come to knock one over. */
 const LAMP_LIGHTS = 240, LAMP_KNOCK = 4.2;
+/**
+ * The lamps over the hole: three, hanging from the dark on cords, high enough to drive under, round
+ * above its rim. How high they hang, and how far the cord goes up before it is lost in the dark.
+ */
+const HOLE_LAMP_HEIGHT = 15, HOLE_CORD = 12;
+const HOLE_LAMPS: [number, number][] = [90, 210, 330].map((deg) => {
+  const a = (deg * Math.PI) / 180;
+  return [HOLE.x + Math.cos(a) * (HOLE.radius + 1.5), HOLE.y + Math.sin(a) * (HOLE.radius + 1.5)];
+});
 /** How far a lamp's light carries, and how bright it is. */
 const LAMP_REACH = 40, LAMP_BRIGHT = 16;
 
@@ -142,6 +151,8 @@ async function main() {
     // between them; see where it is placed for why that overlap does not flicker
     collar: collar(TILE * 3 + 0.2, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth), brick: box(1, 1, 1, true), stud: gem(1.05, 2.3),
     lampPost: cylinder(0.14, LAMP_HEIGHT, 6), lampHead: moved(box(0.8, 0.8, 0.9, true), 0, 0, 0.1),
+    // a shade hung from its top: a short drum
+    hanging: moved(cylinder(0.6, 0.7, 10), 0, 0, -0.7),
     beltBase: box(1, 1, 1), rail: box(1, 1, 1),
   };
 
@@ -207,7 +218,7 @@ async function main() {
     const c = Math.cos(dozer.yaw), sn = Math.sin(dozer.yaw);
     const bx = dozer.x + c * BLADE_AT, by = dozer.y + sn * BLADE_AT;
     cave.lamps.forEach((l, k) => {
-      if (l.sturdy || economy.save.lampsBroken.includes(k)) return;
+      if (economy.save.lampsBroken.includes(k)) return;
       if (Math.hypot(l.x - dozer.x, l.y - dozer.y) > LAMP_KNOCK && Math.hypot(l.x - bx, l.y - by) > LAMP_KNOCK - 0.8) return;
       const lit = lampOn(k);
       economy.breakLamp(k);
@@ -286,9 +297,17 @@ async function main() {
       const reach = l.height - 0.3;
       const hx = l.x + Math.sin(yaw) * Math.sin(pitch) * reach, hy = l.y - Math.cos(yaw) * Math.sin(pitch) * reach, hz = (down ? 0.6 : 0) + Math.cos(pitch) * reach;
       placePart(headM, k, hx, hy, hz, yaw, 0, 0, 0, 0, pitch, 1, 1, 1);
-      headMat.set(down ? [0.18, 0.17, 0.16, 0.6] : l.sturdy ? [0.7, 1.0, 0.65, 0.3] : [1.0, 0.86, 0.6, 0.3], k * MATERIAL_STRIDE);
+      headMat.set(down ? [0.18, 0.17, 0.16, 0.6] : [1.0, 0.86, 0.6, 0.3], k * MATERIAL_STRIDE);
+    });
+    // the lamps over the hole: a cord up into the dark, and a shade on the end of it
+    const cordM = new Float32Array(HOLE_LAMPS.length * 16), shadeM = new Float32Array(HOLE_LAMPS.length * 16);
+    HOLE_LAMPS.forEach(([x, y], i) => {
+      placePart(cordM, i, x, y, HOLE_LAMP_HEIGHT, 0, 0, 0, 0, 0, 0, 0.4, 0.4, HOLE_CORD / LAMP_HEIGHT);
+      placePart(shadeM, i, x, y, HOLE_LAMP_HEIGHT, 0, 0, 0, 0, 0, 0, 1.3, 1.3, 1.1);
     });
     const brickGroups: GameGroup[] = [
+      { mesh: meshes.lampPost, matrices: cordM, count: HOLE_LAMPS.length, albedo: [0.15, 0.15, 0.17], roughness: 0.6 },
+      { mesh: meshes.hanging, matrices: shadeM, count: HOLE_LAMPS.length, albedo: [0.75, 1.0, 0.7], roughness: 0.3 },
       { mesh: meshes.lampPost, matrices: postM, count: cave.lamps.length, albedo: [0.22, 0.22, 0.25], roughness: 0.5 },
       { mesh: meshes.lampHead, matrices: headM, materials: headMat, count: cave.lamps.length },
       { mesh: meshes.brick, matrices: brickM, materials: brickMat, count: standing.length },
@@ -877,9 +896,15 @@ async function main() {
     for (const k of lampsLit.slice(0, LAMP_LIGHTS)) {
       const l = cave.lamps[k];
       const flicker = 0.92 + 0.08 * Math.sin(t * 13 + k * 7) * Math.sin(t * 3.1 + k);
-      // bright, and far-reaching enough that between them nowhere on the floor is dark; the hole's own, green and close
-      if (l.sturdy) lights.add({ position: [l.x, l.y, l.height], radius: 18, colour: [0.65, 1.0, 0.55], intensity: 6 * flicker });
-      else lights.add({ position: [l.x, l.y, l.height], radius: LAMP_REACH, colour: [1.0, 0.8, 0.55], intensity: LAMP_BRIGHT * flicker });
+      // bright, and far-reaching enough that between them nowhere on the floor is dark
+      lights.add({ position: [l.x, l.y, l.height], radius: LAMP_REACH, colour: [1.0, 0.8, 0.55], intensity: LAMP_BRIGHT * flicker });
+    }
+    // The lamps hanging over the hole, green-white: they light the hole, its rim and what goes down
+    // it from above, so it can be found in the dark, and there is nothing on the floor to drive
+    // through. Only while the hole is near enough the screen for their light to show.
+    const hole = project(cam.viewProjection, HOLE.x, HOLE.y, 0);
+    if (hole && Math.abs(hole[0]) < 1.5 && Math.abs(hole[1]) < 1.5) {
+      for (const [x, y] of HOLE_LAMPS) lights.add({ position: [x, y, HOLE_LAMP_HEIGHT - 0.6], radius: 36, colour: [0.7, 1.0, 0.6], intensity: 14 });
     }
     if (economy.save.done) {
       const v = AREAS[LAST].vein;
@@ -931,8 +956,13 @@ async function main() {
       const l = cave.lamps[k];
       const q = project(cam.viewProjection, l.x, l.y, l.height);
       if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
-      const glow = l.sturdy ? [3.5 / q[2], 0.9, 0.55, 1.0, 0.5] : [5 / q[2], 0.85 + 0.1 * Math.sin(t * 13 + k * 7), 1.0, 0.75, 0.4];
-      quads.set([q[0], q[1], ...glow, 2.0], n * EFFECT_STRIDE); n++;
+      quads.set([q[0], q[1], 5 / q[2], 0.85 + 0.1 * Math.sin(t * 13 + k * 7), 1.0, 0.75, 0.4, 2.0], n * EFFECT_STRIDE); n++;
+    }
+    for (const [x, y] of HOLE_LAMPS) {
+      if (n >= EFFECT_CAPACITY - 1) break;
+      const q = project(cam.viewProjection, x, y, HOLE_LAMP_HEIGHT - 0.6);
+      if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
+      quads.set([q[0], q[1], 5 / q[2], 0.9, 0.7, 1.0, 0.6, 2.0], n * EFFECT_STRIDE); n++;
     }
     if (m && n < EFFECT_CAPACITY) {
       const q = project(cam.viewProjection, m.x, m.y, 0.2);
