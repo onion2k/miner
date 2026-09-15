@@ -116,29 +116,47 @@ The smoke test (`smoke/`) serves the game with Vite and plays it in Chromium's
 headless mode on the machine's own GPU, a fresh save each time: it boots with
 no errors, draws a picture that is not black, drives the dozer and sees tracks
 laid, opens and shuts the workshop, keeps the cave across a reload, and boots
-on a phone-sized screen with the touch controls. Screenshots of each go in
+on a phone-sized screen with the touch controls. And it goes through the whole
+cave in one go: every room opened and gone on into, a chamber and a wall in
+each, a lamp, a drone, the horn, and the end. Screenshots of each go in
 `test-results/` when a test fails, with a trace to step through.
 
 ## How it is put together
 
-    src/main.ts       boot, the scene's groups, lights, particles, the HUD, the frame loop
-    src/cave.ts       the tile grid: rooms and the order they open in, gates, heaps, veins, belt routes
-    src/terrain.ts    the cave to look at: the rock and floor as one faceted surface over the tiles, and the stones on it
-    src/physics.ts    the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
-    src/dozer.ts      the bulldozer: tank steering, the blade and hull as pushers, load
-    src/tracks.ts     the marks the tracks press into the floor, kept a page at a time, the oldest fading
-    src/tools.ts      conveyor belts, drones, and the fountains
-    src/nav.ts        the way round the rock and the heaps, for the drones
-    scripts/sim.ts    the drones without the picture, for measuring them
+    src/main.ts           boot, and everything made and wired together; the frame loop
+    src/cave.ts           the tile grid: rooms and the order they open in, gates, heaps, veins, belt routes, lamps
+    src/economy.ts        the bank, the upgrades, which room is being cleared, the save, the shop
+    src/stock.ts          what is in the cave, from where: put back from the save, spawned, banked, sealed away
+    src/progress.ts       when the next room opens, going on through its gate, and what the player is told
+    src/walls.ts          the brick walls as bricks: laid, beaten, treasure set in them, coming apart
+    src/lamps.ts          which lamps are lit, knocked over, and worth lighting this frame
+    src/impacts.ts        what driving into a wall or a chamber's rock does
+    src/tally.ts          a run of things into the hole, and how hot it is
+    src/vein.ts           the last room's vein, once the cave is cleared
+    src/physics.ts        the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
+    src/dozer.ts          the bulldozer: tank steering, the blade and hull as pushers, load
+    src/tools.ts          conveyor belts, drones, and the fountains
+    src/nav.ts            the way round the rock and the heaps, for the drones
+    src/terrain.ts        the cave to look at: the rock and floor as one faceted surface over the tiles, and the stones on it
+    src/tracks.ts         the marks the tracks press into the floor, kept a page at a time, the oldest fading
+    src/scene-static.ts   what does not move, as groups for the renderer: ground, hole, gates, walls, lamps, belts
+    src/scene-dynamic.ts  what moves, written each frame: bodies, machines, treads, stripes, pennant, track marks
+    src/lighting.ts       each frame's lights and glows
+    src/camera.ts         the camera rig: fixed, chase and free
+    src/calibrate.ts      how much coin this machine can draw
+    src/hud.ts            the page round the cave: counters, tally, notes, the arrow to the next gate, a phone's buttons
+    src/palette.ts        the colours things are drawn in
+    src/effects.ts        the bursts of particles: glass, chips, dust, sparkle
+    src/audio.ts          every sound, synthesised: clinks, thunks, the engine, the rumble
+    src/meshes.ts         flat-shaded shapes: coin, gem, box, cone, ball, stone, the hole's collar and pit
+    src/matrix.ts         column-major placements
+    src/input.ts          the keyboard
+    src/touch.ts          a phone's sliders
+    scripts/sim.ts        the drones without the picture, for measuring them
     scripts/sim-check.ts  the drones held to a baseline
     scripts/physics-bench.ts  the physics' time a frame, held to a baseline
-    test/             unit tests, run by Vitest
-    smoke/            the game in a real browser, run by Playwright
-    src/audio.ts      every sound, synthesised: clinks, thunks, the engine, the rumble
-    src/economy.ts    the bank, the upgrades, which room is being cleared, the save, the shop
-    src/meshes.ts     flat-shaded shapes: coin, gem, box, cone, ball, stone, the hole's collar and pit
-    src/matrix.ts     column-major placements
-    src/input.ts      the keyboard
+    test/                 unit tests, run by Vitest
+    smoke/                the game in a real browser, run by Playwright
 
 The coins collide as balls a little smaller than their rims, which is what
 lets thousands of them be stepped in JavaScript at 120 Hz. They are drawn
