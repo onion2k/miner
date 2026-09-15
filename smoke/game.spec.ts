@@ -8,42 +8,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
-
-/** What the game hangs on the window for poking at from outside. */
-interface Exposed {
-  calibration: number[];
-  world: { live: number };
-  dozer: { x: number; y: number; speed: number };
-  economy: { save: { bank: number; lampsBroken: number[] } };
-  trackMarks: { size: number };
-}
-/** Run a function on what the game exposes, in the page: it is sent over as its source, so it can use nothing from here. */
-const exposed = <T>(page: Page, fn: (g: Exposed) => T): Promise<T> => page.evaluate(`(${fn.toString()})(globalThis)`);
-
-/** Errors and failed requests while the page runs; WebGPU's own warnings are not errors. */
-function watch(page: Page) {
-  const problems: string[] = [];
-  page.on('console', (m) => {
-    if (m.type() === 'error') problems.push(`console: ${m.text()}`);
-  });
-  page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));
-  page.on('requestfailed', (r) => problems.push(`request failed: ${r.url()} ${r.failure()?.errorText ?? ''}`));
-  return problems;
-}
-
-/** Load the game and wait until it is past measuring the machine and the boot screen has gone. */
-async function boot(page: Page) {
-  await page.goto('/');
-  try {
-    await expect(page.locator('#boot')).toHaveClass(/gone/, { timeout: 60_000 });
-  } catch {
-    // what it was stuck on, or why WebGPU would not start
-    throw new Error(`the game did not boot: ${await page.locator('#bootMsg').textContent()}`);
-  }
-  await expect
-    .poll(() => page.evaluate(() => Array.isArray((globalThis as unknown as Exposed).calibration)))
-    .toBe(true);
-}
+import { start, watch } from './pushminer';
 
 /** How many frames the page draws in a second. */
 function framesInASecond(page: Page) {
@@ -51,10 +16,10 @@ function framesInASecond(page: Page) {
     () =>
       new Promise<number>((resolve) => {
         let n = 0;
-        const start = performance.now();
+        const began = performance.now();
         const tick = () => {
           n++;
-          if (performance.now() - start < 1000) requestAnimationFrame(tick);
+          if (performance.now() - began < 1000) requestAnimationFrame(tick);
           else resolve(n);
         };
         requestAnimationFrame(tick);
@@ -79,25 +44,20 @@ function content(png: Buffer) {
   return { spread: Math.sqrt(sq / n - mean * mean), lit: lit / n };
 }
 
-const hold = async (page: Page, key: string, ms: number) => {
-  await page.keyboard.down(key);
-  await page.waitForTimeout(ms);
-  await page.keyboard.up(key);
-};
-
 test('boots with no errors and draws the cave', async ({ page }, info) => {
   const problems = watch(page);
-  await boot(page);
+  // measured, as a player's boot is
+  await start(page, { coins: null });
   // the frame loop is running
   expect(await framesInASecond(page)).toBeGreaterThan(20);
-  const g = await page.evaluate(() => {
-    const e = globalThis as unknown as Exposed;
-    return { live: e.world.live, calibration: e.calibration };
-  });
-  expect(g.live, 'coins in the cave').toBeGreaterThan(500);
+  const { live, calibration } = await page.evaluate(() => ({
+    live: window.pushminer!.state().live,
+    calibration: window.pushminer!.calibration,
+  }));
+  expect(live, 'coins in the cave').toBeGreaterThan(500);
   info.annotations.push({
     type: 'frame cost per coin detail, ms',
-    description: g.calibration.map((c) => c.toFixed(1)).join(', '),
+    description: calibration.map((c) => c.toFixed(1)).join(', '),
   });
   const shot = await page.screenshot();
   await info.attach('cave', { body: shot, contentType: 'image/png' });
@@ -106,31 +66,30 @@ test('boots with no errors and draws the cave', async ({ page }, info) => {
   // a picture gone black is about 0.02, from the HUD alone
   expect(c.lit, 'share of the screen lit').toBeGreaterThan(0.2);
   expect(c.spread, 'variety in the picture').toBeGreaterThan(25);
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
   expect(problems).toEqual([]);
 });
 
-test('drives the dozer, and it leaves tracks', async ({ page }, info) => {
+test('drives the dozer by the keyboard, and it leaves tracks', async ({ page }, info) => {
   const problems = watch(page);
-  await boot(page);
-  const start = await exposed(page, (g) => ({ x: g.dozer.x, y: g.dozer.y }));
-  await page
-    .locator('canvas')
-    .click({ position: { x: 5, y: 5 } })
-    .catch(() => {});
-  await hold(page, 'w', 1200);
+  await start(page);
+  const before = await page.evaluate(() => window.pushminer!.state().dozer);
   await page.keyboard.down('w');
-  await hold(page, 'a', 900);
+  await expect
+    .poll(() => page.evaluate(() => window.pushminer!.state().dozer.y), { timeout: 5000 })
+    .toBeGreaterThan(before.y + 5);
+  await page.keyboard.down('a');
+  await page.waitForTimeout(600);
+  await page.keyboard.up('a');
   await page.keyboard.up('w');
-  const after = await exposed(page, (g) => ({ x: g.dozer.x, y: g.dozer.y, marks: g.trackMarks.size }));
-  expect(Math.hypot(after.x - start.x, after.y - start.y), 'distance driven').toBeGreaterThan(5);
-  expect(after.marks, 'track marks laid').toBeGreaterThan(10);
+  expect(await page.evaluate(() => window.pushminer!.state().trackMarks), 'track marks laid').toBeGreaterThan(10);
   await info.attach('after driving', { body: await page.screenshot(), contentType: 'image/png' });
   expect(problems).toEqual([]);
 });
 
 test('opens and closes the workshop', async ({ page }, info) => {
   const problems = watch(page);
-  await boot(page);
+  await start(page);
   const shop = page.locator('#shop');
   await expect(shop).toBeHidden();
   await page.keyboard.press('b');
@@ -144,14 +103,29 @@ test('opens and closes the workshop', async ({ page }, info) => {
 
 test('keeps the game where it was across a reload', async ({ page }) => {
   const problems = watch(page);
-  await boot(page);
-  await hold(page, 'w', 800);
-  const before = await exposed(page, (g) => g.world.live);
+  await start(page);
+  await page.evaluate(() => {
+    const p = window.pushminer!;
+    p.pause();
+    p.deposit(123);
+    p.drive(1, 0);
+    p.step(60);
+    p.release();
+  });
+  const before = await page.evaluate(() => {
+    const p = window.pushminer!;
+    p.save();
+    return p.state();
+  });
   await page.reload();
-  await boot(page);
-  const after = await exposed(page, (g) => g.world.live);
-  // the same coins, give or take any that went down the hole on the way out
-  expect(Math.abs(after - before)).toBeLessThan(50);
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));
+  await expect.poll(() => page.evaluate(() => window.pushminer?.ready ?? false), { timeout: 60_000 }).toBe(true);
+  const after = await page.evaluate(() => window.pushminer!.state());
+  expect(after.bank).toBe(before.bank);
+  expect(after.room).toBe(before.room);
+  // the same coins, give or take any that were on their way down the hole
+  expect(Math.abs(after.live - before.live)).toBeLessThan(20);
+  expect(after.barrels.count).toBe(before.barrels.count);
   expect(problems).toEqual([]);
 });
 
@@ -160,7 +134,7 @@ test.describe('on a phone', () => {
 
   test('boots with the touch controls and no errors', async ({ page }, info) => {
     const problems = watch(page);
-    await boot(page);
+    await start(page);
     await expect(page.locator('#pad')).toBeVisible();
     await expect(page.locator('#trackLeft')).toBeVisible();
     await expect(page.locator('#trackRight')).toBeVisible();

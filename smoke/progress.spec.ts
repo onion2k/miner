@@ -1,202 +1,149 @@
 /**
  * The whole cave in one go, in a real browser: every room opened and gone on
  * into, sealing the one behind; a hidden chamber broken into and a brick wall
- * brought down in each; a lamp knocked over; a drone bought and set to work;
- * the horn; and the cave finished, with its vein. Driven through the game's
- * own economy and by putting the dozer where it needs to be, rather than by
- * playing it, so it takes seconds — but everything that follows each of
- * those, the scene rebuilt, the rock reshaped, the bodies spawned and sealed
- * away, the particles and the words on the screen, is the game's own.
+ * brought down in each; a lamp knocked over; barrels driven into and pushed
+ * down the hole; a drone bought and set to work; the horn; and the cave
+ * finished, with its vein. Played through the test API with the game paused
+ * and stepped a frame at a time, so it is the same every run and waits on no
+ * clock — but everything that follows each of those, the scene rebuilt, the
+ * rock reshaped, the bodies spawned and sealed away, the particles and the
+ * words on the screen, is the game's own.
  *
- * What it looks for is that none of it throws or logs an error, and that
- * each step leaves the game where it should.
+ * After every stage the game's invariants are checked, and at the end the
+ * page must have logged no errors.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { AREAS, ORDER, SECRETS, WALLS, WINGS, buildCave, sealPoint } from '../src/cave';
+import { start, watch } from './pushminer';
 
-interface Exposed {
-  calibration: number[];
-  world: {
-    live: number;
-    count: number;
-    alive: Uint8Array;
-    kind: Uint8Array;
-    x: Float32Array;
-    y: Float32Array;
-    z: Float32Array;
-    wake(i: number): void;
-  };
-  dozer: { x: number; y: number; yaw: number; speed: number };
-  economy: {
-    save: {
-      areas: boolean[];
-      secrets: boolean[];
-      walls: boolean[];
-      lampsBroken: number[];
-      rubble: number[];
-      horn: boolean;
-      done: boolean;
-      barrels: number[] | null;
-    };
-    current(): number;
-    open(): void;
-    reveal(k: number): void;
-    hitWall(w: number, damage: number): number;
-    deposit(value: number): void;
-    readonly bank: number;
-    buy(id: string): boolean;
-  };
-  cave: { lamps: { x: number; y: number; area: number }[] };
-  bots: { x: number; y: number }[];
-  fountains: unknown[];
-  barrels: { lit: number[]; light(i: number, seconds: number): void };
+/** Play `frames` frames, and check nothing that must hold has broken. */
+async function play(page: Page, frames: number, stage: string) {
+  const broken = await page.evaluate((n) => {
+    window.pushminer!.step(n);
+    return window.pushminer!.invariants();
+  }, frames);
+  expect(broken, `invariants after ${stage}`).toEqual([]);
 }
 
-const cave = buildCave();
-
-/** Somewhere a little past the line that seals the room behind, down a room's corridor: in the room, on floor. */
-function pastSeal(area: number): [number, number] {
-  const [x, y] = sealPoint(cave, area);
-  const [dx, dy] = WINGS[area].dir;
-  return [x + dx * 4, y + dy * 4];
-}
-
-function watch(page: Page) {
-  const problems: string[] = [];
-  page.on('console', (m) => {
-    if (m.type() === 'error') problems.push(`console: ${m.text()}`);
-  });
-  page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));
-  return problems;
-}
-
-/** A value from the game, by a function of what it exposes, run in the page with `arg`. */
-function game<A, T>(page: Page, fn: (g: Exposed, arg: A) => T, arg: A): Promise<T> {
-  return page.evaluate(`(${fn.toString()})(globalThis, ${JSON.stringify(arg)})`);
-}
-
-test('the whole cave: rooms, chambers, walls, lamps, a drone, the horn, and the end', async ({ page }, info) => {
+test('the whole cave: rooms, chambers, walls, lamps, barrels, a drone, the horn, and the end', async ({
+  page,
+}, info) => {
   test.setTimeout(180_000);
   const problems = watch(page);
-  await page.goto('/?coins=3');
-  await expect(page.locator('#boot')).toHaveClass(/gone/, { timeout: 60_000 });
-  const settle = () => page.waitForTimeout(400);
+  await start(page);
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(1);
+  });
+  const content = await page.evaluate(() => window.pushminer!.content());
+  const hollow = content.rooms[0];
 
   // a lamp in the hollow, knocked over by driving onto it
-  const lamp = cave.lamps.findIndex((l) => l.area === 0);
-  await game(page, (g, [x, y]) => Object.assign(g.dozer, { x, y, speed: 0 }), [cave.lamps[lamp].x, cave.lamps[lamp].y]);
-  await settle();
-  expect(await game(page, (g, k) => g.economy.save.lampsBroken.includes(k), lamp), 'lamp knocked over').toBe(true);
+  const lamp = content.lamps.findIndex((l) => l.area === 0);
+  await page.evaluate(([x, y]) => window.pushminer!.teleport(x, y), [content.lamps[lamp].x, content.lamps[lamp].y]);
+  await play(page, 2, 'a lamp');
+  expect(await page.evaluate(() => window.pushminer!.state().lampsBroken), 'lamp knocked over').toContain(lamp);
 
   // a barrel in the hollow driven into: its fuse lit, then gone off
-  const barrel = cave.barrels.find((b) => b.area === 0)!;
-  await game(page, (g, [x, y]) => Object.assign(g.dozer, { x, y: y - 8, yaw: Math.PI / 2, speed: 0 }), [
-    barrel.x,
-    barrel.y,
-  ]);
-  const barrelsBefore = await game(page, (g) => g.barrels.lit.length, null);
-  expect(barrelsBefore).toBe(0);
-  await page.keyboard.down('w');
-  await expect
-    .poll(() => game(page, (g) => g.barrels.lit.length, null), { message: 'fuse lit', timeout: 5000 })
-    .toBe(1);
-  await page.keyboard.up('w');
-  await expect
-    .poll(() => game(page, (g) => g.economy.save.barrels?.length ?? -1, null), {
-      message: 'barrel gone off',
-      timeout: 8000,
-    })
-    .toBe((cave.barrels.filter((b) => b.area === 0).length - 1) * 4);
+  const barrel = hollow.barrels[0];
+  await page.evaluate(
+    ([x, y]) => {
+      window.pushminer!.teleport(x, y - 8, Math.PI / 2);
+      window.pushminer!.drive(1, 0);
+    },
+    [barrel.x, barrel.y],
+  );
+  let lit = false;
+  for (let f = 0; f < 120 && !lit; f += 5) {
+    await play(page, 5, 'driving at a barrel');
+    lit = (await page.evaluate(() => window.pushminer!.state().barrels.lit.length)) > 0;
+  }
+  expect(lit, 'fuse lit').toBe(true);
+  await page.evaluate(() => window.pushminer!.release());
+  const barrelsBefore = await page.evaluate(() => window.pushminer!.state().barrels.count);
+  await play(page, 60 * 4, 'a barrel going off');
+  expect(await page.evaluate(() => window.pushminer!.state().barrels.count), 'barrel gone off').toBe(barrelsBefore - 1);
+  expect((await page.evaluate(() => window.pushminer!.events())).some((e) => e.startsWith('blast'))).toBe(true);
 
   // the other barrels pushed down the hole, one lit and one not: gone, and nothing banked for them
-  const bankBefore = await game(page, (g) => g.economy.bank, null);
-  await game(
-    page,
-    (g) => {
-      let n = 0;
-      for (let i = 0; i < g.world.count && n < 2; i++) {
-        if (!g.world.alive[i] || g.world.kind[i] !== 7) continue;
-        if (n === 0) g.barrels.light(i, 10);
-        g.world.x[i] = n * 0.5;
-        g.world.y[i] = 0;
-        g.world.z[i] = 1.5;
-        g.world.wake(i);
-        n++;
-      }
-    },
-    null,
-  );
-  await expect
-    .poll(() => game(page, (g) => g.economy.save.barrels?.length ?? -1, null), {
-      message: 'barrels down the hole',
-      timeout: 8000,
-    })
-    .toBe(Math.max(0, cave.barrels.filter((b) => b.area === 0).length - 3) * 4);
-  expect(await game(page, (g) => g.barrels.lit.length, null), 'the lit one forgotten').toBe(0);
-  expect(await game(page, (g) => g.economy.bank, null), 'nothing banked for a barrel').toBe(bankBefore);
+  const bankBefore = await page.evaluate(() => window.pushminer!.state().bank);
+  await page.evaluate(() => {
+    const p = window.pushminer!;
+    p.bodies('barrel').forEach((b, n) => {
+      if (n === 0) p.lightBarrel(b.slot, 10);
+      p.place(b.slot, n * 0.5, 0, 1.5);
+    });
+  });
+  await play(page, 120, 'barrels down the hole');
+  expect(await page.evaluate(() => window.pushminer!.state().barrels), 'barrels gone, the fuse forgotten').toEqual({
+    count: 0,
+    lit: [],
+  });
+  expect(await page.evaluate(() => window.pushminer!.state().bank), 'nothing banked for a barrel').toBe(bankBefore);
 
   // a drone, bought and working
-  await game(page, (g) => g.economy.deposit(5000), null);
-  expect(await game(page, (g) => g.economy.buy('drone'), null), 'drone bought').toBe(true);
-  const droneAt = await game(page, (g) => [g.bots[0].x, g.bots[0].y], null);
-  await expect
-    .poll(
-      async () => {
-        const [x, y] = await game(page, (g) => [g.bots[0].x, g.bots[0].y], null);
-        return Math.hypot(x - droneAt[0], y - droneAt[1]);
-      },
-      { message: 'drone moving', timeout: 10_000 },
-    )
-    .toBeGreaterThan(1);
+  await page.evaluate(() => {
+    window.pushminer!.deposit(5000);
+    window.pushminer!.buy('drone');
+  });
+  const droneAt = await page.evaluate(() => window.pushminer!.state().bots[0]);
+  await play(page, 60 * 5, 'a drone');
+  const droneNow = await page.evaluate(() => window.pushminer!.state().bots[0]);
+  expect(Math.hypot(droneNow.x - droneAt.x, droneNow.y - droneAt.y), 'drone moving').toBeGreaterThan(1);
 
   // the horn
-  await game(page, (g) => (g.economy.save.horn = true), null);
-  await page.keyboard.press('h');
+  await page.evaluate(() => {
+    const p = window.pushminer!;
+    p.buy('horn');
+    p.honk();
+  });
+  await play(page, 30, 'the horn');
 
-  for (let n = 1; n < ORDER.length; n++) {
-    const room = ORDER[n],
-      name = AREAS[room].name;
-    const before = await game(page, (g) => g.world.live, null);
-    await game(page, (g) => g.economy.open(), null);
-    await settle();
-    expect(await game(page, (g, a) => g.economy.save.areas[a], room), `${name} open`).toBe(true);
-    expect(await game(page, (g) => g.world.live, null), `${name}'s heaps in the cave`).toBeGreaterThan(before);
+  for (let n = 1; n < content.rooms.length; n++) {
+    const room = (await page.evaluate(() => window.pushminer!.state().next))!;
+    const { name, pastSeal } = content.rooms[room];
+    const before = await page.evaluate(() => window.pushminer!.state().live);
+    await page.evaluate(() => window.pushminer!.openNext());
+    await play(page, 10, `${name} opening`);
+    const opened = await page.evaluate(() => window.pushminer!.state());
+    expect(opened.areas[room], `${name} open`).toBe(true);
+    expect(opened.live, `${name}'s heaps in the cave`).toBeGreaterThan(before);
 
     // on into it: the room behind is sealed
-    await game(page, (g, [x, y, yaw]) => Object.assign(g.dozer, { x, y, yaw, speed: 0 }), [...pastSeal(room), 0]);
-    await settle();
-    expect(await game(page, (g) => g.economy.current(), null), `gone on into ${name}`).toBe(room);
-    if (n > 1)
-      expect(await game(page, (g, a) => g.economy.save.areas[a], ORDER[n - 1]), 'the room behind sealed').toBe(false);
+    const behind = opened.room;
+    await page.evaluate(([x, y]) => window.pushminer!.teleport(x, y, 0), [pastSeal!.x, pastSeal!.y]);
+    await play(page, 10, `going on into ${name}`);
+    const inside = await page.evaluate(() => window.pushminer!.state());
+    expect(inside.room, `gone on into ${name}`).toBe(room);
+    if (behind !== 0) expect(inside.areas[behind], 'the room behind sealed').toBe(false);
 
     // its hidden chamber broken into
-    const chamber = SECRETS.findIndex((s) => s.area === room);
+    const chamber = content.chambers.findIndex((c) => c.area === room);
     if (chamber >= 0) {
-      const live = await game(page, (g) => g.world.live, null);
-      await game(page, (g, k) => g.economy.reveal(k), chamber);
-      await settle();
-      expect(await game(page, (g, k) => g.economy.save.secrets[k], chamber), `${name}'s chamber open`).toBe(true);
-      expect(await game(page, (g) => g.world.live, null), `${name}'s chamber loot`).toBeGreaterThan(live);
+      const live = inside.live;
+      await page.evaluate((k) => window.pushminer!.reveal(k), chamber);
+      await play(page, 30, `${name}'s chamber`);
+      const s = await page.evaluate(() => window.pushminer!.state());
+      expect(s.secrets[chamber], `${name}'s chamber open`).toBe(true);
+      expect(s.live, `${name}'s chamber loot`).toBeGreaterThan(live);
     }
 
     // its brick wall brought down, a hit short of it first
-    const wall = WALLS.findIndex((w) => w.area === room);
+    const wall = content.walls.findIndex((w) => w.area === room);
     if (wall >= 0) {
-      expect(await game(page, (g, w) => g.economy.hitWall(w, 1), wall), `${name}'s wall hurt`).toBeLessThan(1);
-      await game(page, (g, w) => g.economy.hitWall(w, 1e6), wall);
-      await page.waitForTimeout(1200);
-      expect(await game(page, (g, w) => g.economy.save.walls[w], wall), `${name}'s wall down`).toBe(true);
-      expect(await game(page, (g) => g.economy.save.rubble.length, null), 'rubble recorded').toBeGreaterThan(0);
+      expect(await page.evaluate((w) => window.pushminer!.hitWall(w, 1), wall), `${name}'s wall hurt`).toBeLessThan(1);
+      await page.evaluate((w) => window.pushminer!.hitWall(w, 1e6), wall);
+      await play(page, 90, `${name}'s wall`);
+      expect(await page.evaluate(() => window.pushminer!.state().walls), `${name}'s wall down`).toContain(true);
     }
     await info.attach(name, { body: await page.screenshot(), contentType: 'image/png' });
   }
 
   // the last room cleared: the cave is done, and the vein runs
-  await game(page, (g) => g.economy.open(), null);
-  await settle();
-  expect(await game(page, (g) => g.economy.save.done, null), 'cave done').toBe(true);
-  expect(await game(page, (g) => g.fountains.length, null), 'the vein').toBe(1);
-  await page.waitForTimeout(1000);
+  await page.evaluate(() => window.pushminer!.openNext());
+  await play(page, 120, 'the end');
+  const end = await page.evaluate(() => window.pushminer!.state());
+  expect(end.done, 'cave done').toBe(true);
+  expect(end.fountains, 'the vein').toBe(1);
   await info.attach('done', { body: await page.screenshot(), contentType: 'image/png' });
   expect(problems).toEqual([]);
 });

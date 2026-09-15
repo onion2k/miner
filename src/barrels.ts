@@ -65,6 +65,15 @@ export class Barrels {
     return !!fuse && fuse.phase % 1 < 0.5;
   }
 
+  /**
+   * A barrel gone from the world some other way than going off — down the
+   * hole, or sealed in with its room — has its fuse put out at once, so a
+   * barrel put in its slot after it does not go off in its place.
+   */
+  forget(i: number) {
+    this.fuses.delete(i);
+  }
+
   /** Light a barrel's fuse to go in `seconds`, or sooner if it is already burning shorter. Whether it was not lit before. */
   light(i: number, seconds = FUSE): boolean {
     if (!this.world.alive[i] || this.world.kind[i] !== BARREL_KIND) return false;

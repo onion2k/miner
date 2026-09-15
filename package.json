@@ -15,9 +15,10 @@
     "sim": "esbuild scripts/sim.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/sim.mjs --log-level=warning && node node_modules/.cache/sim/sim.mjs",
     "sim:check": "esbuild scripts/sim-check.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/sim-check.mjs --log-level=warning && node node_modules/.cache/sim/sim-check.mjs",
     "bench": "esbuild scripts/physics-bench.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/physics-bench.mjs --log-level=warning && node node_modules/.cache/sim/physics-bench.mjs",
+    "fuzz": "esbuild scripts/fuzz.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/fuzz.mjs --log-level=warning && node node_modules/.cache/sim/fuzz.mjs",
     "smoke": "playwright test",
     "check:quick": "prettier --check . --log-level warn && npm run --silent typecheck && eslint . && vitest run --reporter dot",
-    "check": "npm run --silent check:quick && npm run --silent sim:check && npm run --silent bench && npm run --silent smoke",
+    "check": "npm run --silent check:quick && npm run --silent fuzz && npm run --silent sim:check && npm run --silent bench && npm run --silent smoke",
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {

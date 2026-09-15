@@ -4,59 +4,30 @@
  * redraws everything every frame and instances the thousands of coins as
  * one draw each.
  *
- * This is where everything is made and wired together, and where the frame
- * loop runs; what each piece does is in its own module. See "How it is put
- * together" in the README.
+ * This is the page: the renderer, the sound, the controls, the camera and
+ * the counters, round the game in `game.ts`, which knows none of them. What
+ * the game says has happened is turned here into sparkle, dust, sound and
+ * words on the screen. See "How it is put together" in the README.
  */
 import { createContext } from 'artshape-render/gpu/context';
 import { Orbit } from 'artshape-render/gpu/camera';
 import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import type { Emit } from 'artshape-render/game/particles';
-import {
-  AREAS,
-  BODY_CAPACITY,
-  HOLE,
-  ORDER,
-  SECRET,
-  SECRETS,
-  WALLS,
-  behindGate,
-  buildCave,
-  gateCentre,
-  gateTiles,
-  sealPoint,
-  tileCentre,
-  COLS,
-} from './cave';
-import { World, BARREL_KIND, BRICK_KIND, KIND_RADIUS, type Pusher } from './physics';
-import { Dozer, BLADE_AT, TRACK_GAUGE, separate } from './dozer';
+import { AREAS, BODY_CAPACITY, HOLE, ORDER, WALLS, gateCentre, gateTiles, sealPoint } from './cave';
+import { TRACK_GAUGE } from './dozer';
 import { Input } from './input';
 import { TouchControls, isTouchDevice } from './touch';
-import {
-  Economy,
-  MAX_DRONES,
-  WALL_NAME,
-  WALL_STRENGTH,
-  areaOfSource,
-  chamberSource,
-  renderShop,
-  wallSource,
-} from './economy';
-import { Bot, BOT_SCALE, BOT_SPEC, Foreman, Fountain, beltOf } from './tools';
-import { Nav } from './nav';
+import { Economy, MAX_DRONES, WALL_NAME, renderShop } from './economy';
+import { BOT_SCALE, BOT_SPEC } from './tools';
 import { Sound } from './audio';
 import { COIN_LADDER } from './meshes';
 import { floorHeight } from './terrain';
 import { TrackMarks } from './tracks';
-import { NO_SOURCE, Stock, lootHeap } from './stock';
-import { Barrels, FUSE } from './barrels';
-import { Tally } from './tally';
-import { VeinTrickle } from './vein';
-import { Impacts } from './impacts';
-import { atNextGate, progressText, readyToOpen, the } from './progress';
-import { lampOn, lampsHit } from './lamps';
-import { looseBricks, stashBehind, wallTiles } from './walls';
+import { FUSE } from './barrels';
+import { progressText, the } from './progress';
+import { lampOn } from './lamps';
+import { stashBehind, wallTiles } from './walls';
 import { StaticScene } from './scene-static';
 import { DynamicScene, TREAD_PITCH } from './scene-dynamic';
 import { SceneLights } from './lighting';
@@ -66,13 +37,19 @@ import { Hud, placePointer, setupPad } from './hud';
 import { WALL_COLOUR, kindColour, type Rgb } from './palette';
 import * as fx from './effects';
 import { airParticle, biomeAt, featureParticle, lampColour } from './biomes';
+import { Game, KIND_CAPACITY, type GameEvents } from './game';
+import { createApi, type PushminerApi } from './debug';
+
+declare global {
+  interface Window {
+    pushminer?: PushminerApi;
+  }
+}
 
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
 const MM_PER_UNIT = 100;
 const LIGHT_CAPACITY = 256;
 const EFFECT_CAPACITY = 256;
-/** How many of each kind the cave can hold at once, past the coins; the last three are gold bars, bricks and barrels. */
-const GEM_CAPACITY = [0, 320, 240, 260, 160, 60, 900, 40];
 /** The marks the tracks leave in the floor, the player's and the drones': pages of them, and how many a page. */
 const TRACK_PAGES = 16,
   TRACK_PAGE = 1024;
@@ -86,8 +63,8 @@ const RENDER_BUDGET_MS = 8;
 const AIR_TRIES = 4;
 /** How many things a sealed room's going puffs over, at most. */
 const SEAL_PUFFS = 160;
-/** Where a drone is put back to, out of the way by the hole. */
-const botHome = (j: number): [number, number] => [HOLE.x + 14 + j * 6, HOLE.y + 10];
+/** How many of the game's events the test API keeps, before the oldest go. */
+const EVENTS_KEPT = 500;
 
 const hud = new Hud();
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -140,38 +117,134 @@ async function main() {
     setTimeout(r, 50);
   });
 
-  // ---- the game ----
+  // ---- the game, and what it says has happened ----
 
   const economy = new Economy();
   const save = economy.save;
-  const cave = buildCave();
-  const world = new World(BODY_CAPACITY, cave.solid(save.areas, save.secrets, save.walls));
-  const dozer = new Dozer(world.solid);
   const input = new Input();
   const sound = new Sound();
-  /** The last room: once the cave is cleared its vein runs and its floor cracks, so there is still something to push. */
-  const LAST = ORDER[ORDER.length - 1];
-  const fountains: Fountain[] = [];
-  if (save.done) fountains.push(new Fountain(AREAS[LAST]));
-  const vein = new VeinTrickle(AREAS[LAST].vein);
-  const nav = new Nav(world.solid);
-  const bots: Bot[] = [];
-  const traffic = { bots, player: dozer };
-  for (let i = 0; i < save.drones; i++) bots.push(new Bot(world.solid, i + 1, ...botHome(i)));
-  /** The belts that run: those bought, for rooms not sealed. */
-  const running = () => AREAS.map((_, a) => a).filter((a) => AREAS[a].belt && save.belts[a] && !economy.sealed(a));
-  const runBelts = () => {
-    world.belts = running().map((a) => beltOf(AREAS[a].belt!.spec));
-    nav.setBelts(world.belts);
+  /** What has happened, a line each, for the test API. */
+  const eventLog: string[] = [];
+  const log = (line: string) => {
+    eventLog.push(line);
+    if (eventLog.length > EVENTS_KEPT) eventLog.splice(0, eventLog.length - EVENTS_KEPT);
   };
-  runBelts();
-  /** Game time, in seconds. */
-  let t = 0;
+  /** Blasts still lighting the cave, fading. */
+  const blasts: { x: number; y: number; z: number; left: number }[] = [];
+  /** How hard the last blast shook the ground, fading. */
+  let blastShake = 0;
+  const events: GameEvents = {
+    banked(kind, value, x, y, heat) {
+      if (kind > 0) sound.thunk(value);
+      else sound.clink(game.tally.count);
+      const colour: Rgb = kind === 0 ? [1.6, 1.2, 0.4] : (kindColour(kind).map((c) => c * 2) as Rgb);
+      emit(fx.sparkle(x, y, colour, kind > 0, heat));
+    },
+    roomOpened(a) {
+      log(`roomOpened ${a}`);
+      sound.chime();
+      hud.note(`${the(a)} is open: ${AREAS[a].blurb} · go on in when you are done here`, 5);
+      gateCloud(a);
+    },
+    roomSealed(old, lost, where) {
+      log(`roomSealed ${old} ${lost}`);
+      sound.chime();
+      // a puff where each thing left in the room was
+      for (const [x, y, z] of where.slice(0, SEAL_PUFFS)) emit(fx.puff(x, y, z));
+      if (old !== ORDER[0]) gateCloud(old);
+      const gone = lost > 0 ? ` · ${lost} left behind` : '';
+      hud.note(
+        old === ORDER[0] ? `on into ${the(economy.current())}${gone}` : `${the(old)} is sealed behind you${gone}`,
+        4,
+      );
+    },
+    chamberOpened(k, faces, [c, s]) {
+      log(`chamberOpened ${k}`);
+      sound.chime();
+      for (const [x, y] of faces) emit(fx.rockBurst(x, y, c, s));
+      sound.smash();
+      hud.note('a hidden chamber', 3);
+    },
+    wallHit(w, x, y, gone, left, [c, s]) {
+      log(`wallHit ${w} ${gone.toFixed(2)}`);
+      const { grade } = WALLS[w];
+      sound.clunk();
+      if (gone > 0.5) sound.crack();
+      emit(fx.wallHit(x, y, c, s, gone, WALL_COLOUR[grade].slice(0, 3) as Rgb));
+      hud.note(
+        `${WALL_NAME[grade]} wall · ${Math.round(gone * 100)}% · ${left === 1 ? 'one more like that' : `about ${left} more like that`}`,
+        2.5,
+      );
+    },
+    wallDown(w, [c, s]) {
+      log(`wallDown ${w}`);
+      const { grade, treasure } = WALLS[w];
+      sound.chime();
+      const brick = WALL_COLOUR[grade].slice(0, 3) as Rgb;
+      emit(wallTiles(w).map(([x, y]) => fx.wallDust(x, y, c, s, brick)));
+      sound.smash();
+      const behind = stashBehind(w);
+      hud.note(
+        `${WALL_NAME[grade]} wall down${treasure.length ? ' · something glints in the rubble' : behind ? ` · ${behind.name}` : ''}`,
+        3,
+      );
+    },
+    knock() {
+      log('knock');
+      sound.knock();
+    },
+    lampBroken(k, lit, [c, s]) {
+      log(`lampBroken ${k}`);
+      const l = game.cave.lamps[k];
+      sound.shatter();
+      emit(fx.glass(l.x, l.y, l.height, c, s, lit));
+    },
+    fuseLit(i) {
+      log(`fuseLit ${i}`);
+      sound.fuse(0);
+      hud.note('the fuse is lit · get clear', 2);
+    },
+    blast(b) {
+      log(`blast ${b.x.toFixed(1)},${b.y.toFixed(1)} ${b.thrown}`);
+      emit(fx.explosion(b.x, b.y, b.z));
+      sound.boom();
+      blasts.push({ x: b.x, y: b.y, z: b.z, left: 1 });
+      const near = Math.max(0, 1 - Math.hypot(b.x - game.dozer.x, b.y - game.dozer.y) / 80);
+      blastShake = Math.max(blastShake, near);
+    },
+    crack: () => sound.crack(),
+    done() {
+      log('done');
+      sound.chime();
+      hud.note(`the cave is cleared · ${the(game.last)}'s vein runs on`, 6);
+    },
+    bought(id) {
+      log(`bought ${id}`);
+      sound.chime();
+      if (id === 'blade') scene.setBlade(economy.spec().bladeWidth);
+      else if (id.startsWith('paint:')) scene.setPaint(economy.paint());
+      else if (id === 'horn') pad?.showHorn(true);
+    },
+    staticChanged: () => buildStatic(),
+    machinesMoved() {
+      tracks.update(game.dozer, game.dozer);
+      for (const b of game.bots) tracks.update(b, b.dozer);
+    },
+  };
+  const game = new Game(economy, events);
+  const { cave, world, dozer, bots, stock, barrels, tally } = game;
+  addEventListener('pagehide', () => game.persist());
+  addEventListener('visibilitychange', () => {
+    if (document.hidden) game.persist();
+  });
+
+  /** The rock at a gate, coming down or going up. */
+  const gateCloud = (area: number) => emit(gateTiles(cave, area).map(([x, y]) => fx.gateCloud(x, y)));
 
   // ---- the scene ----
 
   const staticScene = new StaticScene(cave);
-  const buildStatic = () => renderer.setStatic(staticScene.groups({ ...save, belts: running() }));
+  const buildStatic = () => renderer.setStatic(staticScene.groups({ ...save, belts: game.running() }));
   buildStatic();
 
   // A mark a grouser apart, the width of a track, on the floor wherever there is floor: not over the
@@ -185,13 +258,13 @@ async function main() {
     width: 1.6,
     ground: (x, y) => {
       if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 0.6) return null;
-      const tile = nav.tileOf(x, y);
+      const tile = game.nav.tileOf(x, y);
       return tile < 0 || world.solid[tile] ? null : floorHeight(x, y);
     },
   });
   const scene = new DynamicScene(renderer, {
     bodyCapacity: BODY_CAPACITY,
-    kindCapacity: GEM_CAPACITY,
+    kindCapacity: KIND_CAPACITY,
     bots: MAX_DRONES,
     botScale: BOT_SCALE,
     botBladeWidth: BOT_SPEC.bladeWidth,
@@ -203,229 +276,6 @@ async function main() {
   const setCoinDetail = (level: number) => {
     coinDetail = Math.max(0, Math.min(COIN_LADDER.length - 1, level));
     scene.setCoinDetail(coinDetail);
-  };
-
-  // ---- what is in the cave ----
-
-  const stock = new Stock(world, GEM_CAPACITY, () => economy.current(), cave.barrels);
-  const barrels = new Barrels(world);
-  /** Blasts still lighting the cave, fading. */
-  const blasts: { x: number; y: number; z: number; left: number }[] = [];
-  /** The lit barrels in the bright half of a flash last frame, for a beep as each flash starts. */
-  const flashed = new Set<number>();
-  /** How hard the last blast shook the ground, fading. */
-  let blastShake = 0;
-  const saved = { ...save, left: save.left };
-  // the save keeps the live counts from here on, so it is never behind
-  save.left = stock.left;
-  stock.restore(saved, economy);
-  // a moment of settling before anyone sees it, so the heaps are heaps
-  for (let i = 0; i < 90; i++) world.step(1 / 60, () => {});
-  economy.persist();
-
-  const recordRubble = () => {
-    save.rubble = stock.rubble();
-    save.barrels = stock.barrelRecord();
-  };
-  let rubbleAt = 0;
-  addEventListener('pagehide', () => {
-    recordRubble();
-    economy.persist();
-  });
-  addEventListener('visibilitychange', () => {
-    if (!document.hidden) return;
-    recordRubble();
-    economy.persist();
-  });
-
-  // ---- the bank, and the run ----
-
-  const tally = new Tally();
-  function collect(kind: number, x: number, y: number, i: number) {
-    const value = stock.collect(kind, i);
-    // a brick or a barrel down the hole is only gone: nothing banked, and nothing to show for it
-    if (kind === BRICK_KIND || kind === BARREL_KIND) return;
-    economy.deposit(value);
-    const heat = tally.add(kind);
-    if (kind > 0) sound.thunk(value);
-    else sound.clink(tally.count);
-    const colour: Rgb = kind === 0 ? [1.6, 1.2, 0.4] : (kindColour(kind).map((c) => c * 2) as Rgb);
-    emit(fx.sparkle(x, y, colour, kind > 0, heat));
-  }
-
-  // ---- the cave changing ----
-
-  /** The rock where it stands now: gates, chambers and walls as they are. Everything that goes by the rock is told. */
-  function reshape() {
-    world.solid = cave.solid(save.areas, save.secrets, save.walls);
-    dozer.solid = world.solid;
-    for (const b of bots) {
-      b.dozer.solid = world.solid;
-      b.reset();
-    }
-    nav.rebuild(world.solid);
-    runBelts();
-    buildStatic();
-  }
-
-  /** The rock at a gate, coming down or going up. */
-  const gateCloud = (area: number) => emit(gateTiles(cave, area).map(([x, y]) => fx.gateCloud(x, y)));
-
-  /** A hidden chamber broken into: the stone in front of it bursts, and the chamber is floor, with its loot in it. */
-  function smashOpen(k: number) {
-    const [w0x, w0y, w1x, w1y] = SECRETS[k].wall;
-    const c = Math.cos(dozer.yaw),
-      s = Math.sin(dozer.yaw);
-    for (let i = 0; i < cave.cells.length; i++) {
-      if (cave.cells[i] !== SECRET + k) continue;
-      const tx = i % COLS,
-        ty = (i / COLS) | 0;
-      if (tx >= w0x && tx <= w1x && ty >= w0y && ty <= w1y) emit(fx.rockBurst(...tileCentre(tx, ty), c, s));
-    }
-    sound.smash();
-    stock.spawnHeap(chamberSource(k), lootHeap(k));
-    economy.persist();
-    reshape();
-    hud.note('a hidden chamber', 3);
-  }
-
-  /**
-   * A brick wall knocked down: every brick in it comes loose and tumbles, and dust hangs where the
-   * wall stood. The bricks stay where they land, and in the save, until they are pushed down the hole.
-   */
-  function knockOver(w: number) {
-    const { grade, treasure } = WALLS[w];
-    for (const piece of looseBricks(w, dozer, KIND_RADIUS[BRICK_KIND])) {
-      const { x, y, z, vx, vy, vz } = piece;
-      if (piece.treasure !== undefined) {
-        stock.spawn(piece.treasure, x, y, z, vx, vy, vz, wallSource(w));
-        continue;
-      }
-      const i = stock.spawnBrick(grade, x, y, z, vx, vy, vz);
-      if (i >= 0) [world.wx[i], world.wy[i], world.wz[i]] = piece.spin;
-    }
-    const brick = WALL_COLOUR[grade].slice(0, 3) as Rgb;
-    const c = Math.cos(dozer.yaw),
-      s = Math.sin(dozer.yaw);
-    emit(wallTiles(w).map(([x, y]) => fx.wallDust(x, y, c, s, brick)));
-    sound.smash();
-    recordRubble();
-    economy.persist();
-    reshape();
-    const behind = stashBehind(w);
-    hud.note(
-      `${WALL_NAME[grade]} wall down${treasure.length ? ' · something glints in the rubble' : behind ? ` · ${behind.name}` : ''}`,
-      3,
-    );
-  }
-
-  /** Knock over any lamp the player's machine is into: its hull, or its blade. */
-  function knockLamps() {
-    const hits = lampsHit(cave.lamps, save.lampsBroken, dozer.x, dozer.y, dozer.yaw, BLADE_AT);
-    for (const k of hits) {
-      const l = cave.lamps[k];
-      const lit = lampOn(cave.lamps, k, save);
-      economy.breakLamp(k);
-      sound.shatter();
-      emit(fx.glass(l.x, l.y, l.height, Math.cos(dozer.yaw), Math.sin(dozer.yaw), lit));
-    }
-    if (hits.length) buildStatic();
-  }
-
-  economy.onChange((id) => {
-    sound.chime();
-    if (id.startsWith('area')) {
-      const a = +id.slice(4);
-      hud.note(`${the(a)} is open: ${AREAS[a].blurb} · go on in when you are done here`, 5);
-      stock.openRoom(a);
-      // the heaps are in the save now, or a reload before the next coin would find the room empty
-      economy.persist();
-      reshape();
-      gateCloud(a);
-    } else if (id.startsWith('sealed')) {
-      const old = +id.slice(6);
-      // what is left of the room behind goes, and what is left in any chamber, side room or wall off
-      // it: bars not got out before going on are lost with the room. A puff where each was.
-      const lost = stock.lying(old);
-      let puffs = 0;
-      stock.seal(old, (x, y, z) => {
-        if (puffs++ < SEAL_PUFFS) emit(fx.puff(x, y, z));
-      });
-      // no machine is shut in with the rock, or in it
-      bots.forEach((b, j) => {
-        if (!behindGate(old, b.x, b.y)) return;
-        [b.dozer.x, b.dozer.y] = botHome(j);
-        b.dozer.speed = 0;
-      });
-      economy.persist();
-      reshape();
-      if (old !== ORDER[0]) gateCloud(old);
-      const gone = lost > 0 ? ` · ${lost} left behind` : '';
-      hud.note(
-        old === ORDER[0] ? `on into ${the(economy.current())}${gone}` : `${the(old)} is sealed behind you${gone}`,
-        4,
-      );
-    } else if (id.startsWith('secret')) {
-      smashOpen(+id.slice(6));
-    } else if (id.startsWith('wall')) {
-      knockOver(+id.slice(4));
-    } else if (id === 'done') {
-      hud.note(`the cave is cleared · ${the(LAST)}'s vein runs on`, 6);
-      fountains.push(new Fountain(AREAS[LAST]));
-    } else if (id.startsWith('belt')) {
-      runBelts();
-      buildStatic();
-    } else if (id === 'drone') {
-      bots.push(new Bot(world.solid, bots.length + 1, ...botHome(0)));
-    } else if (id === 'blade') {
-      scene.setBlade(economy.spec().bladeWidth);
-    } else if (id.startsWith('paint:')) {
-      scene.setPaint(economy.paint());
-    }
-    world.wakeAll();
-  });
-
-  // ---- the rock that breaks, and the walls ----
-
-  const impacts = new Impacts(cave.cells);
-  const impactState = {
-    get wallsDown() {
-      return save.walls;
-    },
-    get secretsOpen() {
-      return save.secrets;
-    },
-    ram: (speed: number) => economy.ram(speed),
-  };
-  dozer.onRock = (tx, ty, square) => {
-    const hit = impacts.hit(tx, ty, square, dozer.speed, t, impactState);
-    if (!hit) return;
-    if (hit.type === 'reveal') economy.reveal(hit.chamber);
-    else if (hit.type === 'knock') sound.knock();
-    else {
-      const wall = WALLS[hit.wall];
-      const gone = economy.hitWall(hit.wall, hit.damage);
-      // one that comes down says so itself, through the economy's change
-      if (gone >= 1) return;
-      sound.clunk();
-      if (gone > 0.5) sound.crack();
-      emit(
-        fx.wallHit(
-          hit.x,
-          hit.y,
-          Math.cos(dozer.yaw),
-          Math.sin(dozer.yaw),
-          gone,
-          WALL_COLOUR[wall.grade].slice(0, 3) as Rgb,
-        ),
-      );
-      const more = Math.ceil((WALL_STRENGTH[wall.grade] - save.wallDamage[hit.wall]) / hit.damage);
-      hud.note(
-        `${WALL_NAME[wall.grade]} wall · ${Math.round(gone * 100)}% · ${more === 1 ? 'one more like that' : `about ${more} more like that`}`,
-        2.5,
-      );
-      buildStatic();
-    }
   };
 
   // ---- the camera ----
@@ -497,11 +347,9 @@ async function main() {
 
   const lights = new SceneLights(LIGHT_CAPACITY, EFFECT_CAPACITY);
   const lampColours = cave.lamps.map((l) => lampColour(l.x, l.y));
-  /** The player is at the next room's gate, and going further seals the one being cleared. */
-  let warning = false;
   function lightUp() {
     lights.build({
-      t,
+      t: game.t,
       view: cam,
       dozer,
       bots,
@@ -510,9 +358,9 @@ async function main() {
       lampColour: (k) => lampColours[k],
       features: staticScene.features,
       featureOn: (k) => save.areas[staticScene.features[k].area],
-      fountains: fountains.map((f) => ({ x: f.x, y: f.y, glow: f.glow, warning: f.state === 'warn' })),
-      vein: save.done ? AREAS[LAST].vein : null,
-      sealing: warning ? sealPoint(cave, economy.next()!) : null,
+      fountains: game.fountains.map((f) => ({ x: f.x, y: f.y, glow: f.glow, warning: f.state === 'warn' })),
+      vein: save.done ? AREAS[game.last].vein : null,
+      sealing: game.warning ? sealPoint(cave, economy.next()!) : null,
       magnet: world.magnet,
       fuses: barrels.lit.map((i) => ({ x: world.x[i], y: world.y[i], z: world.z[i], flash: barrels.flashing(i) })),
       blasts,
@@ -528,11 +376,11 @@ async function main() {
       brickGrade: stock.brickGrade,
       dozer,
       bots,
-      belts: running(),
+      belts: game.running(),
       flag: save.flag,
       tracks,
       barrel: (i) => (barrels.flashing(i) ? 'flash' : barrels.fuseLeft(i) !== null ? 'lit' : 'idle'),
-      t,
+      t: game.t,
     });
     tracks.clean();
   }
@@ -574,13 +422,12 @@ async function main() {
       : '(chosen by ?coins=)',
   );
 
-  // ---- go ----
+  // ---- the page round the cave ----
 
   hud.booted();
   hud.onReset(() => economy.reset());
-  const cycleCamera = () => hud.note(`camera: ${rig.cycle()}`);
-  /** A phone's mute button saying which way the sound is, when there is one. */
-  let showMute: ((muted: boolean) => void) | null = null;
+  /** A phone's buttons, when there are any. */
+  let pad: ReturnType<typeof setupPad> | null = null;
   if (touch) {
     const controls = new TouchControls(
       document.getElementById('trackLeft')!,
@@ -588,7 +435,7 @@ async function main() {
       document.getElementById('steer')!,
     );
     input.touch = controls;
-    const pad = setupPad(
+    pad = setupPad(
       {
         shop: () => input.toggleShop(),
         camera: () => input.pressCamera(),
@@ -604,51 +451,6 @@ async function main() {
       controls.scheme,
     );
     pad.showHorn(save.horn);
-    economy.onChange((id) => {
-      if (id === 'horn') pad.showHorn(true);
-    });
-    showMute = pad.showMute;
-  }
-  Object.assign(globalThis as Record<string, unknown>, {
-    world,
-    dozer,
-    economy,
-    cave,
-    lampsLit: lights.lampsLit,
-    renderer,
-    orbit,
-    bots,
-    fountains,
-    sound,
-    setCoinDetail,
-    calibration,
-    measureFrame,
-    trackMarks: tracks,
-    barrels,
-  });
-
-  // what the robo-dozers go for: the room being cleared, and any chamber broken into off it
-  const foreman = new Foreman(
-    world,
-    nav,
-    bots,
-    stock.origin,
-    (from) => from !== NO_SOURCE && areaOfSource(from) === economy.current(),
-  );
-  const choose = (bot: Bot) => foreman.choose(bot, t);
-
-  /** The horn: everything near enough hops, which is what a horn is for. */
-  function hop() {
-    const { x, y, z, vz, alive, asleep } = world;
-    for (let i = 0; i < world.count; i++) {
-      if (!alive[i]) continue;
-      const d = Math.hypot(x[i] - dozer.x, y[i] - dozer.y);
-      if (d > 14 || z[i] > 3) continue;
-      if (asleep[i]) world.wake(i);
-      vz[i] += 5 * (1 - d / 14) + Math.random() * 2;
-      world.wx[i] += (Math.random() - 0.5) * 6;
-      world.wy[i] += (Math.random() - 0.5) * 6;
-    }
   }
 
   /**
@@ -674,27 +476,17 @@ async function main() {
     }
   }
 
-  /**
-   * The fuses burning: a beep and a spit of sparks as each flash starts, faster as each burns down;
-   * and the barrels that have burned down going off, with a flash, a bang and a shake.
-   */
-  function fuseAndBlast(dt: number) {
+  /** The lit barrels in the bright half of a flash last frame, for a beep and a spit of sparks as each flash starts. */
+  const flashed = new Set<number>();
+  function fuses(dt: number) {
     for (const i of barrels.lit) {
       const flash = barrels.flashing(i);
       if (flash && !flashed.has(i)) {
-        const left = barrels.fuseLeft(i) ?? 0;
-        sound.fuse(1 - Math.max(0, Math.min(1, left / FUSE)));
+        sound.fuse(1 - Math.max(0, Math.min(1, (barrels.fuseLeft(i) ?? 0) / FUSE)));
         renderer.emit(fx.fuseSparks(world.x[i], world.y[i], world.z[i]));
       }
       if (flash) flashed.add(i);
       else flashed.delete(i);
-    }
-    for (const blast of barrels.update(dt, (i) => stock.removeBarrel(i))) {
-      emit(fx.explosion(blast.x, blast.y, blast.z));
-      sound.boom();
-      blasts.push({ x: blast.x, y: blast.y, z: blast.z, left: 1 });
-      const near = Math.max(0, 1 - Math.hypot(blast.x - dozer.x, blast.y - dozer.y) / 80);
-      blastShake = Math.max(blastShake, near);
     }
     for (const i of [...flashed]) if (barrels.fuseLeft(i) === null) flashed.delete(i);
     for (let k = blasts.length - 1; k >= 0; k--) if ((blasts[k].left -= dt * 1.2) <= 0) blasts.splice(k, 1);
@@ -706,93 +498,37 @@ async function main() {
     renderShop(hud.shopRows, economy);
     renderShop(hud.shopCosmetics, economy, economy.cosmetics());
   };
-  const pushers: Pusher[] = [];
-  const botPushers: Pusher[] = [];
-  let last = performance.now();
   let smoothed = 16.7;
   let statsIn = 0,
     shopIn = 0,
     aimAt = 0;
-  let lastBank = -1;
+  let lastBank = -1,
+    lastRoom = -1;
   let gate: { x: number; y: number; label: string } | null = null;
+  let frames = 0;
 
-  const frame = (now: number) => {
-    requestAnimationFrame(frame);
-    const dt = Math.min((now - last) / 1000, 1 / 20);
-    last = now;
-    t += dt;
-
+  /** A frame of the game, and of everything round it but the picture. */
+  function simulate(dt: number) {
+    frames++;
     // the keys
     if (input.takeShop()) {
       shopOpen = !shopOpen;
       hud.shop(shopOpen);
       if (shopOpen) renderShops();
     }
-    if (input.takeHorn() && save.horn) {
-      sound.horn();
-      hop();
-    }
+    const horn = input.takeHorn() && save.horn;
+    if (horn) sound.horn();
     if (input.takeRecentre()) rig.recentre();
-    if (input.takeCamera()) cycleCamera();
-    if (input.takeMute()) showMute?.(sound.toggleMute());
+    if (input.takeCamera()) hud.note(`camera: ${rig.cycle()}`);
+    if (input.takeMute()) pad?.showMute(sound.toggleMute());
 
-    // the machines
-    const spec = economy.spec();
     const drive = input.read();
-    dozer.update(dt, drive, spec, world.load);
-    tracks.update(dozer, dozer);
-    knockLamps();
-    for (const b of bots) {
-      b.update(dt, world, world.loads[b.dozer.owner] ?? 0, nav, choose, traffic);
-      tracks.update(b, b.dozer);
-    }
-    // no machine drives through another: every pair, twice, so a push out of one
-    // that shoves into a third is settled in the same frame
-    const machines = [dozer, ...bots.map((b) => b.dozer)];
-    for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i < machines.length; i++)
-        for (let j = i + 1; j < machines.length; j++) separate(machines[i], machines[j]);
-    }
-    dozer.pushers(spec, pushers);
-    for (const b of bots) {
-      b.dozer.pushers(BOT_SPEC, botPushers);
-      pushers.push(...botPushers);
-      if (Math.abs(b.dozer.speed) > 0.5)
-        world.wakeNear(
-          b.x + Math.cos(b.yaw) * BLADE_AT * BOT_SCALE,
-          b.y + Math.sin(b.yaw) * BLADE_AT * BOT_SCALE,
-          BOT_SPEC.bladeWidth * BOT_SCALE * 0.75 + 1.5,
-        );
-    }
-    world.pushers = pushers;
-    // the player's machine on the move into a barrel lights its fuse; a drone's does not
-    if (Math.abs(dozer.speed) > 0.3 || Math.abs(dozer.yawRate) > 0.3) {
-      if (barrels.hitBy(pushers, dozer.owner).length) {
-        sound.fuse(0);
-        hud.note('the fuse is lit · get clear', 2);
-      }
-    }
-    // the heap ahead of the blade wakes before the blade arrives
-    const c = Math.cos(dozer.yaw),
-      s = Math.sin(dozer.yaw);
-    if (Math.abs(dozer.speed) > 0.5 || Math.abs(dozer.yawRate) > 0.2)
-      world.wakeNear(dozer.x + c * BLADE_AT, dozer.y + s * BLADE_AT, spec.bladeWidth * 0.75 + 1.5);
-    // the magnet sits a little ahead of the blade's face, and reaches out from there
-    const mx = dozer.x + c * (BLADE_AT + 1.2),
-      my = dozer.y + s * (BLADE_AT + 1.2);
-    world.magnet = { x: mx, y: my, radius: spec.magnetRadius, strength: spec.magnetStrength };
-    world.wakeNear(mx, my, spec.magnetRadius);
+    game.step(dt, drive, { horn });
 
-    // the vein and the cracking floors, once the cave is done
-    if (save.done && world.live <= BODY_CAPACITY - 60)
-      vein.update(dt, (kind, x, y, z, vx, vy, vz) => stock.spawn(kind, x, y, z, vx, vy, vz, LAST));
+    // what goes with it: the fuses beeping, the cracking floors' dust, the air, the rumble and the engine
+    fuses(dt);
     let shaking = 0;
-    for (const f of fountains) {
-      f.update(
-        dt,
-        (kind, x, y, z, vx, vy, vz) => stock.spawn(kind, x, y, z, vx, vy, vz),
-        () => sound.crack(),
-      );
+    for (const f of game.fountains) {
       if (f.state === 'idle') continue;
       const near = Math.max(0, 1 - Math.hypot(f.x - rig.follow[0], f.y - rig.follow[1]) / 90);
       shaking = Math.max(shaking, f.glow * near * (f.state === 'spray' ? 1 : 0.5));
@@ -802,66 +538,32 @@ async function main() {
     biomeAir();
     sound.drive(drive.throttle, dozer.speed, world.load);
 
-    // the coins
-    world.step(dt, collect);
-    tally.fade(dt);
-    fuseAndBlast(dt);
-
-    // the camera, and the picture
-    rig.update(dt, performance.now() / 1000, dozer);
-    hud.tick(dt);
-    const reach = orbit.distance * 1.1 + 20;
-    renderer.setSunShadow({
-      min: [rig.follow[0] - reach, rig.follow[1] - reach, -16],
-      max: [rig.follow[0] + reach, rig.follow[1] + reach, 14],
-    });
-    lightUp();
-    upload();
-    renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
-
-    // the counters, and getting on through the cave
+    // the counters
     if (tally.tick(dt)) {
       // the run is over: the tally fades, and the next coin starts a new one
       hud.run(tally.summary());
       tally.reset();
     }
-    const room = economy.current();
-    if (economy.bank !== lastBank) {
+    if (economy.bank !== lastBank || economy.current() !== lastRoom) {
+      if (economy.bank !== lastBank) hud.run(tally.summary());
       lastBank = economy.bank;
+      lastRoom = economy.current();
       hud.bank(economy.bank);
-      hud.run(tally.summary());
-      if (readyToOpen(economy, stock.banked(room))) economy.open();
       hud.progress(progressText(economy, stock.banked(economy.current())));
     }
-    // through the next room's gate and on among its heaps: the room behind is sealed. Up to the
-    // gate and in the corridor, a word first, and the line that seals it glows red, so it is not a surprise.
-    warning = false;
-    const where = atNextGate(economy, dozer.x, dozer.y);
-    if (where === 'through') {
-      economy.moveOn();
-      hud.progress(progressText(economy, stock.banked(economy.current())));
-    } else if (where === 'at') {
-      warning = true;
-      const still = stock.lying(room);
+    if (game.warning) {
+      const room = economy.current(),
+        still = stock.lying(room);
       hud.note(`further in seals ${the(room)}${still > 0 ? ` · ${still} still in it` : ''}`, 0.4);
     }
     // the arrow to the next room's gate, while it is open
-    if (t >= aimAt) {
-      aimAt = t + 0.4;
+    if (game.t >= aimAt) {
+      aimAt = game.t + 0.4;
       const next = economy.next();
-      gate =
-        !save.done && next !== null && economy.nextOpen()
-          ? { ...xy(gateCentre(cave, next)), label: AREAS[next].name }
-          : null;
+      const at = next !== null && !save.done && economy.nextOpen() ? gateCentre(cave, next) : null;
+      gate = at && next !== null ? { x: at[0], y: at[1], label: AREAS[next].name } : null;
     }
-    hud.showPointer(
-      gate && placePointer(cam.viewProjection, gate, dozer, innerWidth, innerHeight, touch, t),
-      gate?.label ?? '',
-    );
-    if (t >= rubbleAt) {
-      rubbleAt = t + 1;
-      recordRubble();
-    }
+    hud.tick(dt);
     smoothed += (dt * 1000 - smoothed) * 0.08;
     if ((statsIn -= dt) <= 0) {
       statsIn = 0.25;
@@ -871,10 +573,70 @@ async function main() {
       shopIn = 0.3;
       renderShops();
     }
-  };
-  requestAnimationFrame(frame);
-}
+  }
 
-function xy([x, y]: [number, number]) {
-  return { x, y };
+  /** The picture of the frame: the camera after the dozer, the lights, everything where it is, drawn. */
+  function draw(dt: number) {
+    rig.update(dt, performance.now() / 1000, dozer);
+    const reach = orbit.distance * 1.1 + 20;
+    renderer.setSunShadow({
+      min: [rig.follow[0] - reach, rig.follow[1] - reach, -16],
+      max: [rig.follow[0] + reach, rig.follow[1] + reach, 14],
+    });
+    lightUp();
+    upload();
+    renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
+    hud.showPointer(
+      gate && placePointer(cam.viewProjection, gate, dozer, innerWidth, innerHeight, touch, game.t),
+      gate?.label ?? '',
+    );
+  }
+
+  // ---- the test API, and the frame loop ----
+
+  let paused = false;
+  let ready = false;
+  window.pushminer = createApi({
+    game,
+    cave,
+    ready: () => ready,
+    paused: () => paused,
+    setPaused: (p) => {
+      paused = p;
+    },
+    simulate,
+    draw,
+    frame: () => frames,
+    setDrive: (d) => {
+      input.override = d;
+    },
+    look(x, y, view) {
+      orbit.setSpherical(view);
+      cam.target = [x, y, 1.5];
+      rig.follow[0] = x;
+      rig.follow[1] = y;
+      for (let i = 0; i < 400; i++) orbit.update();
+    },
+    measureFrame,
+    calibration: () => calibration,
+    setCoinDetail,
+    lampsLit: () => lights.lampsLit,
+    trackMarks: () => tracks.size,
+    events: eventLog,
+  });
+
+  let last = performance.now();
+  const frame = (now: number) => {
+    requestAnimationFrame(frame);
+    const dt = Math.min((now - last) / 1000, 1 / 20);
+    last = now;
+    if (paused) {
+      draw(0);
+      return;
+    }
+    simulate(dt);
+    draw(dt);
+  };
+  ready = true;
+  requestAnimationFrame(frame);
 }

@@ -150,13 +150,61 @@ export interface Offer {
   active?: boolean;
 }
 
+/** Where the save is kept: the browser's storage, or, for the game run without a page, anywhere. */
+export interface SaveStore {
+  load(): string | null;
+  store(json: string): void;
+  clear(): void;
+}
+
+/** The browser's storage, and nothing at all where there is none, or it will not be written. */
+export const browserStore: SaveStore = {
+  load() {
+    try {
+      return localStorage.getItem(KEY);
+    } catch {
+      return null;
+    }
+  },
+  store(json) {
+    try {
+      localStorage.setItem(KEY, json);
+    } catch {
+      /* fine */
+    }
+  },
+  clear() {
+    try {
+      localStorage.removeItem(KEY);
+    } catch {
+      /* nothing to remove */
+    }
+  },
+};
+
+/** A save kept in memory, starting from `json` if given: for the game run without a page. */
+export function memoryStore(json: string | null = null): SaveStore & { json: string | null } {
+  return {
+    json,
+    load() {
+      return this.json;
+    },
+    store(next) {
+      this.json = next;
+    },
+    clear() {
+      this.json = null;
+    },
+  };
+}
+
 export class Economy {
   save: Save;
   private listeners: ((id: string) => void)[] = [];
   /** Set by `reset`: nothing is saved again, so a coin banked while the page reloads cannot resurrect the old save. */
   private wiped = false;
 
-  constructor() {
+  constructor(private readonly saves: SaveStore = browserStore) {
     this.save = {
       bank: 0,
       banked: 0,
@@ -181,7 +229,7 @@ export class Economy {
       done: false,
     };
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = saves.load();
       if (raw) {
         const s = JSON.parse(raw) as Omit<Partial<Save>, 'left'> & { left?: number[] | number[][] };
         this.save = {
@@ -461,21 +509,13 @@ export class Economy {
 
   reset() {
     this.wiped = true;
-    try {
-      localStorage.removeItem(KEY);
-    } catch {
-      /* nothing to remove */
-    }
+    this.saves.clear();
     location.reload();
   }
 
   persist() {
     if (this.wiped) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(this.save));
-    } catch {
-      /* fine */
-    }
+    this.saves.store(JSON.stringify(this.save));
   }
 }
 

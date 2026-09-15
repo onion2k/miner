@@ -138,7 +138,15 @@ export class Stock {
 
   /** A heap from a source, with `share[kind]` of each kind in it: all of them for one just opened. */
   spawnHeap(from: number, h: Heap, share: readonly number[] = new Array<number>(KINDS).fill(1)) {
-    const coins = Math.round(h.coins * share[0]);
+    const counts = new Array<number>(KINDS).fill(0);
+    counts[0] = Math.round(h.coins * share[0]);
+    for (const [kind, n] of h.gems) counts[kind] += Math.round(n * share[kind]);
+    this.spawnCounted(from, h, counts);
+  }
+
+  /** A heap from a source with `counts[kind]` of each kind in it, the coins spread as the heap's own coins would be. */
+  private spawnCounted(from: number, h: Heap, counts: readonly number[]) {
+    const coins = counts[0];
     const R = Math.sqrt(coins) * 0.36 + 1.5,
       H = Math.sqrt(coins) * 0.3 + 1.5;
     const drop = (kind: number) => {
@@ -148,7 +156,7 @@ export class Stock {
       this.spawn(kind, h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr, z, 0, 0, 0, from);
     };
     for (let k = 0; k < coins; k++) drop(0);
-    for (const [kind, n] of h.gems) for (let k = 0, m = Math.round(n * share[kind]); k < m; k++) drop(kind);
+    for (let kind = 1; kind < KINDS; kind++) for (let k = 0; k < counts[kind]; k++) drop(kind);
   }
 
   /**
@@ -179,8 +187,26 @@ export class Stock {
     for (const a of inPlay) {
       const had = hadOf(a);
       if (!had && saved.done) continue;
-      const share = shareOf(had, this.stocks[a].kinds);
-      AREAS[a].heaps.forEach((h) => this.spawnHeap(a, h, share));
+      // exactly what was left of each kind, shared out over the room's heaps as they started: a share
+      // rounded heap by heap would come back with a few more or fewer than went
+      const heaps = AREAS[a].heaps;
+      const counts = heaps.map(() => new Array<number>(KINDS).fill(0));
+      for (let kind = 0; kind < KINDS; kind++) {
+        const per = heaps.map((h) =>
+          kind === 0 ? h.coins : h.gems.reduce((n, [k, m]) => n + (k === kind ? m : 0), 0),
+        );
+        const total = per.reduce((x, y) => x + y, 0);
+        if (!total) continue;
+        const want = had ? Math.min(had[kind], total) : total;
+        const exact = per.map((n) => (n * want) / total);
+        exact.forEach((e, j) => (counts[j][kind] = Math.floor(e)));
+        let over = want - counts.reduce((n, c) => n + c[kind], 0);
+        for (const j of exact.map((_, j) => j).sort((p, q) => (exact[q] % 1) - (exact[p] % 1))) {
+          if (over-- <= 0) break;
+          counts[j][kind]++;
+        }
+      }
+      heaps.forEach((h, j) => this.spawnCounted(a, h, counts[j]));
     }
     SECRETS.forEach((secret, k) => {
       if (saved.secrets[k] && !progress.sealed(secret.area)) spawnSaved(chamberSource(k), lootHeap(k));
@@ -232,18 +258,18 @@ export class Stock {
    * off it, taken out of the world wherever it has got to. Each is told to
    * `gone` as it goes, before it is removed.
    */
-  seal(area: number, gone: (x: number, y: number, z: number) => void = () => {}) {
+  seal(area: number, gone: (x: number, y: number, z: number, slot: number) => void = () => {}) {
     const { world } = this;
     for (let i = 0; i < world.count; i++) {
       if (!world.alive[i]) continue;
       if (world.kind[i] === BARREL_KIND) {
         if (this.home[i] !== area) continue;
-        gone(world.x[i], world.y[i], world.z[i]);
+        gone(world.x[i], world.y[i], world.z[i], i);
         this.removeBarrel(i);
         continue;
       }
       if (this.origin[i] === NO_SOURCE || areaOfSource(this.origin[i]) !== area) continue;
-      gone(world.x[i], world.y[i], world.z[i]);
+      gone(world.x[i], world.y[i], world.z[i], i);
       this.kinds[world.kind[i]]--;
       this.left[this.origin[i]][world.kind[i]]--;
       world.remove(i);

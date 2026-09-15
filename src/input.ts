@@ -13,6 +13,8 @@ export class Input {
   private camera = false;
   /** The phone's sliders, when there are any: read when no drive key is down. */
   touch: { drive(): Drive } | null = null;
+  /** Driving held by something other than a person, a test say: read before anything else while it is set. */
+  override: Drive | null = null;
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -35,6 +37,7 @@ export class Input {
   }
 
   read(): Drive {
+    if (this.override) return this.override;
     const throttle = (this.is('w', 'arrowup') ? 1 : 0) - (this.is('s', 'arrowdown') ? 1 : 0);
     const steer = (this.is('a', 'arrowleft') ? 1 : 0) - (this.is('d', 'arrowright') ? 1 : 0);
     if (throttle || steer || !this.touch) return { throttle, steer };

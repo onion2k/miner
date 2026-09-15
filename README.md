@@ -101,6 +101,8 @@ and how much the drones got in each other's way — see the top of
     npm run format         # Prettier over the lot
     npm run sim:check      # the drones held to their baseline
     npm run sim:check -- --update
+    npm run fuzz           # the game played at random, the rules that must hold checked
+    npm run fuzz -- --seed 17
     npm run bench          # the physics' time a frame held to its baseline
     npm run bench -- --update
     npm run smoke          # the game in a real browser (once: npx playwright install chromium)
@@ -122,6 +124,23 @@ A run is the same from the same seed, so any change to the physics, cave or
 drones moves the figures; when a change makes them better, `--update` holds
 the next change to the better figures.
 
+The fuzzer (`scripts/fuzzer.ts`) plays the real game without the picture, at
+random, from a seed: driving about and charging walls, chambers, lamps and
+barrels, pushing anything at all down the hole, setting barrels off, buying
+things, opening rooms and going on into them, saving and loading. After every
+few frames it checks the rules in `src/invariants.ts` — nothing in the rock,
+nothing not a number, the counts of what is in the cave agreeing with what is
+in it, nothing left of a sealed room, a save that comes back as it went — and
+fails with the seed, the frame and what was done before it, to be played again
+with `--seed`. It only does what a player can: a monkey that did what no player
+can would find bugs no player will.
+
+The game has a test API, `window.pushminer` (`src/debug.ts`), that the smoke
+tests drive it through: pause it, step it a frame at a time, seed its chance,
+set a scene, and read back its state, what has happened, and whether any rule
+is broken. `CLAUDE.md` has the definition of done a change is held to, and
+`/feature` is a Claude Code skill that takes a feature from a prompt to done.
+
 The physics bench times three scenarios over the whole cave with every room's
 heaps in it: at rest, blades and belts churning the heaps, and a heap of four
 thousand coins falling at once. Each runs several times in a worker of its own
@@ -141,7 +160,10 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
 
 ## How it is put together
 
-    src/main.ts           boot, and everything made and wired together; the frame loop
+    src/main.ts           the page: renderer, sound, controls, camera and counters round the game; the frame loop
+    src/game.ts           the game without the picture: a step of everything that happens, told as events
+    src/debug.ts          window.pushminer, the test API
+    src/invariants.ts     the rules that must always hold, whatever has been played
     src/cave.ts           the tile grid: rooms and the order they open in, gates, heaps, veins, belt routes, lamps
     src/economy.ts        the bank, the upgrades, which room is being cleared, the save, the shop
     src/stock.ts          what is in the cave, from where: put back from the save, spawned, banked, sealed away
@@ -175,6 +197,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/touch.ts          a phone's sliders
     scripts/sim.ts        the drones without the picture, for measuring them
     scripts/sim-check.ts  the drones held to a baseline
+    scripts/fuzzer.ts     the game played at random, its rules checked; fuzz.ts runs it over seeds
     scripts/physics-bench.ts  the physics' time a frame, held to a baseline
     test/                 unit tests, run by Vitest
     smoke/                the game in a real browser, run by Playwright

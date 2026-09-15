@@ -63,6 +63,19 @@ describe('the stock', () => {
     });
   });
 
+  it('puts back exactly what was left of a room, however it is shared over the heaps', () => {
+    for (const room of ORDER.slice(1)) {
+      withSeed(room, () => {
+        const left: number[][] = Array.from({ length: SOURCES }, () => new Array<number>(KINDS).fill(0));
+        // odd numbers of each, that no share of the heaps comes to evenly
+        left[room] = roomStock(room).kinds.map((n, k) => Math.max(0, Math.floor(n * 0.37) - (k % 2)));
+        const stock = new Stock(fresh(), CAPACITY, () => room);
+        stock.restore(nothingSaved({ left }), { ...at(ORDER.indexOf(room)), sealed: () => false });
+        expect(stock.left[room], AREAS[room].name).toEqual(left[room]);
+      });
+    }
+  });
+
   it('reads a save from before the gold bars, a kind short', () => {
     withSeed(3, () => {
       const room = ORDER[1];
