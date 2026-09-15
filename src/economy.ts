@@ -74,7 +74,13 @@ export function roomStock(area: number): { value: number; kinds: number[] } {
   return { value: kinds.reduce((sum, n, k) => sum + n * KIND_VALUE[k], 0), kinds };
 }
 
-export interface Paint { id: string; name: string; colour: [number, number, number]; roughness: number; cost: number }
+export interface Paint {
+  id: string;
+  name: string;
+  colour: [number, number, number];
+  roughness: number;
+  cost: number;
+}
 export const PAINTS: Paint[] = [
   { id: 'yellow', name: 'Works Yellow', colour: [0.96, 0.7, 0.12], roughness: 0.45, cost: 0 },
   { id: 'red', name: 'Fire Engine', colour: [0.85, 0.12, 0.1], roughness: 0.4, cost: 150 },
@@ -107,9 +113,13 @@ const ENGINE: { maxSpeed: number; accel: number; turnRate: number; ram: number; 
 export const WALL_NAME = ['', 'clay brick', 'stone', 'iron-bound'];
 export const WALL_STRENGTH = [0, 40, 110, 260];
 /** A hit counts from this speed, and at this one and above is a full one. */
-const RAM_FROM = 3, RAM_FULL = 11;
+const RAM_FROM = 3,
+  RAM_FULL = 11;
 const BLADE: { width: number; cost: number }[] = [
-  { width: 6.5, cost: 0 }, { width: 8, cost: 80 }, { width: 10, cost: 300 }, { width: 12.5, cost: 800 },
+  { width: 6.5, cost: 0 },
+  { width: 8, cost: 80 },
+  { width: 10, cost: 300 },
+  { width: 12.5, cost: 800 },
 ];
 const MAGNET: { radius: number; strength: number; cost: number }[] = [
   { radius: 4, strength: 5, cost: 0 },
@@ -141,12 +151,42 @@ export class Economy {
   private wiped = false;
 
   constructor() {
-    this.save = { bank: 0, banked: 0, engine: 0, blade: 0, areas: AREAS.map((_, a) => a === 0), belts: AREAS.map(() => false), drones: 0, magnet: 0, paint: 'yellow', paints: ['yellow'], horn: false, flag: false, room: ORDER[0], left: Array.from({ length: SOURCES }, () => []), secrets: SECRETS.map(() => false), walls: WALLS.map(() => false), wallDamage: WALLS.map(() => 0), rubble: [], lampsBroken: [], done: false };
+    this.save = {
+      bank: 0,
+      banked: 0,
+      engine: 0,
+      blade: 0,
+      areas: AREAS.map((_, a) => a === 0),
+      belts: AREAS.map(() => false),
+      drones: 0,
+      magnet: 0,
+      paint: 'yellow',
+      paints: ['yellow'],
+      horn: false,
+      flag: false,
+      room: ORDER[0],
+      left: Array.from({ length: SOURCES }, () => []),
+      secrets: SECRETS.map(() => false),
+      walls: WALLS.map(() => false),
+      wallDamage: WALLS.map(() => 0),
+      rubble: [],
+      lampsBroken: [],
+      done: false,
+    };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const s = JSON.parse(raw) as Omit<Partial<Save>, 'left'> & { left?: number[] | number[][] };
-        this.save = { ...this.save, ...s, areas: [true, ...(s.areas ?? []).slice(1)], belts: s.belts ?? this.save.belts, left: this.save.left, secrets: SECRETS.map((_, k) => s.secrets?.[k] ?? false), walls: WALLS.map((_, w) => s.walls?.[w] ?? false), wallDamage: WALLS.map((_, w) => s.wallDamage?.[w] ?? 0) };
+        this.save = {
+          ...this.save,
+          ...s,
+          areas: [true, ...(s.areas ?? []).slice(1)],
+          belts: s.belts ?? this.save.belts,
+          left: this.save.left,
+          secrets: SECRETS.map((_, k) => s.secrets?.[k] ?? false),
+          walls: WALLS.map((_, w) => s.walls?.[w] ?? false),
+          wallDamage: WALLS.map((_, w) => s.wallDamage?.[w] ?? 0),
+        };
         // a save from before an area existed has it shut
         while (this.save.areas.length < AREAS.length) this.save.areas.push(false);
         while (this.save.belts.length < AREAS.length) this.save.belts.push(false);
@@ -156,19 +196,28 @@ export class Economy {
           // it are sealed, and what it had left of the room is that room's.
           const furthest = ORDER.reduce((f, a, n) => (this.save.areas[a] ? n : f), 0);
           this.save.room = ORDER[furthest];
-          ORDER.forEach((a, n) => { this.save.areas[a] = n === 0 || n === furthest; });
-          if (s.left?.length === 5 && typeof s.left[0] === 'number') this.save.left[this.save.room] = s.left as number[];
+          ORDER.forEach((a, n) => {
+            this.save.areas[a] = n === 0 || n === furthest;
+          });
+          if (s.left?.length === 5 && typeof s.left[0] === 'number')
+            this.save.left[this.save.room] = s.left as number[];
         } else if (Array.isArray(s.left)) {
           this.save.left = Array.from({ length: SOURCES }, (_, a) => (s.left as number[][])[a] ?? []);
         }
       }
-    } catch { /* a browser with no storage plays from the start */ }
+    } catch {
+      /* a browser with no storage plays from the start */
+    }
   }
 
-  get bank() { return this.save.bank; }
+  get bank() {
+    return this.save.bank;
+  }
 
   /** The room being cleared. */
-  current(): number { return this.save.room; }
+  current(): number {
+    return this.save.room;
+  }
 
   /** The room after the current one, or null at the last. */
   next(): number | null {
@@ -199,7 +248,8 @@ export class Economy {
 
   /** The player has gone on into the next room: the one behind is sealed. The hollow has no gate to shut. */
   moveOn() {
-    const old = this.save.room, next = this.next();
+    const old = this.save.room,
+      next = this.next();
     if (next === null || !this.nextOpen()) return;
     if (old !== ORDER[0]) this.save.areas[old] = false;
     this.save.room = next;
@@ -216,7 +266,14 @@ export class Economy {
   spec(): DozerSpec {
     const e = ENGINE[this.save.engine];
     const m = MAGNET[this.save.magnet];
-    return { maxSpeed: e.maxSpeed, accel: e.accel, turnRate: e.turnRate, bladeWidth: BLADE[this.save.blade].width, magnetRadius: m.radius, magnetStrength: m.strength };
+    return {
+      maxSpeed: e.maxSpeed,
+      accel: e.accel,
+      turnRate: e.turnRate,
+      bladeWidth: BLADE[this.save.blade].width,
+      magnetRadius: m.radius,
+      magnetStrength: m.strength,
+    };
   }
 
   /** How much a hit at this speed does to a brick wall, with the engine fitted now; 0 for too slow to count. */
@@ -259,44 +316,67 @@ export class Economy {
   }
 
   /** Something to do when a purchase lands or a room opens: the game rebuilds what changed. */
-  onChange(fn: (id: string) => void) { this.listeners.push(fn); }
+  onChange(fn: (id: string) => void) {
+    this.listeners.push(fn);
+  }
 
   offers(): Offer[] {
     const s = this.save;
     const out: Offer[] = [];
     const e = s.engine + 1 < ENGINE.length ? ENGINE[s.engine + 1] : null;
     out.push({
-      id: 'engine', title: `Engine ${e ? `Mk ${s.engine + 2}` : 'maxed'}`,
-      sub: e ? `top speed ${e.maxSpeed}, turns faster, hits walls ${e.ram >= 2 * ENGINE[s.engine].ram ? 'twice as hard' : 'harder'}` : `Mk ${s.engine + 1}: as fast as it goes`,
-      cost: e?.cost ?? 0, owned: !e, available: !!e,
+      id: 'engine',
+      title: `Engine ${e ? `Mk ${s.engine + 2}` : 'maxed'}`,
+      sub: e
+        ? `top speed ${e.maxSpeed}, turns faster, hits walls ${e.ram >= 2 * ENGINE[s.engine].ram ? 'twice as hard' : 'harder'}`
+        : `Mk ${s.engine + 1}: as fast as it goes`,
+      cost: e?.cost ?? 0,
+      owned: !e,
+      available: !!e,
     });
     const b = s.blade + 1 < BLADE.length ? BLADE[s.blade + 1] : null;
     out.push({
-      id: 'blade', title: `Wider blade${b ? '' : ' (maxed)'}`,
+      id: 'blade',
+      title: `Wider blade${b ? '' : ' (maxed)'}`,
       sub: b ? `${b.width} across, up from ${BLADE[s.blade].width}` : `${BLADE[s.blade].width} across: the widest made`,
-      cost: b?.cost ?? 0, owned: !b, available: !!b,
+      cost: b?.cost ?? 0,
+      owned: !b,
+      available: !!b,
     });
     const m = s.magnet + 1 < MAGNET.length ? MAGNET[s.magnet + 1] : null;
     out.push({
-      id: 'magnet', title: `Magnet ${m ? `Mk ${s.magnet + 2}` : 'maxed'}`,
-      sub: m ? `pulls coins from ${m.radius} away, up from ${MAGNET[s.magnet].radius}` : `reaches ${MAGNET[s.magnet].radius}: nothing escapes it`,
-      cost: m?.cost ?? 0, owned: !m, available: !!m,
+      id: 'magnet',
+      title: `Magnet ${m ? `Mk ${s.magnet + 2}` : 'maxed'}`,
+      sub: m
+        ? `pulls coins from ${m.radius} away, up from ${MAGNET[s.magnet].radius}`
+        : `reaches ${MAGNET[s.magnet].radius}: nothing escapes it`,
+      cost: m?.cost ?? 0,
+      owned: !m,
+      available: !!m,
     });
     // a belt for each room still to be cleared; a sealed room's belt runs into rock
     for (const a of ORDER) {
       const belt = AREAS[a].belt;
       if (!belt || this.sealed(a)) continue;
       out.push({
-        id: `belt${a}`, title: `Conveyor to the ${AREAS[a].name}`,
+        id: `belt${a}`,
+        title: `Conveyor to the ${AREAS[a].name}`,
         sub: s.areas[a] ? 'push coins onto it and it carries them to the hole' : 'once the room is open',
-        cost: belt.cost, owned: s.belts[a], available: s.areas[a],
+        cost: belt.cost,
+        owned: s.belts[a],
+        available: s.areas[a],
       });
     }
     const d = s.drones < MAX_DRONES ? DRONE_COST[s.drones] : null;
     out.push({
-      id: 'drone', title: `Robo-dozer ${d ? s.drones + 1 : 'fleet complete'}`,
-      sub: d ? 'a small bulldozer that drives itself: finds a heap, pushes it in, goes again' : `${MAX_DRONES} robo-dozers, working`,
-      cost: d ?? 0, owned: !d, available: !!d,
+      id: 'drone',
+      title: `Robo-dozer ${d ? s.drones + 1 : 'fleet complete'}`,
+      sub: d
+        ? 'a small bulldozer that drives itself: finds a heap, pushes it in, goes again'
+        : `${MAX_DRONES} robo-dozers, working`,
+      cost: d ?? 0,
+      owned: !d,
+      available: !!d,
     });
     return out;
   }
@@ -309,11 +389,35 @@ export class Economy {
   cosmetics(): Offer[] {
     const s = this.save;
     const out: Offer[] = PAINTS.map((p) => ({
-      id: `paint:${p.id}`, title: p.name, sub: s.paint === p.id ? 'on the dozer now' : s.paints.includes(p.id) ? 'in the shed: click to wear it' : 'a coat of paint for the hull',
-      cost: p.cost, owned: s.paints.includes(p.id), available: true, active: s.paint === p.id,
+      id: `paint:${p.id}`,
+      title: p.name,
+      sub:
+        s.paint === p.id
+          ? 'on the dozer now'
+          : s.paints.includes(p.id)
+            ? 'in the shed: click to wear it'
+            : 'a coat of paint for the hull',
+      cost: p.cost,
+      owned: s.paints.includes(p.id),
+      available: true,
+      active: s.paint === p.id,
     }));
-    out.push({ id: 'horn', title: 'Air horn', sub: s.horn ? 'press H. The coins jump.' : 'press H to honk. Startles the coins.', cost: HORN_COST, owned: s.horn, available: true });
-    out.push({ id: 'flag', title: 'Pennant', sub: 'a little flag on a pole on the cab', cost: FLAG_COST, owned: s.flag, available: true });
+    out.push({
+      id: 'horn',
+      title: 'Air horn',
+      sub: s.horn ? 'press H. The coins jump.' : 'press H to honk. Startles the coins.',
+      cost: HORN_COST,
+      owned: s.horn,
+      available: true,
+    });
+    out.push({
+      id: 'flag',
+      title: 'Pennant',
+      sub: 'a little flag on a pole on the cab',
+      cost: FLAG_COST,
+      owned: s.flag,
+      available: true,
+    });
     return out;
   }
 
@@ -339,8 +443,10 @@ export class Economy {
     else if (id === 'magnet') s.magnet++;
     else if (id === 'horn') s.horn = true;
     else if (id === 'flag') s.flag = true;
-    else if (id.startsWith('paint:')) { s.paints.push(id.slice(6)); s.paint = id.slice(6); }
-    else if (id.startsWith('belt')) s.belts[+id.slice(4)] = true;
+    else if (id.startsWith('paint:')) {
+      s.paints.push(id.slice(6));
+      s.paint = id.slice(6);
+    } else if (id.startsWith('belt')) s.belts[+id.slice(4)] = true;
     this.persist();
     for (const fn of this.listeners) fn(id);
     return true;
@@ -348,13 +454,21 @@ export class Economy {
 
   reset() {
     this.wiped = true;
-    try { localStorage.removeItem(KEY); } catch { /* nothing to remove */ }
+    try {
+      localStorage.removeItem(KEY);
+    } catch {
+      /* nothing to remove */
+    }
     location.reload();
   }
 
   persist() {
     if (this.wiped) return;
-    try { localStorage.setItem(KEY, JSON.stringify(this.save)); } catch { /* fine */ }
+    try {
+      localStorage.setItem(KEY, JSON.stringify(this.save));
+    } catch {
+      /* fine */
+    }
   }
 }
 
@@ -366,7 +480,10 @@ export function renderShop(rows: HTMLElement, economy: Economy, offers = economy
     let btn = existing[i];
     if (!btn) {
       btn = document.createElement('button');
-      btn.addEventListener('click', () => { if (economy.buy(btn.dataset.id!)) renderShop(rows, economy, rows.classList.contains('cosmetics') ? economy.cosmetics() : undefined); });
+      btn.addEventListener('click', () => {
+        if (economy.buy(btn.dataset.id!))
+          renderShop(rows, economy, rows.classList.contains('cosmetics') ? economy.cosmetics() : undefined);
+      });
       rows.appendChild(btn);
     }
     btn.dataset.id = o.id;

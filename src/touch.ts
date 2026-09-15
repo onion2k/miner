@@ -42,18 +42,42 @@ export class TouchControls {
   private across = 0;
   private readonly releases: (() => void)[] = [];
 
-  constructor(leftEl: HTMLElement, private readonly rightEl: HTMLElement, private readonly acrossEl: HTMLElement) {
-    this.bind(leftEl, 'up', (v) => { this.left = v; });
-    this.bind(rightEl, 'up', (v) => { this.right = v; });
-    this.bind(acrossEl, 'across', (v) => { this.across = v; }, STEER_CURVE);
-    try { const s = localStorage.getItem(KEY); if (SCHEMES.includes(s as Scheme)) this.scheme = s as Scheme; } catch { /* fine */ }
+  constructor(
+    leftEl: HTMLElement,
+    private readonly rightEl: HTMLElement,
+    private readonly acrossEl: HTMLElement,
+  ) {
+    this.bind(leftEl, 'up', (v) => {
+      this.left = v;
+    });
+    this.bind(rightEl, 'up', (v) => {
+      this.right = v;
+    });
+    this.bind(
+      acrossEl,
+      'across',
+      (v) => {
+        this.across = v;
+      },
+      STEER_CURVE,
+    );
+    try {
+      const s = localStorage.getItem(KEY);
+      if (SCHEMES.includes(s as Scheme)) this.scheme = s as Scheme;
+    } catch {
+      /* fine */
+    }
     this.show();
   }
 
   /** Over to the other scheme, every lever let go. */
   cycle(): Scheme {
     this.scheme = SCHEMES[(SCHEMES.indexOf(this.scheme) + 1) % SCHEMES.length];
-    try { localStorage.setItem(KEY, this.scheme); } catch { /* fine */ }
+    try {
+      localStorage.setItem(KEY, this.scheme);
+    } catch {
+      /* fine */
+    }
     for (const release of this.releases) release();
     this.show();
     return this.scheme;
@@ -103,7 +127,9 @@ export class TouchControls {
       thumb.style.transform = '';
       set(0);
     };
-    const release = (e: PointerEvent) => { if (e.pointerId === finger) letGo(); };
+    const release = (e: PointerEvent) => {
+      if (e.pointerId === finger) letGo();
+    };
     this.releases.push(letGo);
 
     slider.addEventListener('pointerdown', (e) => {
@@ -111,12 +137,18 @@ export class TouchControls {
       finger = e.pointerId;
       // held by this slider even when the finger slides off it; a pointer the browser
       // no longer knows (a synthetic one) cannot be captured, and needs no capturing
-      try { slider.setPointerCapture(e.pointerId); } catch { /* moves still arrive while over it */ }
+      try {
+        slider.setPointerCapture(e.pointerId);
+      } catch {
+        /* moves still arrive while over it */
+      }
       slider.classList.add('held');
       follow(e);
       e.preventDefault();
     });
-    slider.addEventListener('pointermove', (e) => { if (e.pointerId === finger) follow(e); });
+    slider.addEventListener('pointermove', (e) => {
+      if (e.pointerId === finger) follow(e);
+    });
     slider.addEventListener('pointerup', release);
     slider.addEventListener('pointercancel', release);
     slider.addEventListener('lostpointercapture', release);

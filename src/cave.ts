@@ -18,7 +18,8 @@ export const ROWS = 64;
 export const ORIGIN_X = -(COLS / 2 + 0.5) * TILE;
 export const ORIGIN_Y = -(ROWS / 2 + 0.5) * TILE;
 
-export const ROCK = 0, OPEN = 1;
+export const ROCK = 0,
+  OPEN = 1;
 /** A gate tile's value is GATE + the index of the area it opens. */
 export const GATE = 2;
 /** A hidden chamber's tiles, and the rock that breaks to open it, are SECRET + the chamber's index. */
@@ -26,7 +27,8 @@ export const SECRET = 16;
 /** A brick wall's tiles are BRICK + the wall's index. */
 export const BRICK = 32;
 /** Tiles counted from the middle of the grid, which is the hole: what the rooms are laid out from. */
-const C = COLS / 2, R = ROWS / 2;
+const C = COLS / 2,
+  R = ROWS / 2;
 
 export const HOLE = { x: 0, y: 0, radius: 5.5, depth: 14 };
 
@@ -34,13 +36,15 @@ export const HOLE = { x: 0, y: 0, radius: 5.5, depth: 14 };
 export type GemKind = 1 | 2 | 3 | 4 | 5;
 
 export interface Heap {
-  x: number; y: number;
+  x: number;
+  y: number;
   coins: number;
   gems: [GemKind, number][];
 }
 
 export interface Vein {
-  x: number; y: number;
+  x: number;
+  y: number;
   /** Seconds between drops. */
   every: number;
   coins: number;
@@ -49,7 +53,10 @@ export interface Vein {
 
 /** A conveyor: a strip from one point to another, carrying what lands on it at `speed`. */
 export interface BeltSpec {
-  x0: number; y0: number; x1: number; y1: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
   width: number;
   speed: number;
 }
@@ -96,46 +103,140 @@ export interface Wing {
 export const WINGS: Wing[] = [
   // the hollow has none
   null as unknown as Wing,
-  { dir: [0, -1], room: { along: 13, across: 0, half: 4, halfAcross: 14, seed: 0.4 }, corridor: { from: 6, to: 10, across: [-2, 1] }, gate: 8, mouth: HOLLOW.ry },
-  { dir: [0, 1], room: { along: 13, across: 0, half: 4, halfAcross: 15, seed: 3.3 }, corridor: { from: 6, to: 10, across: [-2, 1] }, gate: 8, mouth: HOLLOW.ry },
-  { dir: [1, 0], room: { along: 27, across: 1, half: 5, halfAcross: 9, seed: 5.2 }, corridor: { from: 17, to: 22, across: [-1, 2] }, gate: 19, mouth: 17 },
-  { dir: [-1, 0], room: { along: 27, across: -1, half: 5, halfAcross: 9, seed: 2.2 }, corridor: { from: 17, to: 22, across: [-2, 1] }, gate: 19, mouth: 17 },
+  {
+    dir: [0, -1],
+    room: { along: 13, across: 0, half: 4, halfAcross: 14, seed: 0.4 },
+    corridor: { from: 6, to: 10, across: [-2, 1] },
+    gate: 8,
+    mouth: HOLLOW.ry,
+  },
+  {
+    dir: [0, 1],
+    room: { along: 13, across: 0, half: 4, halfAcross: 15, seed: 3.3 },
+    corridor: { from: 6, to: 10, across: [-2, 1] },
+    gate: 8,
+    mouth: HOLLOW.ry,
+  },
+  {
+    dir: [1, 0],
+    room: { along: 27, across: 1, half: 5, halfAcross: 9, seed: 5.2 },
+    corridor: { from: 17, to: 22, across: [-1, 2] },
+    gate: 19,
+    mouth: 17,
+  },
+  {
+    dir: [-1, 0],
+    room: { along: 27, across: -1, half: 5, halfAcross: 9, seed: 2.2 },
+    corridor: { from: 17, to: 22, across: [-2, 1] },
+    gate: 19,
+    mouth: 17,
+  },
 ];
 
-const S = 1, N = 2, E = 3, W = 4;
+const S = 1,
+  N = 2,
+  E = 3,
+  W = 4;
 
 export const AREAS: Area[] = [
   {
-    name: 'The Hollow', blurb: 'coins and a few rubies',
+    name: 'The Hollow',
+    blurb: 'coins and a few rubies',
     heaps: [
       { x: -30, y: 8, coins: 840, gems: [[1, 24]] },
       { x: 26, y: -8, coins: 840, gems: [[1, 22]] },
       { x: 6, y: 22, coins: 320, gems: [[1, 4]] },
     ],
     vein: { x: -36, y: -6, every: 1.2, coins: 1, gems: [[1, 0.04]] },
-    cracks: [[-10, -14], [18, 12], [-28, -12], [34, 4]],
+    cracks: [
+      [-10, -14],
+      [18, 12],
+      [-28, -12],
+      [34, 4],
+    ],
     belt: null,
   },
   {
     name: 'South Gallery',
     blurb: 'rubies and emeralds',
     heaps: [
-      { x: -24, y: -52, coins: 960, gems: [[1, 22], [2, 12]] },
-      { x: 22, y: -54, coins: 960, gems: [[1, 18], [2, 16]] },
+      {
+        x: -24,
+        y: -52,
+        coins: 960,
+        gems: [
+          [1, 22],
+          [2, 12],
+        ],
+      },
+      {
+        x: 22,
+        y: -54,
+        coins: 960,
+        gems: [
+          [1, 18],
+          [2, 16],
+        ],
+      },
     ],
-    vein: { x: 40, y: -50, every: 0.9, coins: 1, gems: [[1, 0.08], [2, 0.03]] },
-    cracks: [[0, -56], [-40, -50], [36, -58]],
+    vein: {
+      x: 40,
+      y: -50,
+      every: 0.9,
+      coins: 1,
+      gems: [
+        [1, 0.08],
+        [2, 0.03],
+      ],
+    },
+    cracks: [
+      [0, -56],
+      [-40, -50],
+      [36, -58],
+    ],
     belt: { spec: { x0: -2, y0: -46, x1: -2, y1: -8, width: 7, speed: 9 }, cost: 250 },
   },
   {
     name: 'North Vault',
     blurb: 'emeralds, sapphires, diamonds',
     heaps: [
-      { x: -28, y: 52, coins: 1000, gems: [[2, 22], [3, 14], [4, 2]] },
-      { x: 24, y: 54, coins: 1000, gems: [[2, 18], [3, 16], [4, 2]] },
+      {
+        x: -28,
+        y: 52,
+        coins: 1000,
+        gems: [
+          [2, 22],
+          [3, 14],
+          [4, 2],
+        ],
+      },
+      {
+        x: 24,
+        y: 54,
+        coins: 1000,
+        gems: [
+          [2, 18],
+          [3, 16],
+          [4, 2],
+        ],
+      },
     ],
-    vein: { x: -44, y: 54, every: 0.7, coins: 1, gems: [[2, 0.08], [3, 0.05], [4, 0.015]] },
-    cracks: [[0, 56], [-44, 50], [40, 52]],
+    vein: {
+      x: -44,
+      y: 54,
+      every: 0.7,
+      coins: 1,
+      gems: [
+        [2, 0.08],
+        [3, 0.05],
+        [4, 0.015],
+      ],
+    },
+    cracks: [
+      [0, 56],
+      [-44, 50],
+      [40, 52],
+    ],
     belt: { spec: { x0: -2, y0: 46, x1: -2, y1: 8, width: 7, speed: 9 }, cost: 500 },
   },
   // The two galleries either side: long rooms running north and south, reached through
@@ -145,22 +246,80 @@ export const AREAS: Area[] = [
     name: 'East Gallery',
     blurb: 'rubies and sapphires',
     heaps: [
-      { x: 104, y: 22, coins: 700, gems: [[1, 22], [3, 24]] },
-      { x: 110, y: -14, coins: 700, gems: [[1, 18], [3, 26]] },
+      {
+        x: 104,
+        y: 22,
+        coins: 700,
+        gems: [
+          [1, 22],
+          [3, 24],
+        ],
+      },
+      {
+        x: 110,
+        y: -14,
+        coins: 700,
+        gems: [
+          [1, 18],
+          [3, 26],
+        ],
+      },
     ],
-    vein: { x: 100, y: -26, every: 0.85, coins: 1, gems: [[1, 0.07], [3, 0.03]] },
-    cracks: [[108, 4], [102, 32], [112, -24]],
+    vein: {
+      x: 100,
+      y: -26,
+      every: 0.85,
+      coins: 1,
+      gems: [
+        [1, 0.07],
+        [3, 0.03],
+      ],
+    },
+    cracks: [
+      [108, 4],
+      [102, 32],
+      [112, -24],
+    ],
     belt: { spec: { x0: 110, y0: 2, x1: 8, y1: 2, width: 7, speed: 10 }, cost: 400 },
   },
   {
     name: 'West Gallery',
     blurb: 'sapphires and diamonds',
     heaps: [
-      { x: -104, y: -22, coins: 700, gems: [[3, 26], [4, 10]] },
-      { x: -110, y: 14, coins: 700, gems: [[3, 24], [4, 11]] },
+      {
+        x: -104,
+        y: -22,
+        coins: 700,
+        gems: [
+          [3, 26],
+          [4, 10],
+        ],
+      },
+      {
+        x: -110,
+        y: 14,
+        coins: 700,
+        gems: [
+          [3, 24],
+          [4, 11],
+        ],
+      },
     ],
-    vein: { x: -100, y: 26, every: 0.65, coins: 1, gems: [[3, 0.07], [4, 0.025]] },
-    cracks: [[-108, -4], [-102, -32], [-112, 24]],
+    vein: {
+      x: -100,
+      y: 26,
+      every: 0.65,
+      coins: 1,
+      gems: [
+        [3, 0.07],
+        [4, 0.025],
+      ],
+    },
+    cracks: [
+      [-108, -4],
+      [-102, -32],
+      [-112, 24],
+    ],
     belt: { spec: { x0: -110, y0: -2, x1: -8, y1: -2, width: 7, speed: 10 }, cost: 600 },
   },
 ];
@@ -190,13 +349,57 @@ export interface Secret {
 
 export const SECRETS: Secret[] = [
   // off the south gallery's east end
-  { area: 1, wall: [C + 16, R - 13, C + 17, R - 12], chamber: { cx: C + 20.5, cy: R - 12.5, rx: 3.2, ry: 2.2, seed: 1.1 }, loot: { coins: 60, gems: [[2, 6], [5, 3]] } },
+  {
+    area: 1,
+    wall: [C + 16, R - 13, C + 17, R - 12],
+    chamber: { cx: C + 20.5, cy: R - 12.5, rx: 3.2, ry: 2.2, seed: 1.1 },
+    loot: {
+      coins: 60,
+      gems: [
+        [2, 6],
+        [5, 3],
+      ],
+    },
+  },
   // off the north vault's west end
-  { area: 2, wall: [C - 17, R + 11, C - 16, R + 12], chamber: { cx: C - 20.5, cy: R + 12.5, rx: 3.2, ry: 2.2, seed: 2.7 }, loot: { coins: 80, gems: [[4, 3], [5, 5]] } },
+  {
+    area: 2,
+    wall: [C - 17, R + 11, C - 16, R + 12],
+    chamber: { cx: C - 20.5, cy: R + 12.5, rx: 3.2, ry: 2.2, seed: 2.7 },
+    loot: {
+      coins: 80,
+      gems: [
+        [4, 3],
+        [5, 5],
+      ],
+    },
+  },
   // above the east gallery's north end
-  { area: 3, wall: [C + 28, R + 11, C + 29, R + 12], chamber: { cx: C + 27, cy: R + 14, rx: 3.5, ry: 1.8, seed: 0.6 }, loot: { coins: 80, gems: [[3, 6], [5, 4]] } },
+  {
+    area: 3,
+    wall: [C + 28, R + 11, C + 29, R + 12],
+    chamber: { cx: C + 27, cy: R + 14, rx: 3.5, ry: 1.8, seed: 0.6 },
+    loot: {
+      coins: 80,
+      gems: [
+        [3, 6],
+        [5, 4],
+      ],
+    },
+  },
   // below the west gallery's south end
-  { area: 4, wall: [C - 29, R - 11, C - 28, R - 10], chamber: { cx: C - 28, cy: R - 13.5, rx: 3.5, ry: 2.2, seed: 3.9 }, loot: { coins: 100, gems: [[4, 5], [5, 6]] } },
+  {
+    area: 4,
+    wall: [C - 29, R - 11, C - 28, R - 10],
+    chamber: { cx: C - 28, cy: R - 13.5, rx: 3.5, ry: 2.2, seed: 3.9 },
+    loot: {
+      coins: 100,
+      gems: [
+        [4, 5],
+        [5, 6],
+      ],
+    },
+  },
 ];
 
 /**
@@ -243,15 +446,98 @@ export const WALLS: Wall[] = [];
 export const STASHES: Stash[] = [];
 
 /** A side room: a corridor out from a room, a wall across it, and a room at the end. */
-function sideRoom(name: string, area: number, grade: 1 | 2 | 3, corridor: [number, number, number, number], wall: [number, number, number, number], room: Stash['room'] & object, loot: Stash['loot'], treasure: [GemKind, number][] = []) {
+function sideRoom(
+  name: string,
+  area: number,
+  grade: 1 | 2 | 3,
+  corridor: [number, number, number, number],
+  wall: [number, number, number, number],
+  room: Stash['room'] & object,
+  loot: Stash['loot'],
+  treasure: [GemKind, number][] = [],
+) {
   WALLS.push({ area, grade, tiles: wall, treasure });
   STASHES.push({ name, area, at: [room.cx, room.cy], loot, corridor, room });
 }
 
-sideRoom('South Cellar', S, 1, [C - 2, R - 22, C + 1, R - 16], [C - 2, R - 20, C + 1, R - 20], { cx: C, cy: R - 25, rx: 9, ry: 3, seed: 1.9 }, { coins: 400, gems: [[1, 20], [2, 12], [5, 2]] }, [[2, 3]]);
-sideRoom('East Annex', E, 2, [C + 31, R, C + 37, R + 2], [C + 35, R, C + 35, R + 2], { cx: C + 42, cy: R + 1, rx: 5, ry: 6, seed: 0.8 }, { coins: 450, gems: [[1, 16], [3, 18], [5, 3]] }, [[3, 4], [5, 1]]);
-sideRoom('North Loft', N, 2, [C - 2, R + 16, C + 1, R + 22], [C - 2, R + 20, C + 1, R + 20], { cx: C, cy: R + 25, rx: 9, ry: 3, seed: 4.4 }, { coins: 500, gems: [[2, 16], [3, 12], [4, 4], [5, 3]] }, [[4, 2], [5, 1]]);
-sideRoom('West Annex', W, 3, [C - 37, R - 2, C - 31, R], [C - 35, R - 2, C - 35, R], { cx: C - 42, cy: R - 1, rx: 5, ry: 6, seed: 3.1 }, { coins: 500, gems: [[3, 16], [4, 8], [5, 4]] }, [[4, 3], [5, 2]]);
+sideRoom(
+  'South Cellar',
+  S,
+  1,
+  [C - 2, R - 22, C + 1, R - 16],
+  [C - 2, R - 20, C + 1, R - 20],
+  { cx: C, cy: R - 25, rx: 9, ry: 3, seed: 1.9 },
+  {
+    coins: 400,
+    gems: [
+      [1, 20],
+      [2, 12],
+      [5, 2],
+    ],
+  },
+  [[2, 3]],
+);
+sideRoom(
+  'East Annex',
+  E,
+  2,
+  [C + 31, R, C + 37, R + 2],
+  [C + 35, R, C + 35, R + 2],
+  { cx: C + 42, cy: R + 1, rx: 5, ry: 6, seed: 0.8 },
+  {
+    coins: 450,
+    gems: [
+      [1, 16],
+      [3, 18],
+      [5, 3],
+    ],
+  },
+  [
+    [3, 4],
+    [5, 1],
+  ],
+);
+sideRoom(
+  'North Loft',
+  N,
+  2,
+  [C - 2, R + 16, C + 1, R + 22],
+  [C - 2, R + 20, C + 1, R + 20],
+  { cx: C, cy: R + 25, rx: 9, ry: 3, seed: 4.4 },
+  {
+    coins: 500,
+    gems: [
+      [2, 16],
+      [3, 12],
+      [4, 4],
+      [5, 3],
+    ],
+  },
+  [
+    [4, 2],
+    [5, 1],
+  ],
+);
+sideRoom(
+  'West Annex',
+  W,
+  3,
+  [C - 37, R - 2, C - 31, R],
+  [C - 35, R - 2, C - 35, R],
+  { cx: C - 42, cy: R - 1, rx: 5, ry: 6, seed: 3.1 },
+  {
+    coins: 500,
+    gems: [
+      [3, 16],
+      [4, 8],
+      [5, 4],
+    ],
+  },
+  [
+    [4, 3],
+    [5, 2],
+  ],
+);
 
 /** Where a stash's middle is in the world, for its loot. */
 export function stashCentre(k: number): [number, number] {
@@ -283,7 +569,8 @@ export function hash(a: number, b: number, c = 0): number {
 
 /** A lamp on a post. `area` is the room it lights, which is when it is lit. */
 export interface Lamp {
-  x: number; y: number;
+  x: number;
+  y: number;
   area: number;
   /** How high its head stands. */
   height: number;
@@ -307,13 +594,24 @@ export function rockish(cell: number, revealed: boolean[]): boolean {
 }
 
 /** The ellipse's tiles set to `value`; with `onlyRock`, only those that were rock. */
-function carveEllipse(cells: Uint8Array, cx: number, cy: number, rx: number, ry: number, seed: number, value = OPEN, onlyRock = false) {
+function carveEllipse(
+  cells: Uint8Array,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  seed: number,
+  value = OPEN,
+  onlyRock = false,
+) {
   for (let ty = 1; ty < ROWS - 1; ty++) {
     for (let tx = 1; tx < COLS - 1; tx++) {
-      const dx = (tx - cx) / rx, dy = (ty - cy) / ry;
+      const dx = (tx - cx) / rx,
+        dy = (ty - cy) / ry;
       const th = Math.atan2(dy, dx);
       const wobble = 1 + 0.09 * Math.sin(3 * th + seed) + 0.06 * Math.sin(7 * th + seed * 2.3);
-      if (dx * dx + dy * dy < wobble * wobble && (!onlyRock || cells[ty * COLS + tx] === ROCK)) cells[ty * COLS + tx] = value;
+      if (dx * dx + dy * dy < wobble * wobble && (!onlyRock || cells[ty * COLS + tx] === ROCK))
+        cells[ty * COLS + tx] = value;
     }
   }
 }
@@ -332,13 +630,21 @@ export function buildCave(): Cave {
   carveEllipse(cells, C + HOLLOW.alcove.along, R + 1, HOLLOW.alcove.rx, HOLLOW.alcove.ry, 2.9);
   // each wing: its room, and its corridor from the hollow with a gate across it
   for (let a = 1; a < WINGS.length; a++) {
-    const { dir: [dx, dy], room, corridor, gate } = WINGS[a];
-    const tile = (along: number, across: number): [number, number] => (dx ? [C + dx * along, R + across] : [C + across, R + dy * along]);
+    const {
+      dir: [dx, dy],
+      room,
+      corridor,
+      gate,
+    } = WINGS[a];
+    const tile = (along: number, across: number): [number, number] =>
+      dx ? [C + dx * along, R + across] : [C + across, R + dy * along];
     const [cx, cy] = tile(room.along, room.across);
     carveEllipse(cells, cx, cy, dx ? room.half : room.halfAcross, dx ? room.halfAcross : room.half, room.seed);
-    const [ax, ay] = tile(corridor.from, corridor.across[0]), [bx, by] = tile(corridor.to, corridor.across[1]);
+    const [ax, ay] = tile(corridor.from, corridor.across[0]),
+      [bx, by] = tile(corridor.to, corridor.across[1]);
     carveRect(cells, Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by));
-    const [gx0, gy0] = tile(gate, corridor.across[0]), [gx1, gy1] = tile(gate, corridor.across[1]);
+    const [gx0, gy0] = tile(gate, corridor.across[0]),
+      [gx1, gy1] = tile(gate, corridor.across[1]);
     carveRect(cells, Math.min(gx0, gx1), Math.min(gy0, gy1), Math.max(gx0, gx1), Math.max(gy0, gy1), GATE + a);
   }
   // the side rooms, down their corridors
@@ -360,10 +666,22 @@ export function buildCave(): Cave {
       const out = new Uint8Array(COLS * ROWS);
       for (let i = 0; i < cells.length; i++) {
         const c = cells[i];
-        out[i] = c === OPEN ? 0
-          : c >= BRICK ? (broken[c - BRICK] ? 0 : 1)
-          : c >= SECRET ? (revealed[c - SECRET] ? 0 : 1)
-          : c >= GATE ? (unlocked[c - GATE] ? 0 : 1) : 1;
+        out[i] =
+          c === OPEN
+            ? 0
+            : c >= BRICK
+              ? broken[c - BRICK]
+                ? 0
+                : 1
+              : c >= SECRET
+                ? revealed[c - SECRET]
+                  ? 0
+                  : 1
+                : c >= GATE
+                  ? unlocked[c - GATE]
+                    ? 0
+                    : 1
+                  : 1;
       }
       return out;
     },
@@ -373,7 +691,9 @@ export function buildCave(): Cave {
 /** How high a lamp on a post stands. */
 export const LAMP_HEIGHT = 5.6;
 /** How far apart lamps stand along the rock, in world units, and how far off its face; and how far apart across the open floor. */
-const LAMP_SPACING = 10, LAMP_OFF_ROCK = 1.4, FLOOR_LAMP_SPACING = 20;
+const LAMP_SPACING = 10,
+  LAMP_OFF_ROCK = 1.4,
+  FLOOR_LAMP_SPACING = 20;
 
 /**
  * Lamps along the edges of the floor: on open tiles against the rock, the
@@ -385,30 +705,40 @@ const LAMP_SPACING = 10, LAMP_OFF_ROCK = 1.4, FLOOR_LAMP_SPACING = 20;
 function placeLamps(cells: Uint8Array): Lamp[] {
   const out: Lamp[] = [];
   const at = (tx: number, ty: number) => (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS ? ROCK : cells[ty * COLS + tx]);
-  const nearHeap = (x: number, y: number, margin = 4) => AREAS.some((a) => a.heaps.some((h) => Math.hypot(h.x - x, h.y - y) < Math.sqrt(h.coins) * 0.36 + margin));
-  const nearBelt = (x: number, y: number) => AREAS.some((a) => {
-    const b = a.belt?.spec;
-    if (!b) return false;
-    const dx = b.x1 - b.x0, dy = b.y1 - b.y0, len2 = dx * dx + dy * dy;
-    const k = Math.max(0, Math.min(1, ((x - b.x0) * dx + (y - b.y0) * dy) / len2));
-    return Math.hypot(x - (b.x0 + dx * k), y - (b.y0 + dy * k)) < b.width / 2 + 3;
-  });
+  const nearHeap = (x: number, y: number, margin = 4) =>
+    AREAS.some((a) => a.heaps.some((h) => Math.hypot(h.x - x, h.y - y) < Math.sqrt(h.coins) * 0.36 + margin));
+  const nearBelt = (x: number, y: number) =>
+    AREAS.some((a) => {
+      const b = a.belt?.spec;
+      if (!b) return false;
+      const dx = b.x1 - b.x0,
+        dy = b.y1 - b.y0,
+        len2 = dx * dx + dy * dy;
+      const k = Math.max(0, Math.min(1, ((x - b.x0) * dx + (y - b.y0) * dy) / len2));
+      return Math.hypot(x - (b.x0 + dx * k), y - (b.y0 + dy * k)) < b.width / 2 + 3;
+    });
   for (let ty = 1; ty < ROWS - 1; ty++) {
     for (let tx = 1; tx < COLS - 1; tx++) {
       if (at(tx, ty) !== OPEN) continue;
       // against plain rock on one side, and nothing that comes down or opens within a tile
-      let nx = 0, ny = 0, unsure = false;
+      let nx = 0,
+        ny = 0,
+        unsure = false;
       for (let oy = -1; oy <= 1; oy++) {
         for (let ox = -1; ox <= 1; ox++) {
           const c = at(tx + ox, ty + oy);
           if (c >= GATE) unsure = true;
-          if (c === ROCK && (ox === 0 || oy === 0)) { nx -= ox; ny -= oy; }
+          if (c === ROCK && (ox === 0 || oy === 0)) {
+            nx -= ox;
+            ny -= oy;
+          }
         }
       }
       if (unsure || (nx === 0 && ny === 0)) continue;
       const [cx, cy] = tileCentre(tx, ty);
       const len = Math.hypot(nx, ny);
-      const x = cx - (nx / len) * (TILE / 2 - LAMP_OFF_ROCK), y = cy - (ny / len) * (TILE / 2 - LAMP_OFF_ROCK);
+      const x = cx - (nx / len) * (TILE / 2 - LAMP_OFF_ROCK),
+        y = cy - (ny / len) * (TILE / 2 - LAMP_OFF_ROCK);
       if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 8 || nearHeap(x, y) || nearBelt(x, y)) continue;
       if (out.some((l) => Math.hypot(l.x - x, l.y - y) < LAMP_SPACING)) continue;
       out.push({ x, y, area: areaAt(x, y), height: LAMP_HEIGHT });
@@ -422,7 +752,12 @@ function placeLamps(cells: Uint8Array): Lamp[] {
       if ((tx - COLS / 2) % step !== 0 || (ty - ROWS / 2) % step !== 0) continue;
       if (at(tx, ty) !== OPEN) continue;
       let clear = true;
-      for (let oy = -1; oy <= 1 && clear; oy++) for (let ox = -1; ox <= 1; ox++) if (at(tx + ox, ty + oy) !== OPEN) { clear = false; break; }
+      for (let oy = -1; oy <= 1 && clear; oy++)
+        for (let ox = -1; ox <= 1; ox++)
+          if (at(tx + ox, ty + oy) !== OPEN) {
+            clear = false;
+            break;
+          }
       if (!clear) continue;
       const [x, y] = tileCentre(tx, ty);
       if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 10 || nearHeap(x, y, 1.5) || nearBelt(x, y)) continue;
@@ -476,7 +811,8 @@ export function pastGate(area: number, x: number, y: number): boolean {
 /** Where, down a room's corridor, going on seals the room behind: the line `pastGate` draws, in the corridor's middle. */
 export function sealPoint(cave: Cave, area: number): [number, number] {
   const [gx, gy] = gateCentre(cave, area);
-  const [dx, dy] = WINGS[area].dir, at = nearEdge(area) + 8;
+  const [dx, dy] = WINGS[area].dir,
+    at = nearEdge(area) + 8;
   return dx ? [dx * at, gy] : [gx, dy * at];
 }
 

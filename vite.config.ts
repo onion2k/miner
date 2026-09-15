@@ -12,7 +12,8 @@ const renderer = dirname(createRequire(import.meta.url).resolve('artshape-render
 
 export default defineConfig({
   server: {
-    port: 5194, strictPort: true,
+    port: 5194,
+    strictPort: true,
     watch: { ignored: ['!**/node_modules/artshape-render/**'] },
     fs: { allow: ['.', renderer] },
   },

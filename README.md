@@ -7,7 +7,7 @@ bank them, and press **B** for the workshop: a bigger engine, a wider blade,
 a stronger magnet, a conveyor belt for the room you are in, and drones that
 go and fetch things. Drag to orbit the camera, wheel to zoom, **C** to put it
 back, **M** to mute. Progress is saved in the browser; the workshop has a
-*start over* button.
+_start over_ button.
 
 The cave is five rooms, and nothing refills them. Bank nine tenths of what a
 room holds and the rock at the next gate comes down: the Hollow, then the

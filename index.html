@@ -1,135 +1,530 @@
 <!doctype html>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+/>
 <title>Pushminer</title>
 <style>
-  :root { color-scheme: dark; --ink: #f1eee6; --dim: #a39f94; --gold: #f2c14e; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #0b0a10; overflow: hidden; }
-  body { font: 14px/1.5 ui-rounded, "SF Pro Rounded", system-ui, sans-serif; color: var(--ink); }
-  #stage { position: fixed; inset: 0; }
-  canvas { display: block; width: 100%; height: 100%; }
-  .panel { position: fixed; padding: 10px 14px; background: rgba(14, 12, 20, 0.62);
-           border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px;
-           backdrop-filter: blur(8px); pointer-events: none; }
-  #bank { top: 16px; left: 16px; font-size: 15px; }
-  #bank b { display: block; font-size: 30px; font-weight: 700; color: var(--gold); letter-spacing: 0.02em;
-            font-variant-numeric: tabular-nums; }
-  #bank .sub { color: var(--dim); font-size: 13px; }
-  #stats { top: 16px; right: 16px; text-align: right; color: var(--dim); font-size: 12px; }
-  #stats span { color: var(--ink); font-variant-numeric: tabular-nums; }
-  #help { bottom: 16px; left: 16px; color: var(--dim); font-size: 13px; }
-  #help span { color: var(--ink); background: rgba(255,255,255,0.1); border-radius: 5px; padding: 0 6px; }
+  :root {
+    color-scheme: dark;
+    --ink: #f1eee6;
+    --dim: #a39f94;
+    --gold: #f2c14e;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    background: #0b0a10;
+    overflow: hidden;
+  }
+  body {
+    font:
+      14px/1.5 ui-rounded,
+      'SF Pro Rounded',
+      system-ui,
+      sans-serif;
+    color: var(--ink);
+  }
+  #stage {
+    position: fixed;
+    inset: 0;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .panel {
+    position: fixed;
+    padding: 10px 14px;
+    background: rgba(14, 12, 20, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+  }
+  #bank {
+    top: 16px;
+    left: 16px;
+    font-size: 15px;
+  }
+  #bank b {
+    display: block;
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  #bank .sub {
+    color: var(--dim);
+    font-size: 13px;
+  }
+  #stats {
+    top: 16px;
+    right: 16px;
+    text-align: right;
+    color: var(--dim);
+    font-size: 12px;
+  }
+  #stats span {
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  #help {
+    bottom: 16px;
+    left: 16px;
+    color: var(--dim);
+    font-size: 13px;
+  }
+  #help span {
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    padding: 0 6px;
+  }
   /* the combo tally: grows with the run, and fades when the run is over */
-  #toast { bottom: 84px; left: 50%; transform: translateX(-50%); color: var(--gold); font-weight: 800;
-           font-size: 18px; transition: opacity .5s, font-size .15s; text-align: center; line-height: 1.1;
-           font-variant-numeric: tabular-nums; padding: 8px 18px; }
-  #toast small { display: block; font-size: 12px; font-weight: 500; color: var(--dim); margin-top: 4px; }
-  #toast.gone { opacity: 0; }
-  #cameraNote { top: 16px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase;
-                width: max-content; max-width: calc(100vw - 32px); text-align: center; }
-  #shop { top: 50%; right: 16px; transform: translateY(-50%); pointer-events: auto; width: 320px; }
-  #shop[hidden] { display: none; }
-  #shop h2 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--dim); }
+  #toast {
+    bottom: 84px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--gold);
+    font-weight: 800;
+    font-size: 18px;
+    transition:
+      opacity 0.5s,
+      font-size 0.15s;
+    text-align: center;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    padding: 8px 18px;
+  }
+  #toast small {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+  #toast.gone {
+    opacity: 0;
+  }
+  #cameraNote {
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--dim);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    text-align: center;
+  }
+  #shop {
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    pointer-events: auto;
+    width: 320px;
+  }
+  #shop[hidden] {
+    display: none;
+  }
+  #shop h2 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
   /* the bank, in the shop's heading: only on a phone, where the counter in the corner is hidden */
-  #shop h2 .balance { display: none; float: right; letter-spacing: 0.08em; }
-  #shop h2 .balance b { color: var(--gold); font-size: 16px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; margin-left: 4px; }
-  body.touch #shop h2 .balance { display: inline; }
-  #shop .rows { display: grid; gap: 6px; max-height: 70vh; overflow: auto; }
-  #shop button { font: inherit; text-align: left; color: var(--ink); background: rgba(255,255,255,0.07);
-                 border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; padding: 6px 10px; cursor: pointer;
-                 display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
-  #shop button:hover:not(:disabled) { background: rgba(255,255,255,0.14); }
-  #shop button:disabled { opacity: 0.45; cursor: default; }
-  #shop button small { display: block; color: var(--dim); font-size: 12px; }
-  #shop button .cost { color: var(--gold); font-weight: 600; font-variant-numeric: tabular-nums; }
-  #shop button.owned .cost { color: #7ee2a0; }
-  #shop button.active { border-color: var(--gold); }
-  #shop h2.later { margin-top: 12px; }
-  #shop .rows { max-height: 34vh; }
-  #shop .foot { margin-top: 8px; color: var(--dim); font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
-  #shop .foot button { display: inline; padding: 2px 8px; font-size: 12px; }
-  #shop .foot button.armed { background: #c0392b; border-color: #e74c3c; color: #fff; }
+  #shop h2 .balance {
+    display: none;
+    float: right;
+    letter-spacing: 0.08em;
+  }
+  #shop h2 .balance b {
+    color: var(--gold);
+    font-size: 16px;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    margin-left: 4px;
+  }
+  body.touch #shop h2 .balance {
+    display: inline;
+  }
+  #shop .rows {
+    display: grid;
+    gap: 6px;
+    max-height: 70vh;
+    overflow: auto;
+  }
+  #shop button {
+    font: inherit;
+    text-align: left;
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: center;
+  }
+  #shop button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.14);
+  }
+  #shop button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  #shop button small {
+    display: block;
+    color: var(--dim);
+    font-size: 12px;
+  }
+  #shop button .cost {
+    color: var(--gold);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  #shop button.owned .cost {
+    color: #7ee2a0;
+  }
+  #shop button.active {
+    border-color: var(--gold);
+  }
+  #shop h2.later {
+    margin-top: 12px;
+  }
+  #shop .rows {
+    max-height: 34vh;
+  }
+  #shop .foot {
+    margin-top: 8px;
+    color: var(--dim);
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #shop .foot button {
+    display: inline;
+    padding: 2px 8px;
+    font-size: 12px;
+  }
+  #shop .foot button.armed {
+    background: #c0392b;
+    border-color: #e74c3c;
+    color: #fff;
+  }
   /* ---- on a phone: a slider each side for each track, a row of buttons between, and no keyboard help.
      Kept small and see-through: on a 412 by 915 phone the first version's sliders and buttons covered
      nearly half the cave. A slider's hit area is wider than what is drawn of it. ---- */
-  #pad, #tracks { display: none; }
-  body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  #pad,
+  #tracks {
+    display: none;
+  }
+  body.touch {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
   /* the counters at the top and the keyboard help: on a phone the cave gets the screen */
-  body.touch #help, body.touch .keys, body.touch #bank, body.touch #stats { display: none; }
-  body.touch #tracks:not([hidden]) { display: block; }
-  body.touch #pad:not([hidden]) { display: flex; }
+  body.touch #help,
+  body.touch .keys,
+  body.touch #bank,
+  body.touch #stats {
+    display: none;
+  }
+  body.touch #tracks:not([hidden]) {
+    display: block;
+  }
+  body.touch #pad:not([hidden]) {
+    display: flex;
+  }
   /* the buttons, in one row at the bottom between the sliders: mute, shop, and the horn once it is bought */
-  #pad { position: fixed; bottom: calc(14px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
-         gap: 10px; align-items: center; }
-  #pad button { font: inherit; color: var(--ink); background: rgba(14, 12, 20, 0.55); border: 1px solid rgba(255, 255, 255, 0.16);
-                backdrop-filter: blur(8px); touch-action: none; height: 40px; padding: 0; }
-  #pad button[hidden] { display: none; }
-  #pad button:active { background: rgba(242, 193, 78, 0.25); }
-  #hornButton, #muteButton, #cameraButton, #controlsButton { width: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; line-height: 1; }
-  #controlsButton { font-size: 14px; letter-spacing: -0.1em; }
-  #hornButton { border-color: rgba(242, 193, 78, 0.45); }
-  #shopButton { padding: 0 14px; border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em;
-                text-transform: uppercase; color: var(--gold); border-color: rgba(242, 193, 78, 0.45); }
+  #pad {
+    position: fixed;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    gap: 10px;
+    align-items: center;
+  }
+  #pad button {
+    font: inherit;
+    color: var(--ink);
+    background: rgba(14, 12, 20, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    backdrop-filter: blur(8px);
+    touch-action: none;
+    height: 40px;
+    padding: 0;
+  }
+  #pad button[hidden] {
+    display: none;
+  }
+  #pad button:active {
+    background: rgba(242, 193, 78, 0.25);
+  }
+  #hornButton,
+  #muteButton,
+  #cameraButton,
+  #controlsButton {
+    width: 40px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    line-height: 1;
+  }
+  #controlsButton {
+    font-size: 14px;
+    letter-spacing: -0.1em;
+  }
+  #hornButton {
+    border-color: rgba(242, 193, 78, 0.45);
+  }
+  #shopButton {
+    padding: 0 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    border-color: rgba(242, 193, 78, 0.45);
+  }
   /* A slider is sized from the screen: 8% of its short side across, a quarter of the height
      standing up and the whole height lying down. What is drawn is the rail; ::before reaches
      past it either side, invisibly, so a thumb need not land on a bar that thin. */
-  .track { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); width: 8vmin; height: 26vh;
-           border-radius: 4vmin; background: rgba(14, 12, 20, 0.32); border: 1px solid rgba(255, 255, 255, 0.12);
-           touch-action: none; }
-  @media (orientation: landscape) {
-    .track { top: calc(8px + env(safe-area-inset-top)); bottom: calc(8px + env(safe-area-inset-bottom)); height: auto; }
+  .track {
+    position: fixed;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    width: 8vmin;
+    height: 26vh;
+    border-radius: 4vmin;
+    background: rgba(14, 12, 20, 0.32);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    touch-action: none;
   }
-  #trackLeft { left: calc(3vmin + env(safe-area-inset-left)); }
-  #trackRight, #steer { right: calc(3vmin + env(safe-area-inset-right)); }
-  .track::before { content: ''; position: absolute; top: 0; bottom: 0; left: -3vmin; right: -3vmin; }
+  @media (orientation: landscape) {
+    .track {
+      top: calc(8px + env(safe-area-inset-top));
+      bottom: calc(8px + env(safe-area-inset-bottom));
+      height: auto;
+    }
+  }
+  #trackLeft {
+    left: calc(3vmin + env(safe-area-inset-left));
+  }
+  #trackRight,
+  #steer {
+    right: calc(3vmin + env(safe-area-inset-right));
+  }
+  .track::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -3vmin;
+    right: -3vmin;
+  }
   /* the tick at the middle, where the lever rests */
-  .track::after { content: ''; position: absolute; left: 20%; right: 20%; top: 50%; height: 2px; background: rgba(255, 255, 255, 0.25); }
-  .track[hidden] { display: none; }
+  .track::after {
+    content: '';
+    position: absolute;
+    left: 20%;
+    right: 20%;
+    top: 50%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.25);
+  }
+  .track[hidden] {
+    display: none;
+  }
   /* the steering, lying across on the right: it stands on the row of buttons, clear of them at any width */
-  .track.across { top: auto; bottom: calc(64px + env(safe-area-inset-bottom)); height: 8vmin; width: min(44vw, 320px); }
-  .track.across::before { top: -3vmin; bottom: -3vmin; left: 0; right: 0; }
-  .track.across::after { top: 20%; bottom: 20%; left: 50%; right: auto; width: 2px; height: auto; }
-  .track.across .thumb { top: 2px; bottom: 2px; left: calc(50% - 4vmin); width: 8vmin; height: auto; }
-  body.touch.stick #toast { bottom: calc(76px + 8vmin + env(safe-area-inset-bottom)); }
-  .track .thumb { position: absolute; left: 2px; right: 2px; top: calc(50% - 4vmin); height: 8vmin; border-radius: 4vmin; z-index: 1;
-                  background: rgba(242, 193, 78, 0.6); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4); transition: transform .18s ease-out; }
-  .track.held .thumb { transition: none; background: var(--gold); }
-  body.touch #shop { right: 50%; width: min(340px, calc(100vw - 24px)); z-index: 5; }
+  .track.across {
+    top: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    height: 8vmin;
+    width: min(44vw, 320px);
+  }
+  .track.across::before {
+    top: -3vmin;
+    bottom: -3vmin;
+    left: 0;
+    right: 0;
+  }
+  .track.across::after {
+    top: 20%;
+    bottom: 20%;
+    left: 50%;
+    right: auto;
+    width: 2px;
+    height: auto;
+  }
+  .track.across .thumb {
+    top: 2px;
+    bottom: 2px;
+    left: calc(50% - 4vmin);
+    width: 8vmin;
+    height: auto;
+  }
+  body.touch.stick #toast {
+    bottom: calc(76px + 8vmin + env(safe-area-inset-bottom));
+  }
+  .track .thumb {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    top: calc(50% - 4vmin);
+    height: 8vmin;
+    border-radius: 4vmin;
+    z-index: 1;
+    background: rgba(242, 193, 78, 0.6);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+    transition: transform 0.18s ease-out;
+  }
+  .track.held .thumb {
+    transition: none;
+    background: var(--gold);
+  }
+  body.touch #shop {
+    right: 50%;
+    width: min(340px, calc(100vw - 24px));
+    z-index: 5;
+  }
   /* clear of the counters above and the buttons below, so the button that closes it is never under it */
   /* It stands on the buttons and grows upward, so it is held to the height left above them and scrolls
      as one list, the heading with the balance staying put: two lists each a share of the screen grew
      past the top of a short phone and took the workshop with them. */
-  body.touch #shop { top: auto; bottom: calc(66px + env(safe-area-inset-bottom)); transform: translateX(50%);
-                     max-height: calc(100vh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-                     max-height: calc(100dvh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-                     overflow: auto; touch-action: pan-y; padding-top: 0; }
-  body.touch #shop .rows { max-height: none; overflow: visible; }
-  body.touch #shop h2:first-child { position: sticky; top: 0; z-index: 1; margin: 0; padding: 10px 0 8px; background: rgb(22, 20, 28); }
-  body.touch #toast { bottom: calc(66px + env(safe-area-inset-bottom)); }
+  body.touch #shop {
+    top: auto;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    transform: translateX(50%);
+    max-height: calc(100vh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow: auto;
+    touch-action: pan-y;
+    padding-top: 0;
+  }
+  body.touch #shop .rows {
+    max-height: none;
+    overflow: visible;
+  }
+  body.touch #shop h2:first-child {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0;
+    padding: 10px 0 8px;
+    background: rgb(22, 20, 28);
+  }
+  body.touch #toast {
+    bottom: calc(66px + env(safe-area-inset-bottom));
+  }
   /* where to go: an arrow at the edge of the screen, or a marker over the place once it is in view */
-  #pointer { position: fixed; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 2; }
-  #pointer .arrow { position: absolute; left: -20px; top: -20px; width: 40px; height: 40px; filter: drop-shadow(0 0 5px rgba(242, 193, 78, 0.8)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.8)); }
-  #pointer .arrow::before { content: ''; position: absolute; inset: 3px; background: var(--gold); clip-path: polygon(0 12%, 100% 50%, 0 88%, 26% 50%); }
-  #pointer span { position: absolute; top: 0; left: 0; white-space: nowrap; color: var(--gold);
-                  font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); }
-  #boot { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center;
-          background: #0b0a10; transition: opacity .5s; z-index: 10; }
-  #boot.gone { opacity: 0; pointer-events: none; }
-  #boot h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 0.3em; color: var(--gold); }
-  #boot p { margin: 0; color: var(--dim); }
+  #pointer {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+  #pointer .arrow {
+    position: absolute;
+    left: -20px;
+    top: -20px;
+    width: 40px;
+    height: 40px;
+    filter: drop-shadow(0 0 5px rgba(242, 193, 78, 0.8)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.8));
+  }
+  #pointer .arrow::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    background: var(--gold);
+    clip-path: polygon(0 12%, 100% 50%, 0 88%, 26% 50%);
+  }
+  #pointer span {
+    position: absolute;
+    top: 0;
+    left: 0;
+    white-space: nowrap;
+    color: var(--gold);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  }
+  #boot {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 12px;
+    text-align: center;
+    background: #0b0a10;
+    transition: opacity 0.5s;
+    z-index: 10;
+  }
+  #boot.gone {
+    opacity: 0;
+    pointer-events: none;
+  }
+  #boot h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: var(--gold);
+  }
+  #boot p {
+    margin: 0;
+    color: var(--dim);
+  }
 </style>
 <div id="stage"><canvas id="view"></canvas></div>
 <div class="panel" id="bank" hidden><b>0</b><span class="sub" id="progress"></span></div>
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="toast" hidden></div>
 <div class="panel" id="cameraNote" hidden></div>
-<div id="pointer" hidden><div class="arrow"></div><span></span></div>
+<div id="pointer" hidden>
+  <div class="arrow"></div>
+  <span></span>
+</div>
 <div class="panel" id="help" hidden>
-  drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom · <span>V</span> camera mode · <span>C</span> reset camera · <span>M</span> mute · <span>H</span> horn<br>
+  drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom ·
+  <span>V</span> camera mode · <span>C</span> reset camera · <span>M</span> mute · <span>H</span> horn<br />
   push the coins and gems into the hole to bank them
 </div>
-<div class="panel" id="shop" hidden><h2>Workshop<span class="balance">balance <b id="shopBalance">0</b></span></h2><div class="rows"></div><h2 class="later">Paint shop</h2><div class="rows cosmetics"></div><div class="foot"><span><span id="shopProgress"></span><span class="keys"> · press <b>B</b> to close</span></span> <button id="reset" type="button">start over</button></div></div>
+<div class="panel" id="shop" hidden>
+  <h2>
+    Workshop<span class="balance">balance <b id="shopBalance">0</b></span>
+  </h2>
+  <div class="rows"></div>
+  <h2 class="later">Paint shop</h2>
+  <div class="rows cosmetics"></div>
+  <div class="foot">
+    <span
+      ><span id="shopProgress"></span><span class="keys"> · press <b>B</b> to close</span></span
+    >
+    <button id="reset" type="button">start over</button>
+  </div>
+</div>
 <div id="pad" hidden>
   <button id="muteButton" type="button" aria-label="mute">🔊</button>
   <button id="cameraButton" type="button" aria-label="camera">🎥</button>
@@ -142,5 +537,8 @@
   <div class="track" id="trackRight" aria-label="right track"><div class="thumb"></div></div>
   <div class="track across" id="steer" aria-label="steering" hidden><div class="thumb"></div></div>
 </div>
-<div id="boot"><h1>PUSHMINER</h1><p id="bootMsg">starting WebGPU…</p></div>
+<div id="boot">
+  <h1>PUSHMINER</h1>
+  <p id="bootMsg">starting WebGPU…</p>
+</div>
 <script type="module" src="/src/main.ts"></script>

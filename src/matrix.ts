@@ -6,23 +6,67 @@
 /** A turn about Z, a uniform scale, and somewhere to put it. */
 export function place(out: Float32Array, i: number, x: number, y: number, z: number, yaw = 0, scale = 1) {
   const o = i * 16;
-  const c = Math.cos(yaw) * scale, s = Math.sin(yaw) * scale;
-  out[o] = c; out[o + 1] = s; out[o + 2] = 0; out[o + 3] = 0;
-  out[o + 4] = -s; out[o + 5] = c; out[o + 6] = 0; out[o + 7] = 0;
-  out[o + 8] = 0; out[o + 9] = 0; out[o + 10] = scale; out[o + 11] = 0;
-  out[o + 12] = x; out[o + 13] = y; out[o + 14] = z; out[o + 15] = 1;
+  const c = Math.cos(yaw) * scale,
+    s = Math.sin(yaw) * scale;
+  out[o] = c;
+  out[o + 1] = s;
+  out[o + 2] = 0;
+  out[o + 3] = 0;
+  out[o + 4] = -s;
+  out[o + 5] = c;
+  out[o + 6] = 0;
+  out[o + 7] = 0;
+  out[o + 8] = 0;
+  out[o + 9] = 0;
+  out[o + 10] = scale;
+  out[o + 11] = 0;
+  out[o + 12] = x;
+  out[o + 13] = y;
+  out[o + 14] = z;
+  out[o + 15] = 1;
 }
 
 /** A placement from a unit quaternion [x, y, z, w], for a thing that tumbles. */
-export function placeQuat(out: Float32Array, i: number, x: number, y: number, z: number, q: Float32Array, qo: number, scale = 1) {
-  const qx = q[qo], qy = q[qo + 1], qz = q[qo + 2], qw = q[qo + 3];
-  const xx = qx * qx, yy = qy * qy, zz = qz * qz;
-  const xy = qx * qy, xz = qx * qz, yz = qy * qz, wx = qw * qx, wy = qw * qy, wz = qw * qz;
+export function placeQuat(
+  out: Float32Array,
+  i: number,
+  x: number,
+  y: number,
+  z: number,
+  q: Float32Array,
+  qo: number,
+  scale = 1,
+) {
+  const qx = q[qo],
+    qy = q[qo + 1],
+    qz = q[qo + 2],
+    qw = q[qo + 3];
+  const xx = qx * qx,
+    yy = qy * qy,
+    zz = qz * qz;
+  const xy = qx * qy,
+    xz = qx * qz,
+    yz = qy * qz,
+    wx = qw * qx,
+    wy = qw * qy,
+    wz = qw * qz;
   const o = i * 16;
-  out[o] = (1 - 2 * (yy + zz)) * scale; out[o + 1] = 2 * (xy + wz) * scale; out[o + 2] = 2 * (xz - wy) * scale; out[o + 3] = 0;
-  out[o + 4] = 2 * (xy - wz) * scale; out[o + 5] = (1 - 2 * (xx + zz)) * scale; out[o + 6] = 2 * (yz + wx) * scale; out[o + 7] = 0;
-  out[o + 8] = 2 * (xz + wy) * scale; out[o + 9] = 2 * (yz - wx) * scale; out[o + 10] = (1 - 2 * (xx + yy)) * scale; out[o + 11] = 0;
-  out[o + 12] = x; out[o + 13] = y; out[o + 14] = z; out[o + 15] = 1;
+  out[o] = (1 - 2 * (yy + zz)) * scale;
+  out[o + 1] = 2 * (xy + wz) * scale;
+  out[o + 2] = 2 * (xz - wy) * scale;
+  out[o + 3] = 0;
+  out[o + 4] = 2 * (xy - wz) * scale;
+  out[o + 5] = (1 - 2 * (xx + zz)) * scale;
+  out[o + 6] = 2 * (yz + wx) * scale;
+  out[o + 7] = 0;
+  out[o + 8] = 2 * (xz + wy) * scale;
+  out[o + 9] = 2 * (yz - wx) * scale;
+  out[o + 10] = (1 - 2 * (xx + yy)) * scale;
+  out[o + 11] = 0;
+  out[o + 12] = x;
+  out[o + 13] = y;
+  out[o + 14] = z;
+  out[o + 15] = 1;
 }
 
 /**
@@ -31,21 +75,47 @@ export function placeQuat(out: Float32Array, i: number, x: number, y: number, z:
  * tipped about its own X, with a scale of its own each way.
  */
 export function placePart(
-  out: Float32Array, i: number,
-  bx: number, by: number, bz: number, yaw: number,
-  lx: number, ly: number, lz: number,
-  localYaw = 0, pitch = 0, sx = 1, sy = 1, sz = 1,
+  out: Float32Array,
+  i: number,
+  bx: number,
+  by: number,
+  bz: number,
+  yaw: number,
+  lx: number,
+  ly: number,
+  lz: number,
+  localYaw = 0,
+  pitch = 0,
+  sx = 1,
+  sy = 1,
+  sz = 1,
 ) {
-  const c = Math.cos(yaw), s = Math.sin(yaw);
-  const cl = Math.cos(localYaw), sl = Math.sin(localYaw);
-  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const c = Math.cos(yaw),
+    s = Math.sin(yaw);
+  const cl = Math.cos(localYaw),
+    sl = Math.sin(localYaw);
+  const cp = Math.cos(pitch),
+    sp = Math.sin(pitch);
   // R = Rz(yaw) · Rz(localYaw) · Rx(pitch), then columns scaled
-  const ca = c * cl - s * sl, sa = s * cl + c * sl;
+  const ca = c * cl - s * sl,
+    sa = s * cl + c * sl;
   const o = i * 16;
-  out[o] = ca * sx; out[o + 1] = sa * sx; out[o + 2] = 0; out[o + 3] = 0;
-  out[o + 4] = -sa * cp * sy; out[o + 5] = ca * cp * sy; out[o + 6] = sp * sy; out[o + 7] = 0;
-  out[o + 8] = sa * sp * sz; out[o + 9] = -ca * sp * sz; out[o + 10] = cp * sz; out[o + 11] = 0;
-  out[o + 12] = bx + c * lx - s * ly; out[o + 13] = by + s * lx + c * ly; out[o + 14] = bz + lz; out[o + 15] = 1;
+  out[o] = ca * sx;
+  out[o + 1] = sa * sx;
+  out[o + 2] = 0;
+  out[o + 3] = 0;
+  out[o + 4] = -sa * cp * sy;
+  out[o + 5] = ca * cp * sy;
+  out[o + 6] = sp * sy;
+  out[o + 7] = 0;
+  out[o + 8] = sa * sp * sz;
+  out[o + 9] = -ca * sp * sz;
+  out[o + 10] = cp * sz;
+  out[o + 11] = 0;
+  out[o + 12] = bx + c * lx - s * ly;
+  out[o + 13] = by + s * lx + c * ly;
+  out[o + 14] = bz + lz;
+  out[o + 15] = 1;
 }
 
 /** Park a placement where nothing can see it. */

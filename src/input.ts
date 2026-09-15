@@ -1,5 +1,8 @@
 /** The keyboard: WASD or arrows to drive, and a few one-shot keys. On a phone, the sliders. */
-export interface Drive { throttle: number; steer: number }
+export interface Drive {
+  throttle: number;
+  steer: number;
+}
 
 export class Input {
   private down = new Set<string>();
@@ -27,7 +30,9 @@ export class Input {
     addEventListener('blur', () => this.down.clear());
   }
 
-  private is(...keys: string[]) { return keys.some((k) => this.down.has(k)); }
+  private is(...keys: string[]) {
+    return keys.some((k) => this.down.has(k));
+  }
 
   read(): Drive {
     const throttle = (this.is('w', 'arrowup') ? 1 : 0) - (this.is('s', 'arrowdown') ? 1 : 0);
@@ -37,15 +42,41 @@ export class Input {
   }
 
   /** The shop, asked for by something other than the B key: the phone's button. */
-  toggleShop() { this.shop = true; }
+  toggleShop() {
+    this.shop = true;
+  }
   /** The camera, from the phone's button. */
-  pressCamera() { this.camera = true; }
+  pressCamera() {
+    this.camera = true;
+  }
   /** The horn, from the phone's button. */
-  pressHorn() { this.horn = true; }
+  pressHorn() {
+    this.horn = true;
+  }
 
-  takeShop() { const v = this.shop; this.shop = false; return v; }
-  takeRecentre() { const v = this.recentre; this.recentre = false; return v; }
-  takeMute() { const v = this.mute; this.mute = false; return v; }
-  takeHorn() { const v = this.horn; this.horn = false; return v; }
-  takeCamera() { const v = this.camera; this.camera = false; return v; }
+  takeShop() {
+    const v = this.shop;
+    this.shop = false;
+    return v;
+  }
+  takeRecentre() {
+    const v = this.recentre;
+    this.recentre = false;
+    return v;
+  }
+  takeMute() {
+    const v = this.mute;
+    this.mute = false;
+    return v;
+  }
+  takeHorn() {
+    const v = this.horn;
+    this.horn = false;
+    return v;
+  }
+  takeCamera() {
+    const v = this.camera;
+    this.camera = false;
+    return v;
+  }
 }

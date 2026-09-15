@@ -11,10 +11,19 @@ type V3 = [number, number, number];
 
 /** One flat-shaded quad, wound counter-clockwise seen from the normal. */
 function face(b: MeshBuilder, p0: V3, p1: V3, p2: V3, p3: V3) {
-  const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
-  const vx = p3[0] - p0[0], vy = p3[1] - p0[1], vz = p3[2] - p0[2];
-  let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-  const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+  const ux = p1[0] - p0[0],
+    uy = p1[1] - p0[1],
+    uz = p1[2] - p0[2];
+  const vx = p3[0] - p0[0],
+    vy = p3[1] - p0[1],
+    vz = p3[2] - p0[2];
+  let nx = uy * vz - uz * vy,
+    ny = uz * vx - ux * vz,
+    nz = ux * vy - uy * vx;
+  const l = Math.hypot(nx, ny, nz) || 1;
+  nx /= l;
+  ny /= l;
+  nz /= l;
   const a = b.vertex(p0[0], p0[1], p0[2], nx, ny, nz, 0, 0);
   b.vertex(p1[0], p1[1], p1[2], nx, ny, nz, 1, 0);
   b.vertex(p2[0], p2[1], p2[2], nx, ny, nz, 1, 1);
@@ -23,10 +32,19 @@ function face(b: MeshBuilder, p0: V3, p1: V3, p2: V3, p3: V3) {
 }
 
 function tri(b: MeshBuilder, p0: V3, p1: V3, p2: V3) {
-  const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
-  const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
-  let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-  const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+  const ux = p1[0] - p0[0],
+    uy = p1[1] - p0[1],
+    uz = p1[2] - p0[2];
+  const vx = p2[0] - p0[0],
+    vy = p2[1] - p0[1],
+    vz = p2[2] - p0[2];
+  let nx = uy * vz - uz * vy,
+    ny = uz * vx - ux * vz,
+    nz = ux * vy - uy * vx;
+  const l = Math.hypot(nx, ny, nz) || 1;
+  nx /= l;
+  ny /= l;
+  nz /= l;
   const a = b.vertex(p0[0], p0[1], p0[2], nx, ny, nz, 0, 0);
   b.vertex(p1[0], p1[1], p1[2], nx, ny, nz, 1, 0);
   b.vertex(p2[0], p2[1], p2[2], nx, ny, nz, 0.5, 1);
@@ -41,14 +59,18 @@ function tri(b: MeshBuilder, p0: V3, p1: V3, p2: V3) {
  */
 export function bar(length: number, width: number, height: number, lift: number): Mesh {
   const b = new MeshBuilder();
-  const x0 = length / 2, y0 = width / 2, x1 = x0 - height * 0.35, y1 = y0 - height * 0.35;
-  const z0 = -lift, z1 = z0 + height;
-  face(b, [-x1, -y1, z1], [x1, -y1, z1], [x1, y1, z1], [-x1, y1, z1]);       // top
-  face(b, [-x0, y0, z0], [x0, y0, z0], [x0, -y0, z0], [-x0, -y0, z0]);       // bottom
-  face(b, [-x0, -y0, z0], [x0, -y0, z0], [x1, -y1, z1], [-x1, -y1, z1]);     // -y
-  face(b, [x0, y0, z0], [-x0, y0, z0], [-x1, y1, z1], [x1, y1, z1]);         // +y
-  face(b, [x0, -y0, z0], [x0, y0, z0], [x1, y1, z1], [x1, -y1, z1]);         // +x
-  face(b, [-x0, y0, z0], [-x0, -y0, z0], [-x1, -y1, z1], [-x1, y1, z1]);     // -x
+  const x0 = length / 2,
+    y0 = width / 2,
+    x1 = x0 - height * 0.35,
+    y1 = y0 - height * 0.35;
+  const z0 = -lift,
+    z1 = z0 + height;
+  face(b, [-x1, -y1, z1], [x1, -y1, z1], [x1, y1, z1], [-x1, y1, z1]); // top
+  face(b, [-x0, y0, z0], [x0, y0, z0], [x0, -y0, z0], [-x0, -y0, z0]); // bottom
+  face(b, [-x0, -y0, z0], [x0, -y0, z0], [x1, -y1, z1], [-x1, -y1, z1]); // -y
+  face(b, [x0, y0, z0], [-x0, y0, z0], [-x1, y1, z1], [x1, y1, z1]); // +y
+  face(b, [x0, -y0, z0], [x0, y0, z0], [x1, y1, z1], [x1, -y1, z1]); // +x
+  face(b, [-x0, y0, z0], [-x0, -y0, z0], [-x1, -y1, z1], [-x1, y1, z1]); // -x
   return b.build();
 }
 
@@ -58,13 +80,16 @@ export function bar(length: number, width: number, height: number, lift: number)
  */
 export function box(w: number, d: number, h: number, centred = false): Mesh {
   const b = new MeshBuilder();
-  const x = w / 2, y = d / 2, z0 = centred ? -h / 2 : 0, z1 = z0 + h;
-  face(b, [-x, -y, z1], [x, -y, z1], [x, y, z1], [-x, y, z1]);       // top
-  face(b, [-x, y, z0], [x, y, z0], [x, -y, z0], [-x, -y, z0]);       // bottom
-  face(b, [-x, -y, z0], [x, -y, z0], [x, -y, z1], [-x, -y, z1]);     // -y
-  face(b, [x, y, z0], [-x, y, z0], [-x, y, z1], [x, y, z1]);         // +y
-  face(b, [x, -y, z0], [x, y, z0], [x, y, z1], [x, -y, z1]);         // +x
-  face(b, [-x, y, z0], [-x, -y, z0], [-x, -y, z1], [-x, y, z1]);     // -x
+  const x = w / 2,
+    y = d / 2,
+    z0 = centred ? -h / 2 : 0,
+    z1 = z0 + h;
+  face(b, [-x, -y, z1], [x, -y, z1], [x, y, z1], [-x, y, z1]); // top
+  face(b, [-x, y, z0], [x, y, z0], [x, -y, z0], [-x, -y, z0]); // bottom
+  face(b, [-x, -y, z0], [x, -y, z0], [x, -y, z1], [-x, -y, z1]); // -y
+  face(b, [x, y, z0], [-x, y, z0], [-x, y, z1], [x, y, z1]); // +y
+  face(b, [x, -y, z0], [x, y, z0], [x, y, z1], [x, -y, z1]); // +x
+  face(b, [-x, y, z0], [-x, -y, z0], [-x, -y, z1], [-x, y, z1]); // -x
   return b.build();
 }
 
@@ -74,10 +99,10 @@ export function box(w: number, d: number, h: number, centred = false): Mesh {
  * rim, the sunk field and the emblem go first, then the roundness.
  */
 export const COIN_LADDER = [
-  { name: 'full', segments: 18, relief: true },     // 428 triangles
-  { name: 'medium', segments: 12, relief: true },   // 284
-  { name: 'simple', segments: 12, bevel: true },    // 92
-  { name: 'minimal', segments: 8 },                 // 28
+  { name: 'full', segments: 18, relief: true }, // 428 triangles
+  { name: 'medium', segments: 12, relief: true }, // 284
+  { name: 'simple', segments: 12, bevel: true }, // 92
+  { name: 'minimal', segments: 8 }, // 28
 ] as const satisfies readonly { name: string; segments: number; relief?: boolean; bevel?: boolean }[];
 
 /**
@@ -90,16 +115,32 @@ export const COIN_LADDER = [
  * `COIN_LADDER`.
  */
 export function coin(radius: number, thickness: number, detail = 0): Mesh {
-  const rung: { segments: number; relief?: boolean; bevel?: boolean } = COIN_LADDER[Math.max(0, Math.min(COIN_LADDER.length - 1, detail))];
+  const rung: { segments: number; relief?: boolean; bevel?: boolean } =
+    COIN_LADDER[Math.max(0, Math.min(COIN_LADDER.length - 1, detail))];
   const { segments } = rung;
   const b = new MeshBuilder();
   const h = thickness / 2;
-  const bevel = thickness * 0.1, sink = thickness * 0.14;
-  const rimIn = radius * 0.8, emblem = radius * 0.5, emblemTop = h - thickness * 0.02;
+  const bevel = thickness * 0.1,
+    sink = thickness * 0.14;
+  const rimIn = radius * 0.8,
+    emblem = radius * 0.5,
+    emblemTop = h - thickness * 0.02;
   // the top half of the outside, from the edge in to the middle
   const top: [number, number][] = rung.relief
-    ? [[radius, h - bevel], [radius - bevel, h], [rimIn, h], [rimIn, h - sink], [emblem, h - sink], [emblem, emblemTop]]
-    : rung.bevel ? [[radius, h - bevel], [radius - bevel, h]] : [[radius, h]];
+    ? [
+        [radius, h - bevel],
+        [radius - bevel, h],
+        [rimIn, h],
+        [rimIn, h - sink],
+        [emblem, h - sink],
+        [emblem, emblemTop],
+      ]
+    : rung.bevel
+      ? [
+          [radius, h - bevel],
+          [radius - bevel, h],
+        ]
+      : [[radius, h]];
   // the outside of the solid from the bottom middle round to the top one: with each
   // band wound the same way along it, every face's normal points out
   const profile = [...top.map(([r, z]) => [r, -z] as [number, number]).reverse(), ...top];
@@ -113,13 +154,15 @@ export function coin(radius: number, thickness: number, detail = 0): Mesh {
   };
   const rings = profile.map(([r, z]) => ring(r, z));
   for (let k = 0; k + 1 < rings.length; k++) {
-    const lo = rings[k], hi = rings[k + 1];
+    const lo = rings[k],
+      hi = rings[k + 1];
     for (let i = 0; i < segments; i++) {
       const j = (i + 1) % segments;
       face(b, lo[i], lo[j], hi[j], hi[i]);
     }
   }
-  const up = rings[rings.length - 1], down = rings[0];
+  const up = rings[rings.length - 1],
+    down = rings[0];
   for (let i = 1; i < segments - 1; i++) {
     tri(b, up[0], up[i], up[i + 1]);
     tri(b, down[0], down[i + 1], down[i]);
@@ -139,8 +182,10 @@ export function gem(radius: number, height: number, sides = 6): Mesh {
     }
     return out;
   };
-  const lo = ring(radius, -g), hi = ring(radius, g);
-  const apex: V3 = [0, 0, height / 2], nadir: V3 = [0, 0, -height / 2];
+  const lo = ring(radius, -g),
+    hi = ring(radius, g);
+  const apex: V3 = [0, 0, height / 2],
+    nadir: V3 = [0, 0, -height / 2];
   for (let i = 0; i < sides; i++) {
     const j = (i + 1) % sides;
     face(b, lo[i], lo[j], hi[j], hi[i]);
@@ -155,7 +200,8 @@ export function cone(radius: number, height: number, segments = 8): Mesh {
   const b = new MeshBuilder();
   const apex: V3 = [0, 0, height];
   for (let i = 0; i < segments; i++) {
-    const a0 = (i / segments) * Math.PI * 2, a1 = ((i + 1) / segments) * Math.PI * 2;
+    const a0 = (i / segments) * Math.PI * 2,
+      a1 = ((i + 1) / segments) * Math.PI * 2;
     const p0: V3 = [Math.cos(a0) * radius, Math.sin(a0) * radius, 0];
     const p1: V3 = [Math.cos(a1) * radius, Math.sin(a1) * radius, 0];
     tri(b, p0, p1, apex);
@@ -183,7 +229,8 @@ export function cylinder(radius: number, height: number, segments = 12): Mesh {
 export function ball(radius: number, rings = 6, segments = 10): Mesh {
   const b = new MeshBuilder();
   const at = (i: number, j: number): V3 => {
-    const phi = (i / rings) * Math.PI, th = (j / segments) * Math.PI * 2;
+    const phi = (i / rings) * Math.PI,
+      th = (j / segments) * Math.PI * 2;
     return [Math.sin(phi) * Math.cos(th) * radius, Math.sin(phi) * Math.sin(th) * radius, Math.cos(phi) * radius];
   };
   for (let i = 0; i < rings; i++) {
@@ -200,8 +247,14 @@ export function ball(radius: number, rings = 6, segments = 10): Mesh {
 export function disc(radius: number, segments = 10): Mesh {
   const b = new MeshBuilder();
   for (let i = 0; i < segments; i++) {
-    const a0 = (i / segments) * Math.PI * 2, a1 = ((i + 1) / segments) * Math.PI * 2;
-    tri(b, [0, 0, 0], [Math.cos(a0) * radius, Math.sin(a0) * radius, 0], [Math.cos(a1) * radius, Math.sin(a1) * radius, 0]);
+    const a0 = (i / segments) * Math.PI * 2,
+      a1 = ((i + 1) / segments) * Math.PI * 2;
+    tri(
+      b,
+      [0, 0, 0],
+      [Math.cos(a0) * radius, Math.sin(a0) * radius, 0],
+      [Math.cos(a1) * radius, Math.sin(a1) * radius, 0],
+    );
   }
   return b.build();
 }
@@ -216,12 +269,17 @@ export function collar(side: number, radius: number, segments = 40): Mesh {
   const half = side / 2;
   const at = (i: number): [V3, V3] => {
     const a = (i / segments) * Math.PI * 2;
-    const c = Math.cos(a), s = Math.sin(a);
+    const c = Math.cos(a),
+      s = Math.sin(a);
     const reach = half / Math.max(Math.abs(c), Math.abs(s));
-    return [[c * radius, s * radius, 0], [c * reach, s * reach, 0]];
+    return [
+      [c * radius, s * radius, 0],
+      [c * reach, s * reach, 0],
+    ];
   };
   for (let i = 0; i < segments; i++) {
-    const [in0, out0] = at(i), [in1, out1] = at(i + 1);
+    const [in0, out0] = at(i),
+      [in1, out1] = at(i + 1);
     face(b, in0, out0, out1, in1);
   }
   return b.build();
@@ -244,18 +302,26 @@ export function pit(radius: number, depth: number, segments = 40): Mesh {
 /** A copy of a mesh moved by an offset, for assembling a body from parts. */
 export function moved(mesh: Mesh, dx: number, dy: number, dz: number): Mesh {
   const positions = new Float32Array(mesh.positions);
-  for (let i = 0; i < positions.length; i += 3) { positions[i] += dx; positions[i + 1] += dy; positions[i + 2] += dz; }
+  for (let i = 0; i < positions.length; i += 3) {
+    positions[i] += dx;
+    positions[i + 1] += dy;
+    positions[i + 2] += dz;
+  }
   return { positions, normals: mesh.normals, uvs: mesh.uvs, indices: mesh.indices };
 }
 
 /** A copy of a mesh turned about Z, positions and normals both. */
 export function turned(mesh: Mesh, yaw: number): Mesh {
-  const c = Math.cos(yaw), s = Math.sin(yaw);
-  const positions = new Float32Array(mesh.positions), normals = new Float32Array(mesh.normals);
+  const c = Math.cos(yaw),
+    s = Math.sin(yaw);
+  const positions = new Float32Array(mesh.positions),
+    normals = new Float32Array(mesh.normals);
   for (const a of [positions, normals]) {
     for (let i = 0; i < a.length; i += 3) {
-      const x = a[i], y = a[i + 1];
-      a[i] = c * x - s * y; a[i + 1] = s * x + c * y;
+      const x = a[i],
+        y = a[i + 1];
+      a[i] = c * x - s * y;
+      a[i + 1] = s * x + c * y;
     }
   }
   return { positions, normals, uvs: mesh.uvs, indices: mesh.indices };
@@ -271,7 +337,8 @@ export function lump(seed: number, rings = 4, segments = 7): Mesh {
     const jj = i === 0 || i === rings ? 0 : ((j % segments) + segments) % segments;
     const h = Math.sin((i * 12.9898 + jj * 78.233 + seed * 37.719) * 43758.5453);
     const r = 0.78 + (h - Math.floor(h)) * 0.44;
-    const phi = (i / rings) * Math.PI, th = ((jj + (i % 2) * 0.5) / segments) * Math.PI * 2;
+    const phi = (i / rings) * Math.PI,
+      th = ((jj + (i % 2) * 0.5) / segments) * Math.PI * 2;
     return [Math.sin(phi) * Math.cos(th) * r, Math.sin(phi) * Math.sin(th) * r, Math.max(-0.45, Math.cos(phi) * r)];
   };
   for (let i = 0; i < rings; i++) {

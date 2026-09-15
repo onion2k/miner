@@ -40,7 +40,9 @@ const SQUARE_ON = 0.9;
  * and the tracks either side; the blade's wings stick out past it, which
  * lets two machines lock blades a little rather than bounce off air.
  */
-const BODY_BACK = -0.9, BODY_FRONT = 1.8, BODY_ROUND = 2.8;
+const BODY_BACK = -0.9,
+  BODY_FRONT = 1.8,
+  BODY_ROUND = 2.8;
 
 /**
  * Where each piece of the blade sits in the dozer's own frame: along the
@@ -51,7 +53,9 @@ const BODY_BACK = -0.9, BODY_FRONT = 1.8, BODY_ROUND = 2.8;
  * collectable.
  */
 export function bladePieces(width: number): { x: number; y: number; turn: number; length: number }[] {
-  const half = width / 2, flat = half * BLADE_FLAT, wing = half - flat;
+  const half = width / 2,
+    flat = half * BLADE_FLAT,
+    wing = half - flat;
   const sweep = WING_SWEEP * width;
   const out = [{ x: BLADE_AT, y: 0, turn: 0, length: flat * 2 }];
   const length = wing / WING_PIECES;
@@ -60,14 +64,21 @@ export function bladePieces(width: number): { x: number; y: number; turn: number
       const t = (k + 0.5) / WING_PIECES;
       const y = side * (flat + t * wing);
       // the tangent: the piece lies along (dx/dy, 1), a turn of -atan(dx/dy) from straight across
-      out.push({ x: BLADE_AT + sweep * t * t, y, turn: -Math.atan((2 * sweep * t) / wing) * side, length: length * 1.15 });
+      out.push({
+        x: BLADE_AT + sweep * t * t,
+        y,
+        turn: -Math.atan((2 * sweep * t) / wing) * side,
+        length: length * 1.15,
+      });
     }
   }
   return out;
 }
 
 export class Dozer {
-  x = 0; y = -14; yaw = Math.PI / 2;
+  x = 0;
+  y = -14;
+  yaw = Math.PI / 2;
   speed = 0;
   yawRate = 0;
   /**
@@ -91,7 +102,13 @@ export class Dozer {
    * are the same shape, smaller. `owner` names its boxes to the physics, so
    * each machine is slowed by its own load and not another's.
    */
-  constructor(solid: Uint8Array, readonly scale = 1, readonly owner = 0) { this.solid = solid; }
+  constructor(
+    solid: Uint8Array,
+    readonly scale = 1,
+    readonly owner = 0,
+  ) {
+    this.solid = solid;
+  }
 
   /**
    * `load` is how many coins the blade is shoving: a heap in front of the
@@ -101,7 +118,8 @@ export class Dozer {
   update(dt: number, drive: Drive, spec: DozerSpec, load = 0) {
     const { throttle, steer } = drive;
     const heavy = 1 + load * 0.014;
-    const maxSpeed = spec.maxSpeed / heavy, accel = spec.accel / heavy;
+    const maxSpeed = spec.maxSpeed / heavy,
+      accel = spec.accel / heavy;
     const reverseMax = spec.maxSpeed * 0.55;
     // The throttle is how far the lever is pushed, and sets the speed it drives up
     // to: a key is all the way, a slider on a phone anywhere between. Above that
@@ -128,7 +146,8 @@ export class Dozer {
     this.yawRate += (wantRate - this.yawRate) * Math.min(1, 10 * dt);
     this.yaw += this.yawRate * dt;
 
-    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
+    const c = Math.cos(this.yaw),
+      s = Math.sin(this.yaw);
     this.x += c * this.speed * dt;
     this.y += s * this.speed * dt;
     // a point on the left track, TRACK_GAUGE out along +y, moves at the speed less
@@ -156,21 +175,30 @@ export class Dozer {
     for (let pass = 0; pass < 2; pass++) {
       // the push out of every tile it is in, added up: along a wall that steps across the tiles
       // that is the wall's own slant, which no one tile's face is
-      let pushX = 0, pushY = 0;
-      const tx = Math.floor((this.x - ORIGIN_X) / TILE), ty = Math.floor((this.y - ORIGIN_Y) / TILE);
+      let pushX = 0,
+        pushY = 0;
+      const tx = Math.floor((this.x - ORIGIN_X) / TILE),
+        ty = Math.floor((this.y - ORIGIN_Y) / TILE);
       for (let oy = -1; oy <= 1; oy++) {
         for (let ox = -1; ox <= 1; ox++) {
-          const nx = tx + ox, ny = ty + oy;
+          const nx = tx + ox,
+            ny = ty + oy;
           if ((!ox && !oy) || !this.rockAt(nx, ny)) continue;
-          const x0 = ORIGIN_X + nx * TILE, y0 = ORIGIN_Y + ny * TILE;
-          const cx = Math.max(x0, Math.min(x0 + TILE, this.x)), cy = Math.max(y0, Math.min(y0 + TILE, this.y));
-          const dx = this.x - cx, dy = this.y - cy;
+          const x0 = ORIGIN_X + nx * TILE,
+            y0 = ORIGIN_Y + ny * TILE;
+          const cx = Math.max(x0, Math.min(x0 + TILE, this.x)),
+            cy = Math.max(y0, Math.min(y0 + TILE, this.y));
+          const dx = this.x - cx,
+            dy = this.y - cy;
           const d = Math.hypot(dx, dy);
           if (d >= reach || d < 1e-4) continue;
           const out = reach - d;
-          if (pass === 0 && this.onRock) this.onRock(nx, ny, -((Math.cos(this.yaw) * dx + Math.sin(this.yaw) * dy) / d) * Math.sign(this.speed));
-          this.x += (dx / d) * out; this.y += (dy / d) * out;
-          pushX += (dx / d) * out; pushY += (dy / d) * out;
+          if (pass === 0 && this.onRock)
+            this.onRock(nx, ny, -((Math.cos(this.yaw) * dx + Math.sin(this.yaw) * dy) / d) * Math.sign(this.speed));
+          this.x += (dx / d) * out;
+          this.y += (dy / d) * out;
+          pushX += (dx / d) * out;
+          pushY += (dy / d) * out;
         }
       }
       const pushed = Math.hypot(pushX, pushY);
@@ -191,38 +219,72 @@ export class Dozer {
    * thick: it goes to the nearest open tile, in rings out from where it is.
    */
   private outOfRock() {
-    const tx = Math.floor((this.x - ORIGIN_X) / TILE), ty = Math.floor((this.y - ORIGIN_Y) / TILE);
+    const tx = Math.floor((this.x - ORIGIN_X) / TILE),
+      ty = Math.floor((this.y - ORIGIN_Y) / TILE);
     for (let ring = 1; ring < 8; ring++) {
-      let best: [number, number] | null = null, bestD = Infinity;
+      let best: [number, number] | null = null,
+        bestD = Infinity;
       for (let oy = -ring; oy <= ring; oy++) {
         for (let ox = -ring; ox <= ring; ox++) {
           if (Math.max(Math.abs(ox), Math.abs(oy)) !== ring || this.rockAt(tx + ox, ty + oy)) continue;
-          const cx = ORIGIN_X + (tx + ox + 0.5) * TILE, cy = ORIGIN_Y + (ty + oy + 0.5) * TILE;
+          const cx = ORIGIN_X + (tx + ox + 0.5) * TILE,
+            cy = ORIGIN_Y + (ty + oy + 0.5) * TILE;
           const d = Math.hypot(cx - this.x, cy - this.y);
-          if (d < bestD) { bestD = d; best = [cx, cy]; }
+          if (d < bestD) {
+            bestD = d;
+            best = [cx, cy];
+          }
         }
       }
-      if (best) { this.x = best[0]; this.y = best[1]; this.speed = 0; return; }
+      if (best) {
+        this.x = best[0];
+        this.y = best[1];
+        this.speed = 0;
+        return;
+      }
     }
   }
 
   /** The boxes the coins feel: the blade's pieces and the hull, scaled to the machine. */
   pushers(spec: DozerSpec, out: Pusher[]): Pusher[] {
-    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
-    const vx = c * this.speed, vy = s * this.speed;
-    const k = this.scale, owner = this.owner;
+    const c = Math.cos(this.yaw),
+      s = Math.sin(this.yaw);
+    const vx = c * this.speed,
+      vy = s * this.speed;
+    const k = this.scale,
+      owner = this.owner;
     out.length = 0;
     for (const piece of bladePieces(spec.bladeWidth)) {
       out.push({
-        x: this.x + (c * piece.x - s * piece.y) * k, y: this.y + (s * piece.x + c * piece.y) * k, z: (BLADE_HEIGHT / 2) * k,
-        yaw: this.yaw + piece.turn, hx: 0.3 * k, hy: (piece.length / 2) * k, hz: (BLADE_HEIGHT / 2) * k,
-        vx, vy, spin: this.yawRate, px: this.x, py: this.y, owner,
+        x: this.x + (c * piece.x - s * piece.y) * k,
+        y: this.y + (s * piece.x + c * piece.y) * k,
+        z: (BLADE_HEIGHT / 2) * k,
+        yaw: this.yaw + piece.turn,
+        hx: 0.3 * k,
+        hy: (piece.length / 2) * k,
+        hz: (BLADE_HEIGHT / 2) * k,
+        vx,
+        vy,
+        spin: this.yawRate,
+        px: this.x,
+        py: this.y,
+        owner,
       });
     }
     out.push({
-      x: this.x, y: this.y, z: HULL_HALF[2] * k,
-      yaw: this.yaw, hx: HULL_HALF[0] * k, hy: HULL_HALF[1] * k, hz: HULL_HALF[2] * k,
-      vx, vy, spin: this.yawRate, px: this.x, py: this.y, owner,
+      x: this.x,
+      y: this.y,
+      z: HULL_HALF[2] * k,
+      yaw: this.yaw,
+      hx: HULL_HALF[0] * k,
+      hy: HULL_HALF[1] * k,
+      hz: HULL_HALF[2] * k,
+      vx,
+      vy,
+      spin: this.yawRate,
+      px: this.x,
+      py: this.y,
+      owner,
     });
     return out;
   }
@@ -230,19 +292,38 @@ export class Dozer {
 
 /** Where along each of two segments, 0 to 1, their closest points are. */
 function closestOnSegments(
-  ax: number, ay: number, bx: number, by: number,
-  cx: number, cy: number, dx: number, dy: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
 ): [number, number] {
-  const ux = bx - ax, uy = by - ay, vx = dx - cx, vy = dy - cy, wx = ax - cx, wy = ay - cy;
-  const a = ux * ux + uy * uy, b = ux * vx + uy * vy, c = vx * vx + vy * vy;
-  const d = ux * wx + uy * wy, e = vx * wx + vy * wy;
+  const ux = bx - ax,
+    uy = by - ay,
+    vx = dx - cx,
+    vy = dy - cy,
+    wx = ax - cx,
+    wy = ay - cy;
+  const a = ux * ux + uy * uy,
+    b = ux * vx + uy * vy,
+    c = vx * vx + vy * vy;
+  const d = ux * wx + uy * wy,
+    e = vx * wx + vy * wy;
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
   const denom = a * c - b * b;
   // parallel segments have no one closest pair: any s will do, so take the middle
   let s = denom > 1e-8 ? clamp((b * e - c * d) / denom) : 0.5;
   let t = c > 1e-8 ? (b * s + e) / c : 0;
-  if (t < 0) { t = 0; s = a > 1e-8 ? clamp(-d / a) : 0; }
-  else if (t > 1) { t = 1; s = a > 1e-8 ? clamp((b - d) / a) : 0; }
+  if (t < 0) {
+    t = 0;
+    s = a > 1e-8 ? clamp(-d / a) : 0;
+  } else if (t > 1) {
+    t = 1;
+    s = a > 1e-8 ? clamp((b - d) / a) : 0;
+  }
   return [s, t];
 }
 
@@ -254,26 +335,41 @@ function closestOnSegments(
  */
 export function separate(a: Dozer, b: Dozer) {
   const ends = (m: Dozer) => {
-    const c = Math.cos(m.yaw), s = Math.sin(m.yaw), k = m.scale;
+    const c = Math.cos(m.yaw),
+      s = Math.sin(m.yaw),
+      k = m.scale;
     return [m.x + c * BODY_BACK * k, m.y + s * BODY_BACK * k, m.x + c * BODY_FRONT * k, m.y + s * BODY_FRONT * k];
   };
-  const [a0x, a0y, a1x, a1y] = ends(a), [b0x, b0y, b1x, b1y] = ends(b);
+  const [a0x, a0y, a1x, a1y] = ends(a),
+    [b0x, b0y, b1x, b1y] = ends(b);
   const [sa, sb] = closestOnSegments(a0x, a0y, a1x, a1y, b0x, b0y, b1x, b1y);
-  const pax = a0x + (a1x - a0x) * sa, pay = a0y + (a1y - a0y) * sa;
-  const pbx = b0x + (b1x - b0x) * sb, pby = b0y + (b1y - b0y) * sb;
-  let nx = pax - pbx, ny = pay - pby;
+  const pax = a0x + (a1x - a0x) * sa,
+    pay = a0y + (a1y - a0y) * sa;
+  const pbx = b0x + (b1x - b0x) * sb,
+    pby = b0y + (b1y - b0y) * sb;
+  let nx = pax - pbx,
+    ny = pay - pby;
   let d = Math.hypot(nx, ny);
   const reach = BODY_ROUND * (a.scale + b.scale);
   if (d >= reach) return;
   if (d < 1e-4) {
     // one's spine lies across the other's: push apart along the line between their pivots
-    nx = a.x - b.x; ny = a.y - b.y; d = Math.hypot(nx, ny);
-    if (d < 1e-4) { nx = 1; ny = 0; d = 1; }
+    nx = a.x - b.x;
+    ny = a.y - b.y;
+    d = Math.hypot(nx, ny);
+    if (d < 1e-4) {
+      nx = 1;
+      ny = 0;
+      d = 1;
+    }
   }
-  nx /= d; ny /= d;
+  nx /= d;
+  ny /= d;
   const push = (reach - Math.min(d, reach)) / 2;
-  a.x += nx * push; a.y += ny * push;
-  b.x -= nx * push; b.y -= ny * push;
+  a.x += nx * push;
+  a.y += ny * push;
+  b.x -= nx * push;
+  b.y -= ny * push;
   // what was driving each into the other, square on: a glancing meeting slides, as on the rock
   if ((Math.cos(a.yaw) * nx + Math.sin(a.yaw) * ny) * Math.sign(a.speed) < -SQUARE_ON) a.speed *= 0.5;
   if ((Math.cos(b.yaw) * -nx + Math.sin(b.yaw) * -ny) * Math.sign(b.speed) < -SQUARE_ON) b.speed *= 0.5;

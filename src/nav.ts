@@ -28,15 +28,24 @@ import type { Belt } from './physics';
 
 const TILES = COLS * ROWS;
 /** What crossing a tile costs over the open floor: beside the rock, and one further off. */
-const BESIDE_ROCK = 3, NEAR_ROCK = 0.6;
+const BESIDE_ROCK = 3,
+  NEAR_ROCK = 0.6;
 /** What leaving a load on a belt counts for, against pushing it: getting it on, and each tile it has still to ride. */
-const BELT_HANDOVER = 2, BELT_RIDE = 0.1;
+const BELT_HANDOVER = 2,
+  BELT_RIDE = 0.1;
 /** What crossing a tile of coins costs, a coin at a time, and the most it can come to. */
-const PER_COIN = 0.12, CROWD_MOST = 6;
+const PER_COIN = 0.12,
+  CROWD_MOST = 6;
 /** The eight ways out of a tile, with what each step costs in tiles. */
 const STEPS: [number, number, number][] = [
-  [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
-  [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2],
+  [1, 0, 1],
+  [-1, 0, 1],
+  [0, 1, 1],
+  [0, -1, 1],
+  [1, 1, Math.SQRT2],
+  [1, -1, Math.SQRT2],
+  [-1, 1, Math.SQRT2],
+  [-1, -1, Math.SQRT2],
 ];
 
 export class Nav {
@@ -52,7 +61,9 @@ export class Nav {
   private readonly heap = new Int32Array(TILES * 8);
   private readonly heapKey = new Float32Array(TILES * 8);
 
-  constructor(solid: Uint8Array) { this.rebuild(solid); }
+  constructor(solid: Uint8Array) {
+    this.rebuild(solid);
+  }
 
   /** The rock has changed: a gate came down or went up. */
   rebuild(solid: Uint8Array) {
@@ -60,7 +71,10 @@ export class Nav {
     for (let ty = 0; ty < ROWS; ty++) {
       for (let tx = 0; tx < COLS; tx++) {
         const t = ty * COLS + tx;
-        if (solid[t]) { this.cost[t] = Infinity; continue; }
+        if (solid[t]) {
+          this.cost[t] = Infinity;
+          continue;
+        }
         let near = 0;
         for (let oy = -2; oy <= 2; oy++) {
           for (let ox = -2; ox <= 2; ox++) {
@@ -90,8 +104,10 @@ export class Nav {
   /** Whether a point is on a running belt, within `margin` of its edges. */
   onBelt(x: number, y: number, margin = 0): Belt | null {
     for (const b of this.belts) {
-      const dx = x - b.cx, dy = y - b.cy;
-      const along = dx * b.dx + dy * b.dy, across = -dx * b.dy + dy * b.dx;
+      const dx = x - b.cx,
+        dy = y - b.cy;
+      const along = dx * b.dx + dy * b.dy,
+        across = -dx * b.dy + dy * b.dx;
       if (Math.abs(along) <= b.half + margin && Math.abs(across) <= b.width / 2 + margin) return b;
     }
     return null;
@@ -141,7 +157,8 @@ export class Nav {
   }
 
   tileOf(x: number, y: number): number {
-    const tx = Math.floor((x - ORIGIN_X) / TILE), ty = Math.floor((y - ORIGIN_Y) / TILE);
+    const tx = Math.floor((x - ORIGIN_X) / TILE),
+      ty = Math.floor((y - ORIGIN_Y) / TILE);
     return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS ? -1 : ty * COLS + tx;
   }
 
@@ -179,10 +196,17 @@ export class Nav {
 
   /** Whether a machine `radius` across could go straight from one point to another without touching rock. */
   clear(x0: number, y0: number, x1: number, y1: number, radius: number): boolean {
-    const len = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.ceil(len / 1.5));
+    const len = Math.hypot(x1 - x0, y1 - y0),
+      n = Math.max(1, Math.ceil(len / 1.5));
     for (let k = 0; k <= n; k++) {
-      const x = x0 + ((x1 - x0) * k) / n, y = y0 + ((y1 - y0) * k) / n;
-      for (const [ox, oy] of [[-radius, -radius], [radius, -radius], [-radius, radius], [radius, radius]]) {
+      const x = x0 + ((x1 - x0) * k) / n,
+        y = y0 + ((y1 - y0) * k) / n;
+      for (const [ox, oy] of [
+        [-radius, -radius],
+        [radius, -radius],
+        [-radius, radius],
+        [radius, radius],
+      ]) {
         const t = this.tileOf(x + ox, y + oy);
         if (t < 0 || this.solid[t]) return false;
       }
@@ -192,23 +216,30 @@ export class Nav {
 
   /** The neighbouring tile furthest down a field, never cutting a corner of rock; -1 at the bottom. */
   private downhill(field: Float32Array, t: number): number {
-    const tx = t % COLS, ty = (t / COLS) | 0;
-    let best = -1, bestValue = field[t];
+    const tx = t % COLS,
+      ty = (t / COLS) | 0;
+    let best = -1,
+      bestValue = field[t];
     for (const [ox, oy] of STEPS) {
       if (this.rock(tx + ox, ty + oy)) continue;
       if (ox && oy && (this.rock(tx + ox, ty) || this.rock(tx, ty + oy))) continue;
       const n = (ty + oy) * COLS + tx + ox;
-      if (field[n] < bestValue) { bestValue = field[n]; best = n; }
+      if (field[n] < bestValue) {
+        bestValue = field[n];
+        best = n;
+      }
     }
     return best;
   }
 
   /** The open tile with a way on nearest a point that is in rock or cut off. */
   private nearestOpen(field: Float32Array, x: number, y: number): number {
-    let best = -1, bestD = Infinity;
+    let best = -1,
+      bestD = Infinity;
     const t0 = this.tileOf(x, y);
     if (t0 < 0) return -1;
-    const tx = t0 % COLS, ty = (t0 / COLS) | 0;
+    const tx = t0 % COLS,
+      ty = (t0 / COLS) | 0;
     for (let oy = -2; oy <= 2; oy++) {
       for (let ox = -2; ox <= 2; ox++) {
         if (this.rock(tx + ox, ty + oy)) continue;
@@ -216,7 +247,10 @@ export class Nav {
         if (!Number.isFinite(field[n])) continue;
         const [cx, cy] = this.centre(n);
         const d = Math.hypot(cx - x, cy - y);
-        if (d < bestD) { bestD = d; best = n; }
+        if (d < bestD) {
+          bestD = d;
+          best = n;
+        }
       }
     }
     return best;
@@ -237,38 +271,53 @@ export class Nav {
       while (i > 0) {
         const p = (i - 1) >> 1;
         if (heapKey[p] <= key) break;
-        heap[i] = heap[p]; heapKey[i] = heapKey[p]; i = p;
+        heap[i] = heap[p];
+        heapKey[i] = heapKey[p];
+        i = p;
       }
-      heap[i] = t; heapKey[i] = key;
+      heap[i] = t;
+      heapKey[i] = key;
     };
     const pop = (): number => {
       const top = heap[0];
-      const t = heap[--size], key = heapKey[size];
+      const t = heap[--size],
+        key = heapKey[size];
       let i = 0;
       for (;;) {
         let c = 2 * i + 1;
         if (c >= size) break;
         if (c + 1 < size && heapKey[c + 1] < heapKey[c]) c++;
         if (heapKey[c] >= key) break;
-        heap[i] = heap[c]; heapKey[i] = heapKey[c]; i = c;
+        heap[i] = heap[c];
+        heapKey[i] = heapKey[c];
+        i = c;
       }
-      heap[i] = t; heapKey[i] = key;
+      heap[i] = t;
+      heapKey[i] = key;
       return top;
     };
     seeds.forEach((s, k) => {
       const v = values?.[k] ?? 0;
-      if (v < field[s]) { field[s] = v; push(s, v); }
+      if (v < field[s]) {
+        field[s] = v;
+        push(s, v);
+      }
     });
     while (size > 0) {
-      const key = heapKey[0], t = pop();
+      const key = heapKey[0],
+        t = pop();
       if (key > field[t]) continue;
-      const tx = t % COLS, ty = (t / COLS) | 0;
+      const tx = t % COLS,
+        ty = (t / COLS) | 0;
       for (const [ox, oy, step] of STEPS) {
         if (this.rock(tx + ox, ty + oy)) continue;
         if (ox && oy && (this.rock(tx + ox, ty) || this.rock(tx, ty + oy))) continue;
         const n = (ty + oy) * COLS + tx + ox;
-        const d = field[t] + step * (cost[t] + cost[n]) / 2;
-        if (d < field[n] && size < heap.length) { field[n] = d; push(n, d); }
+        const d = field[t] + (step * (cost[t] + cost[n])) / 2;
+        if (d < field[n] && size < heap.length) {
+          field[n] = d;
+          push(n, d);
+        }
       }
     }
   }
