@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { AREAS, BODY_CAPACITY, HOLE, buildCave } from '../src/cave';
 import { KIND_RADIUS, KIND_VALUE, World, type Pusher } from '../src/physics';
 import { beltOf } from '../src/tools';
-import { tileAt, withSeed } from './helpers';
+import { Dozer } from '../src/dozer';
+import { COLS, ORIGIN_X, TILE } from '../src/cave';
+import { grid, tileAt, withSeed } from './helpers';
 
 const DT = 1 / 60;
 const cave = buildCave();
@@ -145,6 +147,42 @@ describe('the physics', () => {
         expect(world.z[i]).toBeGreaterThan(-HOLE.depth);
       }
     });
+  });
+
+  it('never lets a blade push a coin into the rock, or through a wall a tile thick', () => {
+    const spec = { maxSpeed: 17, accel: 28, turnRate: 2.2, bladeWidth: 12.5, magnetRadius: 0, magnetStrength: 0 };
+    for (const thick of [1, 2]) {
+      const solid = grid((tx) => tx >= 40 && tx < 40 + thick);
+      const face = ORIGIN_X + 40 * TILE;
+      for (const angle of [0, 0.3, -0.5]) {
+        withSeed(7 + thick, () => {
+          const world = new World(2000, solid);
+          // a band of coins against the wall, and a big blade driven at them, backed off, and driven at them again
+          for (let k = 0; k < 500; k++)
+            world.spawn(0, face - 0.5 - Math.random() * 4, -10 + Math.random() * 20, 0.5 + Math.random() * 2);
+          for (let f = 0; f < 60; f++) world.step(DT, () => {});
+          const dozer = new Dozer(solid);
+          dozer.x = face - 16;
+          dozer.y = 0;
+          dozer.yaw = angle;
+          const pushers: Pusher[] = [];
+          for (let f = 0; f < 60 * 5; f++) {
+            dozer.update(DT, { throttle: f % 120 < 90 ? 1 : -1, steer: 0 }, spec, world.load);
+            world.pushers = dozer.pushers(spec, pushers);
+            world.wakeNear(dozer.x + Math.cos(dozer.yaw) * 4.3, dozer.y + Math.sin(dozer.yaw) * 4.3, 10);
+            world.step(DT, () => {});
+          }
+          for (let i = 0; i < world.count; i++) {
+            if (!world.alive[i]) continue;
+            const t = tileAt(world.x[i], world.y[i]);
+            if (solid[t]) expect.fail(`wall ${thick} thick, blade at ${angle}: coin ${i} in the rock`);
+            if (world.x[i] > face)
+              expect.fail(`wall ${thick} thick, blade at ${angle}: coin ${i} through to ${world.x[i].toFixed(1)}`);
+          }
+          expect(COLS).toBeGreaterThan(40 + thick);
+        });
+      }
+    }
   });
 
   it('carries a coin along a running belt', () => {

@@ -110,6 +110,9 @@ export class World {
   readonly wy: Float32Array;
   readonly wz: Float32Array;
   readonly asleep: Uint8Array;
+  /** Where each body was when this step started moving it, for the rock to put it back out the way it came in. */
+  private readonly lastX: Float32Array;
+  private readonly lastY: Float32Array;
   /** Where each body was when the sleep window opened. */
   private readonly sx: Float32Array;
   private readonly sy: Float32Array;
@@ -180,6 +183,8 @@ export class World {
     this.wy = new Float32Array(n);
     this.wz = new Float32Array(n);
     this.asleep = new Uint8Array(n);
+    this.lastX = new Float32Array(n);
+    this.lastY = new Float32Array(n);
     this.sx = new Float32Array(n);
     this.sy = new Float32Array(n);
     this.sz = new Float32Array(n);
@@ -264,6 +269,11 @@ export class World {
 
   wake(i: number) {
     if (!this.alive[i]) return;
+    // where it was when it started to move this step, if it is only starting now
+    if (this.asleep[i]) {
+      this.lastX[i] = this.x[i];
+      this.lastY[i] = this.y[i];
+    }
     this.asleep[i] = 0;
     this.list(i);
     // a fresh window, so what woke it has time to move it
@@ -326,6 +336,8 @@ export class World {
       const i = awake[k];
       if (carried[i]) continue;
       vz[i] -= GRAVITY * STEP;
+      this.lastX[i] = x[i];
+      this.lastY[i] = y[i];
       x[i] += vx[i] * STEP;
       y[i] += vy[i] * STEP;
       z[i] += vz[i] * STEP;
@@ -339,11 +351,17 @@ export class World {
     // what the pairs and the belts and blades woke is on the end of the list, and is stepped too
     for (let k = 0; k < this.awakeCount; k++) {
       const i = awake[k];
-      if (!alive[i] || carried[i] || asleep[i] || seen[i]) continue;
-      this.walls(i);
+      if (!alive[i] || carried[i] || asleep[i]) continue;
+      // one a blade or belt has already moved this step is kept out of the rock, and no more
+      if (seen[i]) {
+        this.walls(i);
+        continue;
+      }
       this.push(i);
       this.belt(i);
       this.pull(i);
+      // the rock last, after everything else that moves it, so nothing is left in it
+      this.walls(i);
       this.floor(i, collect);
       if (!alive[i]) continue;
       // A slow body is slowed further, which takes the fizz out of a
@@ -615,9 +633,44 @@ export class World {
     }
   }
 
-  /** The rock: the tiles around a body, as boxes it cannot enter. */
+  /** Whether the tile at a point is rock, or off the grid. */
+  private rockAt(px: number, py: number): boolean {
+    const tx = Math.floor((px - ORIGIN_X) / TILE),
+      ty = Math.floor((py - ORIGIN_Y) / TILE);
+    return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS || this.solid[ty * COLS + tx] === 1;
+  }
+
+  /**
+   * The rock: the tiles around a body, as boxes it cannot enter.
+   *
+   * A body whose middle has got into a rock tile — shoved there by a blade,
+   * or squeezed there out of a heap — goes back out the way it came in, not
+   * out whichever face is nearest: past the middle of a tile the nearest face
+   * is the far one, and a coin pushed into a wall a tile thick would come out
+   * the other side of it. So it goes back along the one way it moved in on,
+   * or both, to where it was when the step began; and one buried in the rock
+   * with no way back is put on the nearest open floor. Then it is pushed off
+   * the faces round it by its radius, as anything touching the rock is.
+   */
   private walls(i: number) {
     const { x, y, vx, vy, r, solid } = this;
+    if (this.rockAt(x[i], y[i])) {
+      const bx = this.lastX[i],
+        by = this.lastY[i];
+      if (!this.rockAt(bx, y[i])) {
+        x[i] = bx;
+        vx[i] = 0;
+      } else if (!this.rockAt(x[i], by)) {
+        y[i] = by;
+        vy[i] = 0;
+      } else if (!this.rockAt(bx, by)) {
+        x[i] = bx;
+        y[i] = by;
+        vx[i] = vy[i] = 0;
+      } else {
+        this.outOfRock(i);
+      }
+    }
     const px = x[i],
       py = y[i],
       rad = r[i];
@@ -625,43 +678,57 @@ export class World {
       ty = Math.floor((py - ORIGIN_Y) / TILE);
     for (let oy = -1; oy <= 1; oy++) {
       for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
         const nx = tx + ox,
           ny = ty + oy;
         const rock = nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || solid[ny * COLS + nx];
         if (!rock) continue;
         const x0 = ORIGIN_X + nx * TILE,
           y0 = ORIGIN_Y + ny * TILE;
-        const cx = Math.max(x0, Math.min(x0 + TILE, px)),
-          cy = Math.max(y0, Math.min(y0 + TILE, py));
-        let dx = px - cx,
-          dy = py - cy;
-        let d = Math.hypot(dx, dy);
-        if (d >= rad) continue;
-        if (d < 1e-4) {
-          // inside the block: out the nearest face
-          const lx = px - (x0 + TILE / 2),
-            ly = py - (y0 + TILE / 2);
-          if (Math.abs(lx) > Math.abs(ly)) {
-            dx = Math.sign(lx) || 1;
-            dy = 0;
-          } else {
-            dx = 0;
-            dy = Math.sign(ly) || 1;
-          }
-          d = 0;
-          x[i] += dx * (TILE / 2 + rad - Math.abs(lx)) * Math.abs(dx);
-          y[i] += dy * (TILE / 2 + rad - Math.abs(ly)) * Math.abs(dy);
-        } else {
-          dx /= d;
-          dy /= d;
-          x[i] += dx * (rad - d);
-          y[i] += dy * (rad - d);
-        }
+        const cx = Math.max(x0, Math.min(x0 + TILE, x[i])),
+          cy = Math.max(y0, Math.min(y0 + TILE, y[i]));
+        let dx = x[i] - cx,
+          dy = y[i] - cy;
+        const d = Math.hypot(dx, dy);
+        if (d >= rad || d < 1e-6) continue;
+        dx /= d;
+        dy /= d;
+        x[i] += dx * (rad - d);
+        y[i] += dy * (rad - d);
         const vn = vx[i] * dx + vy[i] * dy;
         if (vn < 0) {
           vx[i] -= dx * vn * 1.1;
           vy[i] -= dy * vn * 1.1;
         }
+      }
+    }
+  }
+
+  /** A body buried in the rock with no way back: onto the nearest open floor, in rings out from where it is, and stopped. */
+  private outOfRock(i: number) {
+    const tx = Math.floor((this.x[i] - ORIGIN_X) / TILE),
+      ty = Math.floor((this.y[i] - ORIGIN_Y) / TILE);
+    for (let ring = 1; ring < 12; ring++) {
+      let best = -1,
+        bestD = Infinity;
+      for (let oy = -ring; oy <= ring; oy++) {
+        for (let ox = -ring; ox <= ring; ox++) {
+          if (Math.max(Math.abs(ox), Math.abs(oy)) !== ring) continue;
+          const nx = tx + ox,
+            ny = ty + oy;
+          if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || this.solid[ny * COLS + nx]) continue;
+          const d = ox * ox + oy * oy;
+          if (d < bestD) {
+            bestD = d;
+            best = ny * COLS + nx;
+          }
+        }
+      }
+      if (best >= 0) {
+        this.x[i] = ORIGIN_X + ((best % COLS) + 0.5) * TILE;
+        this.y[i] = ORIGIN_Y + (((best / COLS) | 0) + 0.5) * TILE;
+        this.vx[i] = this.vy[i] = 0;
+        return;
       }
     }
   }
