@@ -196,14 +196,6 @@ export function ball(radius: number, rings = 6, segments = 10): Mesh {
   return b.build();
 }
 
-/** A flat square tile of the floor, `size` on a side, centred, at z = 0. */
-export function tile(size: number): Mesh {
-  const b = new MeshBuilder();
-  const s = size / 2;
-  face(b, [-s, -s, 0], [s, -s, 0], [s, s, 0], [-s, s, 0]);
-  return b.build();
-}
-
 /** A thin flat disc at z = 0, facing up, for a rotor. */
 export function disc(radius: number, segments = 10): Mesh {
   const b = new MeshBuilder();
@@ -267,4 +259,30 @@ export function turned(mesh: Mesh, yaw: number): Mesh {
     }
   }
   return { positions, normals, uvs: mesh.uvs, indices: mesh.indices };
+}
+
+/**
+ * A stone: a low ball with its points pushed in and out, the same way for the
+ * same `seed`, radius about 1, flattened a little underneath.
+ */
+export function lump(seed: number, rings = 4, segments = 7): Mesh {
+  const b = new MeshBuilder();
+  const at = (i: number, j: number): V3 => {
+    const jj = i === 0 || i === rings ? 0 : ((j % segments) + segments) % segments;
+    const h = Math.sin((i * 12.9898 + jj * 78.233 + seed * 37.719) * 43758.5453);
+    const r = 0.78 + (h - Math.floor(h)) * 0.44;
+    const phi = (i / rings) * Math.PI, th = ((jj + (i % 2) * 0.5) / segments) * Math.PI * 2;
+    return [Math.sin(phi) * Math.cos(th) * r, Math.sin(phi) * Math.sin(th) * r, Math.max(-0.45, Math.cos(phi) * r)];
+  };
+  for (let i = 0; i < rings; i++) {
+    for (let j = 0; j < segments; j++) {
+      if (i === 0) tri(b, at(0, 0), at(1, j), at(1, j + 1));
+      else if (i === rings - 1) tri(b, at(rings, 0), at(i, j + 1), at(i, j));
+      else {
+        tri(b, at(i, j), at(i + 1, j), at(i + 1, j + 1));
+        tri(b, at(i, j), at(i + 1, j + 1), at(i, j + 1));
+      }
+    }
+  }
+  return b.build();
 }

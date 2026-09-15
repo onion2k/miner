@@ -10,7 +10,7 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer, EFFECT_STRIDE, MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import { LightPool } from 'artshape-render/game/lights';
 import { mergeMeshes } from 'artshape-render/mesh/types';
-import { AREAS, BODY_CAPACITY, BRICK, COLS, HOLE, LAMP_HEIGHT, areaAt, ORDER, ORIGIN_X, ORIGIN_Y, SECRET, SECRETS, STASHES, TILE, WALLS, atGate, stashCentre, chamberCentre, tileCentre, wallAlongX, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, sealPoint, wallInstances, type Heap, type Vein } from './cave';
+import { AREAS, BODY_CAPACITY, BRICK, COLS, HOLE, LAMP_HEIGHT, areaAt, ORDER, ORIGIN_X, ORIGIN_Y, SECRET, SECRETS, STASHES, TILE, WALLS, atGate, stashCentre, chamberCentre, tileCentre, wallAlongX, behindGate, buildCave, gateCentre, gateTiles, hash, pastGate, sealPoint, type Heap, type Vein } from './cave';
 import { World, BAR, BRICK_KIND, KINDS, KIND_NAME, KIND_RADIUS, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces, separate } from './dozer';
 import { Input } from './input';
@@ -19,7 +19,8 @@ import { CLEAR_SHARE, Economy, MAX_DRONES, SOURCES, WALL_NAME, WALL_STRENGTH, ar
 import { Bot, BOT_SCALE, BOT_SPEC, Foreman, Fountain, beltOf } from './tools';
 import { Nav } from './nav';
 import { Sound } from './audio';
-import { COIN_LADDER, ball, bar, box, coin, collar, cylinder, gem, moved, pit, tile, turned } from './meshes';
+import { COIN_LADDER, ball, bar, box, coin, collar, cone, cylinder, gem, lump, moved, pit, turned } from './meshes';
+import { buildTerrain, type Terrain } from './terrain';
 import { identity, hide, place, placePart, placeQuat, project } from './matrix';
 
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
@@ -50,6 +51,9 @@ const FLAG_SLATS = 5;
  * physics and the browser. `?coins=0`…`3` skips the measuring and picks one.
  */
 const RENDER_BUDGET_MS = 8;
+/** The floor's shades, and the rock's: steep and dark, steep, and the tops; roughness last. */
+const FLOOR_TONES = [[0.27, 0.19, 0.12, 0.95], [0.3, 0.212, 0.134, 0.95], [0.325, 0.232, 0.148, 0.93]];
+const ROCK_TONES = [[0.045, 0.047, 0.06, 0.9], [0.08, 0.082, 0.1, 0.88], [0.12, 0.1, 0.082, 0.92]];
 const CALIBRATE_WARMUP = 4;
 const CALIBRATE_SAMPLES = 24;
 
@@ -146,7 +150,7 @@ async function main() {
   // ---- the static half: floor, walls, hole, gates, belts ----
 
   const meshes = {
-    tile: tile(TILE * 1.01), wall: box(TILE * 1.02, TILE * 1.02, 1), gate: box(3.4, 3.4, 1, false),
+    stones: [lump(1), lump(2), lump(3)], spire: cone(1, 1, 6), gate: box(3.4, 3.4, 1, false),
     // the three tiles each way the floor leaves out, and a little more so no seam shows
     // between them; see where it is placed for why that overlap does not flicker
     collar: collar(TILE * 3 + 0.2, HOLE.radius), pit: pit(HOLE.radius, HOLE.depth), brick: box(1, 1, 1, true), stud: gem(1.05, 2.3),
@@ -230,24 +234,37 @@ async function main() {
     });
   }
 
+  let terrain: (Terrain & { key: string }) | null = null;
   function buildStatic() {
-    const floor = floorTiles(cave, economy.save.secrets);
-    const floorM = new Float32Array(floor.length * 16);
-    const floorMat = new Float32Array(floor.length * MATERIAL_STRIDE);
-    floor.forEach(([x, y], i) => {
-      place(floorM, i, x, y, 0);
-      const h = hash(x, y, 3), warm = hash(x, y, 5);
-      const k = shown(x, y);
-      floorMat.set([(0.3 + h * 0.06 + warm * 0.04) * k, (0.21 + h * 0.04) * k, (0.13 + h * 0.03) * k, 0.95], i * MATERIAL_STRIDE);
+    // the rock and the floor, built again only when a chamber has been broken into
+    const revealedKey = economy.save.secrets.map((r) => (r ? 1 : 0)).join('');
+    if (!terrain || terrain.key !== revealedKey) terrain = { key: revealedKey, ...buildTerrain(cave, economy.save.secrets) };
+    const surface: GameGroup[] = terrain.groups.map((g) => {
+      const k = economy.save.areas[g.area] ? 1 : 0.02;
+      const c = (g.rock ? ROCK_TONES : FLOOR_TONES)[g.tone];
+      const materials = new Float32Array([c[0] * k, c[1] * k, c[2] * k, c[3]]);
+      return { mesh: g.mesh, matrices: identity(), materials };
     });
-    const walls = wallInstances(cave, economy.save.secrets);
-    const wallM = new Float32Array(walls.length * 16);
-    const wallMat = new Float32Array(walls.length * MATERIAL_STRIDE);
-    walls.forEach((w, i) => {
-      placePart(wallM, i, w.x, w.y, -0.5, 0, 0, 0, 0, 0, 0, 1, 1, w.height + 0.5);
-      const s = 0.8 + w.shade * 0.35, dim = (w.ring ? 0.8 : 1) * shown(w.x, w.y);
-      wallMat.set([0.15 * s * dim, 0.16 * s * dim, 0.21 * s * dim, 0.88], i * MATERIAL_STRIDE);
+    const stoneGroups: GameGroup[] = meshes.stones.map((mesh, shape) => {
+      const mine = terrain!.stones.filter((st) => st.shape === shape);
+      const m = new Float32Array(Math.max(1, mine.length) * 16), mat = new Float32Array(Math.max(1, mine.length) * MATERIAL_STRIDE);
+      mine.forEach((st, i) => {
+        placePart(m, i, st.x, st.y, st.z, st.yaw, 0, 0, 0, 0, st.tilt, st.size[0], st.size[1], st.size[2]);
+        const base = st.rock ? ROCK_TONES[1] : FLOOR_TONES[0];
+        const k = (0.75 + st.shade * 0.5) * (economy.save.areas[st.area] ? 1 : 0.02);
+        mat.set([base[0] * k, base[1] * k, base[2] * k, 0.9], i * MATERIAL_STRIDE);
+      });
+      if (!mine.length) hide(m, 0);
+      return { mesh, matrices: m, materials: mat, count: mine.length };
     });
+    const spires = terrain.spires;
+    const spireM = new Float32Array(Math.max(1, spires.length) * 16), spireMat = new Float32Array(Math.max(1, spires.length) * MATERIAL_STRIDE);
+    spires.forEach((sp, i) => {
+      placePart(spireM, i, sp.x, sp.y, sp.z, sp.yaw, 0, 0, 0, 0, sp.tilt, sp.radius, sp.radius, sp.height);
+      const k = (0.8 + sp.shade * 0.4) * (economy.save.areas[sp.area] ? 1 : 0.02);
+      spireMat.set([ROCK_TONES[2][0] * k, ROCK_TONES[2][1] * k, ROCK_TONES[2][2] * k, 0.85], i * MATERIAL_STRIDE);
+    });
+    if (!spires.length) hide(spireM, 0);
     const gates: [number, number, number][] = [];
     for (let a = 1; a < AREAS.length; a++) {
       if (economy.save.areas[a]) continue;
@@ -329,13 +346,14 @@ async function main() {
     const collarM = new Float32Array(16);
     place(collarM, 0, HOLE.x, HOLE.y, -0.01);
     renderer.setStatic([
-      { mesh: meshes.tile, matrices: floorM, materials: floorMat },
+      ...surface,
+      ...stoneGroups,
+      { mesh: meshes.spire, matrices: spireM, materials: spireMat, count: spires.length },
       // A hundredth under the floor: where it overlaps the tiles they win the depth test
       // outright. It was four tiles across at the tiles' own height, under the next ring
       // of them, and the two fought over which was drawn.
       { mesh: meshes.collar, matrices: collarM, albedo: [0.33, 0.23, 0.145], roughness: 0.95 },
       { mesh: meshes.pit, matrices: identity(), albedo: [0.04, 0.035, 0.05], roughness: 0.95 },
-      { mesh: meshes.wall, matrices: wallM, materials: wallMat },
       { mesh: meshes.gate, matrices: gateM, count: gates.length, albedo: [0.62, 0.32, 0.72], roughness: 0.35 },
       ...brickGroups,
       ...belts,

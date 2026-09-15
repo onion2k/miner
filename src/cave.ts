@@ -302,7 +302,7 @@ export interface Cave {
 }
 
 /** Whether a cell is rock to look at: rock, or a chamber not yet broken into. A brick wall is drawn as bricks, on floor. */
-function rockish(cell: number, revealed: boolean[]): boolean {
+export function rockish(cell: number, revealed: boolean[]): boolean {
   return cell === ROCK || (cell >= SECRET && cell < BRICK && !revealed[cell - SECRET]);
 }
 
@@ -433,59 +433,12 @@ function placeLamps(cells: Uint8Array): Lamp[] {
   return out;
 }
 
-export interface WallInstance {
-  x: number; y: number;
-  height: number;
-  /** 0 for the rock beside the floor, 1 for the ring behind it. */
-  ring: number;
-  shade: number;
-}
-
-/** The rock tiles worth drawing: those within two of an open tile. */
-export function wallInstances(cave: Cave, revealed: boolean[] = []): WallInstance[] {
-  const out: WallInstance[] = [];
-  const { cells } = cave;
-  for (let ty = 0; ty < ROWS; ty++) {
-    for (let tx = 0; tx < COLS; tx++) {
-      if (!rockish(cells[ty * COLS + tx], revealed)) continue;
-      let ring = 3;
-      for (let dy = -2; dy <= 2 && ring > 0; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          const nx = tx + dx, ny = ty + dy;
-          if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-          if (!rockish(cells[ny * COLS + nx], revealed)) ring = Math.min(ring, Math.max(Math.abs(dx), Math.abs(dy)) - 1);
-        }
-      }
-      if (ring > 1) continue;
-      const [x, y] = tileCentre(tx, ty);
-      const h = hash(tx, ty);
-      out.push({ x, y, ring, height: ring === 0 ? 4.5 + h * 3 : 7 + h * 4, shade: hash(tx, ty, 7) });
-    }
-  }
-  return out;
-}
-
 /** The gate tiles of an area, as world centres. */
 export function gateTiles(cave: Cave, area: number): [number, number][] {
   const out: [number, number][] = [];
   for (let ty = 0; ty < ROWS; ty++) {
     for (let tx = 0; tx < COLS; tx++) {
       if (cave.cells[ty * COLS + tx] === GATE + area) out.push(tileCentre(tx, ty));
-    }
-  }
-  return out;
-}
-
-/** Every open tile (gates included, chambers once broken into), for the floor. */
-export function floorTiles(cave: Cave, revealed: boolean[] = []): [number, number][] {
-  const out: [number, number][] = [];
-  for (let ty = 0; ty < ROWS; ty++) {
-    for (let tx = 0; tx < COLS; tx++) {
-      if (rockish(cave.cells[ty * COLS + tx], revealed)) continue;
-      const [x, y] = tileCentre(tx, ty);
-      // the hole's collar covers these
-      if (Math.abs(x - HOLE.x) < TILE * 2 && Math.abs(y - HOLE.y) < TILE * 2) continue;
-      out.push([x, y]);
     }
   }
   return out;

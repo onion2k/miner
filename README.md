@@ -75,6 +75,7 @@ and how much the drones got in each other's way — see the top of
 
     src/main.ts       boot, the scene's groups, lights, particles, the HUD, the frame loop
     src/cave.ts       the tile grid: rooms and the order they open in, gates, heaps, veins, belt routes
+    src/terrain.ts    the cave to look at: the rock and floor as one faceted surface over the tiles, and the stones on it
     src/physics.ts    the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
     src/dozer.ts      the bulldozer: tank steering, the blade and hull as pushers, load
     src/tools.ts      conveyor belts, drones, and the fountains
@@ -82,7 +83,7 @@ and how much the drones got in each other's way — see the top of
     scripts/sim.ts    the drones without the picture, for measuring them
     src/audio.ts      every sound, synthesised: clinks, thunks, the engine, the rumble
     src/economy.ts    the bank, the upgrades, which room is being cleared, the save, the shop
-    src/meshes.ts     flat-shaded shapes: coin, gem, box, cone, ball, the hole's collar and pit
+    src/meshes.ts     flat-shaded shapes: coin, gem, box, cone, ball, stone, the hole's collar and pit
     src/matrix.ts     column-major placements
     src/input.ts      the keyboard
 
