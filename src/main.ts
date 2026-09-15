@@ -10,7 +10,7 @@ import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer, EFFECT_STRIDE, MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import { LightPool } from 'artshape-render/game/lights';
 import { mergeMeshes } from 'artshape-render/mesh/types';
-import { AREAS, BODY_CAPACITY, BRICK, COLS, HOLE, ORDER, ORIGIN_X, ORIGIN_Y, SECRET, SECRETS, STASHES, TILE, WALLS, atGate, stashCentre, chamberCentre, tileCentre, wallAlongX, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, sealPoint, wallInstances, type Heap, type Vein } from './cave';
+import { AREAS, BODY_CAPACITY, BRICK, COLS, HOLE, LAMP_HEIGHT, areaAt, ORDER, ORIGIN_X, ORIGIN_Y, SECRET, SECRETS, STASHES, TILE, WALLS, atGate, stashCentre, chamberCentre, tileCentre, wallAlongX, behindGate, buildCave, floorTiles, gateCentre, gateTiles, hash, pastGate, sealPoint, wallInstances, type Heap, type Vein } from './cave';
 import { World, BAR, BRICK_KIND, KINDS, KIND_NAME, KIND_RADIUS, KIND_VALUE, type Pusher } from './physics';
 import { Dozer, BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces, separate } from './dozer';
 import { Input } from './input';
@@ -54,7 +54,7 @@ const CALIBRATE_WARMUP = 4;
 const CALIBRATE_SAMPLES = 24;
 
 /** How high a lamp's head stands, how many lamps are lit at once near the eye, and how near a machine has to come to knock one over. */
-const LAMP_HEIGHT = 5.6, LAMP_LIGHTS = 240, LAMP_KNOCK = 4.2;
+const LAMP_LIGHTS = 240, LAMP_KNOCK = 4.2;
 /** How far a lamp's light carries, and how bright it is. */
 const LAMP_REACH = 40, LAMP_BRIGHT = 16;
 
@@ -195,6 +195,8 @@ async function main() {
 
   /** Whether a lamp is lit: standing, and in a room open and not sealed. */
   const lampOn = (k: number) => !economy.save.lampsBroken.includes(k) && economy.save.areas[cave.lamps[k].area];
+  /** How much of its own colour a floor, a rock or a brick at a point shows: none at all in a room not open, so no lamp's light spilling through the rock shows there. */
+  const shown = (x: number, y: number) => (economy.save.areas[areaAt(x, y)] ? 1 : 0.02);
   /** The lamps lit near the eye this frame, nearest first. */
   const lampsLit: number[] = [];
   /** The way a lamp fell, which is always the same way for the same lamp. */
@@ -205,14 +207,14 @@ async function main() {
     const c = Math.cos(dozer.yaw), sn = Math.sin(dozer.yaw);
     const bx = dozer.x + c * BLADE_AT, by = dozer.y + sn * BLADE_AT;
     cave.lamps.forEach((l, k) => {
-      if (economy.save.lampsBroken.includes(k)) return;
+      if (l.sturdy || economy.save.lampsBroken.includes(k)) return;
       if (Math.hypot(l.x - dozer.x, l.y - dozer.y) > LAMP_KNOCK && Math.hypot(l.x - bx, l.y - by) > LAMP_KNOCK - 0.8) return;
       const lit = lampOn(k);
       economy.breakLamp(k);
       sound.shatter();
       // glass, and the last of the light going out of it as sparks
-      renderer.emit({ position: [l.x, l.y, LAMP_HEIGHT], velocity: [c * 3, sn * 3, 4], spread: 6, count: 40, life: 0.9, lifeSpread: 0.4, size: 0.18, growth: -0.1, colour: lit ? [2.4, 2.0, 1.4] : [0.6, 0.65, 0.7], alpha: 1, gravity: 1.6, floor: 0 });
-      if (lit) renderer.emit({ position: [l.x, l.y, LAMP_HEIGHT], velocity: [0, 0, 2], spread: 3, count: 25, life: 0.5, lifeSpread: 0.3, size: 0.12, growth: -0.2, colour: [3, 2.2, 0.9], alpha: 0, gravity: 0.6, floor: 0 });
+      renderer.emit({ position: [l.x, l.y, l.height], velocity: [c * 3, sn * 3, 4], spread: 6, count: 40, life: 0.9, lifeSpread: 0.4, size: 0.18, growth: -0.1, colour: lit ? [2.4, 2.0, 1.4] : [0.6, 0.65, 0.7], alpha: 1, gravity: 1.6, floor: 0 });
+      if (lit) renderer.emit({ position: [l.x, l.y, l.height], velocity: [0, 0, 2], spread: 3, count: 25, life: 0.5, lifeSpread: 0.3, size: 0.12, growth: -0.2, colour: [3, 2.2, 0.9], alpha: 0, gravity: 0.6, floor: 0 });
       buildStatic();
     });
   }
@@ -224,14 +226,15 @@ async function main() {
     floor.forEach(([x, y], i) => {
       place(floorM, i, x, y, 0);
       const h = hash(x, y, 3), warm = hash(x, y, 5);
-      floorMat.set([0.3 + h * 0.06 + warm * 0.04, 0.21 + h * 0.04, 0.13 + h * 0.03, 0.95], i * MATERIAL_STRIDE);
+      const k = shown(x, y);
+      floorMat.set([(0.3 + h * 0.06 + warm * 0.04) * k, (0.21 + h * 0.04) * k, (0.13 + h * 0.03) * k, 0.95], i * MATERIAL_STRIDE);
     });
     const walls = wallInstances(cave, economy.save.secrets);
     const wallM = new Float32Array(walls.length * 16);
     const wallMat = new Float32Array(walls.length * MATERIAL_STRIDE);
     walls.forEach((w, i) => {
       placePart(wallM, i, w.x, w.y, -0.5, 0, 0, 0, 0, 0, 0, 1, 1, w.height + 0.5);
-      const s = 0.8 + w.shade * 0.35, dim = w.ring ? 0.8 : 1;
+      const s = 0.8 + w.shade * 0.35, dim = (w.ring ? 0.8 : 1) * shown(w.x, w.y);
       wallMat.set([0.15 * s * dim, 0.16 * s * dim, 0.21 * s * dim, 0.88], i * MATERIAL_STRIDE);
     });
     const gates: [number, number, number][] = [];
@@ -254,7 +257,7 @@ async function main() {
       bricks.forEach((b, i) => {
         const j = (salt: number) => hash(w * 131 + i, salt, 5) - 0.5;
         const kind = gold.get(i);
-        const shade = (0.82 + hash(b.x * 3, b.y * 3, b.z * 7) * 0.3) * (1 - hurt * 0.35);
+        const shade = (0.82 + hash(b.x * 3, b.y * 3, b.z * 7) * 0.3) * (1 - hurt * 0.35) * shown(b.x, b.y);
         const colour = kind === BAR ? [1.0, 0.72, 0.18, 0.2] : [...WALL_COLOUR[wall.grade].slice(0, 3).map((c) => c * shade), WALL_COLOUR[wall.grade][3]];
         const x = b.x + j(1) * hurt * 0.9, y = b.y + j(2) * hurt * 0.9;
         standing.push({ x, y, z: b.z, yaw: b.yaw + j(3) * hurt * 0.5, length: b.length, colour, tilt: j(4) * hurt * 0.3 });
@@ -279,11 +282,11 @@ async function main() {
     cave.lamps.forEach((l, k) => {
       const down = economy.save.lampsBroken.includes(k);
       const yaw = fallYaw(k), pitch = down ? 1.45 : 0;
-      placePart(postM, k, l.x, l.y, down ? 0.25 : 0, yaw, 0, 0, 0, 0, pitch, 1, 1, 1);
-      const reach = LAMP_HEIGHT - 0.3;
+      placePart(postM, k, l.x, l.y, down ? 0.25 : 0, yaw, 0, 0, 0, 0, pitch, 1, 1, l.height / LAMP_HEIGHT);
+      const reach = l.height - 0.3;
       const hx = l.x + Math.sin(yaw) * Math.sin(pitch) * reach, hy = l.y - Math.cos(yaw) * Math.sin(pitch) * reach, hz = (down ? 0.6 : 0) + Math.cos(pitch) * reach;
       placePart(headM, k, hx, hy, hz, yaw, 0, 0, 0, 0, pitch, 1, 1, 1);
-      headMat.set(down ? [0.18, 0.17, 0.16, 0.6] : [1.0, 0.86, 0.6, 0.3], k * MATERIAL_STRIDE);
+      headMat.set(down ? [0.18, 0.17, 0.16, 0.6] : l.sturdy ? [0.7, 1.0, 0.65, 0.3] : [1.0, 0.86, 0.6, 0.3], k * MATERIAL_STRIDE);
     });
     const brickGroups: GameGroup[] = [
       { mesh: meshes.lampPost, matrices: postM, count: cave.lamps.length, albedo: [0.22, 0.22, 0.25], roughness: 0.5 },
@@ -858,17 +861,25 @@ async function main() {
     }
     // a small light over the cab, so the machine can be seen in the dark: it lights the dozer, not the floor
     lights.add({ position: [dozer.x - c * 0.8, dozer.y - s * 0.8, 6.5], radius: 7, colour: [1.0, 0.9, 0.75], intensity: 1.2 });
-    // the lamps still standing in the rooms in play, the nearest the eye first, as many as fit
-    const [ex, ey] = cam.target;
-    const reach = orbit.distance * 1.6 + 40;
+    // The lamps still standing in the rooms in play whose light can reach the screen: the floor under
+    // one is in view, or off the edge by less than its light carries. The nearest the eye first, as
+    // many as fit.
+    const [ex, ey] = cam.target, lens = 1 / Math.tan((cam.fov * Math.PI) / 360);
     lampsLit.length = 0;
-    cave.lamps.forEach((l, k) => { if (lampOn(k) && Math.hypot(l.x - ex, l.y - ey) < reach) lampsLit.push(k); });
+    cave.lamps.forEach((l, k) => {
+      if (!lampOn(k)) return;
+      const q = project(cam.viewProjection, l.x, l.y, 0);
+      // how much of the screen its light's reach is at that depth: up, by the lens, and across, by that over the frame's shape
+      const up = q ? (LAMP_REACH * lens * 1.1) / q[2] : 0, across = up / cam.aspect;
+      if (q ? Math.abs(q[0]) < 1 + across && Math.abs(q[1]) < 1 + up : Math.hypot(l.x - ex, l.y - ey) < LAMP_REACH) lampsLit.push(k);
+    });
     lampsLit.sort((a, b) => Math.hypot(cave.lamps[a].x - ex, cave.lamps[a].y - ey) - Math.hypot(cave.lamps[b].x - ex, cave.lamps[b].y - ey));
     for (const k of lampsLit.slice(0, LAMP_LIGHTS)) {
       const l = cave.lamps[k];
       const flicker = 0.92 + 0.08 * Math.sin(t * 13 + k * 7) * Math.sin(t * 3.1 + k);
-      // bright, and far-reaching enough that between them nowhere on the floor is dark
-      lights.add({ position: [l.x, l.y, LAMP_HEIGHT], radius: LAMP_REACH, colour: [1.0, 0.8, 0.55], intensity: LAMP_BRIGHT * flicker });
+      // bright, and far-reaching enough that between them nowhere on the floor is dark; the hole's own, green and close
+      if (l.sturdy) lights.add({ position: [l.x, l.y, l.height], radius: 18, colour: [0.65, 1.0, 0.55], intensity: 6 * flicker });
+      else lights.add({ position: [l.x, l.y, l.height], radius: LAMP_REACH, colour: [1.0, 0.8, 0.55], intensity: LAMP_BRIGHT * flicker });
     }
     if (economy.save.done) {
       const v = AREAS[LAST].vein;
@@ -918,9 +929,10 @@ async function main() {
     for (const k of lampsLit) {
       if (n >= EFFECT_CAPACITY - 1) break;
       const l = cave.lamps[k];
-      const q = project(cam.viewProjection, l.x, l.y, LAMP_HEIGHT);
+      const q = project(cam.viewProjection, l.x, l.y, l.height);
       if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
-      quads.set([q[0], q[1], 5 / q[2], 0.85 + 0.1 * Math.sin(t * 13 + k * 7), 1.0, 0.75, 0.4, 2.0], n * EFFECT_STRIDE); n++;
+      const glow = l.sturdy ? [3.5 / q[2], 0.9, 0.55, 1.0, 0.5] : [5 / q[2], 0.85 + 0.1 * Math.sin(t * 13 + k * 7), 1.0, 0.75, 0.4];
+      quads.set([q[0], q[1], ...glow, 2.0], n * EFFECT_STRIDE); n++;
     }
     if (m && n < EFFECT_CAPACITY) {
       const q = project(cam.viewProjection, m.x, m.y, 0.2);
@@ -1108,7 +1120,7 @@ async function main() {
     showMute();
     showHorn();
   }
-  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, cave, renderer, orbit, bots, fountains, sound, setCoinDetail, calibration });
+  Object.assign(globalThis as Record<string, unknown>, { world, dozer, economy, cave, lampsLit, renderer, orbit, bots, fountains, sound, setCoinDetail, calibration });
 
   // ---- what the robo-dozers go for: the room being cleared ----
 
