@@ -360,3 +360,64 @@ export function lump(seed: number, rings = 4, segments = 7): Mesh {
   }
   return b.build();
 }
+
+/** A copy of a mesh stretched along each axis, its flat normals put right for the stretch. */
+export function scaled(mesh: Mesh, sx: number, sy: number, sz: number): Mesh {
+  const positions = new Float32Array(mesh.positions),
+    normals = new Float32Array(mesh.normals);
+  for (let i = 0; i < positions.length; i += 3) {
+    positions[i] *= sx;
+    positions[i + 1] *= sy;
+    positions[i + 2] *= sz;
+    const nx = normals[i] / sx,
+      ny = normals[i + 1] / sy,
+      nz = normals[i + 2] / sz;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    normals[i] = nx / l;
+    normals[i + 1] = ny / l;
+    normals[i + 2] = nz / l;
+  }
+  return { positions, normals, uvs: mesh.uvs, indices: mesh.indices };
+}
+
+/**
+ * A fern: `blades` leaves springing from a point and arching out and over,
+ * each a narrow leaf in two bent segments, reaching about 1 out and 0.8 up.
+ */
+export function frond(blades = 7): Mesh {
+  const b = new MeshBuilder();
+  for (let k = 0; k < blades; k++) {
+    const a = (k / blades) * Math.PI * 2 + (k % 2) * 0.3;
+    const c = Math.cos(a),
+      s = Math.sin(a);
+    // along the leaf, out and up then over, and its half-width there
+    const spine: [number, number][] = [
+      [0, 0],
+      [0.45, 0.75],
+      [1.05, 0.55],
+    ];
+    const width = [0.03, 0.16, 0];
+    const at = (n: number, side: number): V3 => {
+      const [out, up] = spine[n];
+      return [c * out - s * side * width[n], s * out + c * side * width[n], up];
+    };
+    face(b, at(0, -1), at(1, -1), at(1, 1), at(0, 1));
+    tri(b, at(1, -1), at(2, 0), at(1, 1));
+  }
+  return b.build();
+}
+
+/** A tuft of grass: thin blades leaning out from a point, about 0.5 tall. */
+export function tuft(blades = 9): Mesh {
+  const b = new MeshBuilder();
+  for (let k = 0; k < blades; k++) {
+    const a = (k / blades) * Math.PI * 2 * 1.618;
+    const lean = 0.12 + ((k * 37) % 7) * 0.03,
+      h = 0.35 + ((k * 13) % 5) * 0.05;
+    const c = Math.cos(a),
+      s = Math.sin(a);
+    const w = 0.035;
+    tri(b, [-s * w, c * w, 0], [s * w, -c * w, 0], [c * lean, s * lean, h]);
+  }
+  return b.build();
+}

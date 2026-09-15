@@ -85,6 +85,9 @@ describe('the lights', () => {
     bots: [],
     lamps: cave.lamps,
     lampOn: (k) => cave.lamps[k].area === 0,
+    lampColour: () => [1, 0.8, 0.55],
+    features: [],
+    featureOn: () => true,
     fountains: [],
     vein: null,
     sealing: null,
@@ -113,6 +116,35 @@ describe('the lights', () => {
       }),
     ).lights.count;
     expect(busy).toBe(plain + 2 + 1 + 1 + 1);
+  });
+
+  it('light a biome’s features in view when their room is open, beating, and never crowd out the lamps', () => {
+    const feature = (x: number, y: number, beat: 'steady' | 'blink') => ({
+      x,
+      y,
+      z: 2,
+      colour: [1, 0.4, 0.1] as [number, number, number],
+      radius: 10,
+      intensity: 5,
+      beat,
+      glow: 3,
+      phase: 0,
+      area: 1,
+      biome: 'lava' as const,
+    });
+    const features = [feature(5, -14, 'steady'), feature(-5, -10, 'blink'), feature(900, 900, 'steady')];
+    const lamps = new SceneLights(256, 256).build(base()).lights.count;
+    const lit = new SceneLights(256, 256).build(base({ features, featureOn: () => true }));
+    expect(lit.featuresLit).toEqual([0, 1]);
+    expect(lit.lights.count).toBe(lamps + 2);
+    expect(new SceneLights(256, 256).build(base({ features, featureOn: () => false })).featuresLit).toEqual([]);
+    // a crowd of features still leaves room for the machines' own lights past the lamps
+    const crowd = Array.from({ length: 200 }, (_, k) => feature((k % 20) - 10, -14 + Math.floor(k / 20), 'steady'));
+    const busy = new SceneLights(64, 256).build(
+      base({ features: crowd, featureOn: () => true, bots: [{ x: 0, y: 0, yaw: 0 }] }),
+    );
+    expect(busy.lights.count).toBeLessThanOrEqual(64);
+    expect(busy.featuresLit.length).toBeLessThanOrEqual(48);
   });
 
   it('glow the hole only while something is going down it, and never past capacity', () => {

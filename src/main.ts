@@ -64,6 +64,7 @@ import { calibrate, frameCost } from './calibrate';
 import { Hud, placePointer, setupPad } from './hud';
 import { WALL_COLOUR, kindColour, type Rgb } from './palette';
 import * as fx from './effects';
+import { airParticle, biomeAt, featureParticle, lampColour } from './biomes';
 
 /** One world unit is ten centimetres: a coin two across is a big cartoon coin. */
 const MM_PER_UNIT = 100;
@@ -80,6 +81,8 @@ const TRACK_PAGES = 16,
  * physics and the browser. `?coins=0`…`3` skips the measuring and picks one.
  */
 const RENDER_BUDGET_MS = 8;
+/** How many places near the eye are tried each frame for something drifting in a biome's air. */
+const AIR_TRIES = 4;
 /** How many things a sealed room's going puffs over, at most. */
 const SEAL_PUFFS = 160;
 /** Where a drone is put back to, out of the way by the hole. */
@@ -484,6 +487,7 @@ async function main() {
   // ---- each frame's lights and placements ----
 
   const lights = new SceneLights(LIGHT_CAPACITY, EFFECT_CAPACITY);
+  const lampColours = cave.lamps.map((l) => lampColour(l.x, l.y));
   /** The player is at the next room's gate, and going further seals the one being cleared. */
   let warning = false;
   function lightUp() {
@@ -494,6 +498,9 @@ async function main() {
       bots,
       lamps: cave.lamps,
       lampOn: (k) => lampOn(cave.lamps, k, save),
+      lampColour: (k) => lampColours[k],
+      features: staticScene.features,
+      featureOn: (k) => save.areas[staticScene.features[k].area],
       fountains: fountains.map((f) => ({ x: f.x, y: f.y, glow: f.glow, warning: f.state === 'warn' })),
       vein: save.done ? AREAS[LAST].vein : null,
       sealing: warning ? sealPoint(cave, economy.next()!) : null,
@@ -520,32 +527,33 @@ async function main() {
 
   // ---- how much coin this machine can draw ----
 
+  /** What a frame of the scene as it stands costs, drawn to a texture of our own rather than the canvas, so no wait to be shown is counted. */
+  async function measureFrame(): Promise<number> {
+    const target = ctx.device.createTexture({
+      label: 'calibration target',
+      size: [width, height],
+      format: ctx.format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    const view = target.createView();
+    const cost = await frameCost(
+      () => {
+        lightUp();
+        upload();
+        return renderer.frame(view, 'redraw', 1 / 60);
+      },
+      () => ctx.device.queue.onSubmittedWorkDone(),
+    );
+    target.destroy();
+    return cost;
+  }
   const forced = new URLSearchParams(location.search).get('coins');
   let calibration: number[] = [];
   if (forced !== null && Number.isFinite(+forced)) setCoinDetail(+forced);
   else {
     hud.booting('measuring this machine…');
     await renderer.ready;
-    calibration = await calibrate(COIN_LADDER.length, RENDER_BUDGET_MS, setCoinDetail, async () => {
-      // a frame of the real scene, drawn to a texture of our own rather than the canvas, so no wait to be shown is counted
-      const target = ctx.device.createTexture({
-        label: 'calibration target',
-        size: [width, height],
-        format: ctx.format,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-      });
-      const view = target.createView();
-      const cost = await frameCost(
-        () => {
-          lightUp();
-          upload();
-          return renderer.frame(view, 'redraw', 1 / 60);
-        },
-        () => ctx.device.queue.onSubmittedWorkDone(),
-      );
-      target.destroy();
-      return cost;
-    });
+    calibration = await calibrate(COIN_LADDER.length, RENDER_BUDGET_MS, setCoinDetail, measureFrame);
   }
   console.info(
     `coins: ${COIN_LADDER[coinDetail].name}`,
@@ -602,6 +610,7 @@ async function main() {
     sound,
     setCoinDetail,
     calibration,
+    measureFrame,
     trackMarks: tracks,
   });
 
@@ -626,6 +635,29 @@ async function main() {
       vz[i] += 5 * (1 - d / 14) + Math.random() * 2;
       world.wx[i] += (Math.random() - 0.5) * 6;
       world.wy[i] += (Math.random() - 0.5) * 6;
+    }
+  }
+
+  /**
+   * What drifts in the air of the biomes near the eye, in rooms open: snow, fireflies, embers, motes; and
+   * now and then something off a feature in view.
+   */
+  function biomeAir() {
+    const [cx, cy] = rig.follow;
+    for (let n = 0; n < AIR_TRIES; n++) {
+      const a = Math.random() * Math.PI * 2,
+        out = Math.sqrt(Math.random()) * 50;
+      const x = cx + Math.cos(a) * out,
+        y = cy + Math.sin(a) * out;
+      const { area, weight } = biomeAt(x, y);
+      if (!weight || !save.areas[area] || Math.random() > weight) continue;
+      const e = airParticle(area, x, y, Math.random);
+      if (e) renderer.emit(e);
+    }
+    const lit = lights.featuresLit;
+    if (lit.length && Math.random() < 0.3) {
+      const e = featureParticle(staticScene.features[lit[Math.floor(Math.random() * lit.length)]]);
+      if (e) renderer.emit(e);
     }
   }
 
@@ -720,6 +752,7 @@ async function main() {
       if (Math.random() < (f.state === 'spray' ? 0.9 : 0.35)) emit(fx.fountainDust(f.x, f.y, f.state === 'spray'));
     }
     sound.shake(shaking);
+    biomeAir();
     sound.drive(drive.throttle, dozer.speed, world.load);
 
     // the coins

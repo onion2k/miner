@@ -21,6 +21,7 @@
  */
 import { COLS, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, TILE, areaAt, hash, rockish, tileCentre, type Cave } from './cave';
 import type { Mesh } from 'artshape-render/mesh/types';
+import { fbm, noise } from './noise';
 
 /** Height samples to a tile side. */
 const SUB = 4;
@@ -33,31 +34,10 @@ const ROUND = 1.8;
 const COLLAR = TILE * 1.5;
 /** Shades of each: floor, and rock by steepness (steep and dark, steep, and the tops). */
 export const TONES = 3;
+/** More rooms than there will ever be, for packing a room and a palette into one key. */
+const AREAS_MAX = 16;
 /** How thick the beds of rock are, about. */
 const STRATA = 1.7;
-
-/** A smooth noise in [0, 1], from the hash at the corners of a unit square. */
-function noise(x: number, y: number, salt: number): number {
-  const ix = Math.floor(x),
-    iy = Math.floor(y),
-    fx = x - ix,
-    fy = y - iy;
-  const u = fx * fx * (3 - 2 * fx),
-    v = fy * fy * (3 - 2 * fy);
-  const a = hash(ix, iy, salt),
-    b = hash(ix + 1, iy, salt),
-    c = hash(ix, iy + 1, salt),
-    d = hash(ix + 1, iy + 1, salt);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
-
-function fbm(x: number, y: number, salt: number): number {
-  return (
-    noise(x * 0.045, y * 0.045, salt) * 0.55 +
-    noise(x * 0.12, y * 0.12, salt + 1) * 0.3 +
-    noise(x * 0.33, y * 0.33, salt + 2) * 0.15
-  );
-}
 
 /** The height of the floor at a point: a shallow unevenness below zero, level round the hole. */
 export function floorHeight(x: number, y: number): number {
@@ -66,26 +46,56 @@ export function floorHeight(x: number, y: number): number {
   return -(noise(x * 0.3, y * 0.3, 41) * 0.12 + noise(x * 1.1, y * 1.1, 43) * 0.05) * level;
 }
 
-/** The height of the rock at a point `d` in from the nearest open floor. */
-export function rockHeight(x: number, y: number, d: number): number {
-  const top = 4 + fbm(x, y, 11) * 6.5;
+/**
+ * How the rock is shaped at a point, as shares of the cave's own: how ragged
+ * its faces, how deep its ledges, how much it lies in beds rather than
+ * slopes, and how tall it stands.
+ */
+export interface RockShape {
+  rough: number;
+  ledge: number;
+  /** 0 a smooth slope, 1 hard shelves; the cave's own is about half. */
+  beds: number;
+  top: number;
+}
+
+/** The cave's own rock. */
+export const PLAIN_ROCK: RockShape = { rough: 1, ledge: 1, beds: 0.55, top: 1 };
+
+/** The height of the rock at a point `d` in from the nearest open floor, shaped as `shape` says. */
+export function rockHeight(x: number, y: number, d: number, shape: RockShape = PLAIN_ROCK): number {
+  const top = (4 + fbm(x, y, 11) * 6.5) * shape.top;
   // up from the foot over about a tile, to a ragged top
   const rise = 1 - Math.exp(-d / 1.9);
-  const ledge = (noise(x * 0.22, y * 0.22, 17) - 0.5) * 2 * Math.min(1, d / 2);
-  const rough = (noise(x * 0.9, y * 0.9, 19) - 0.5) * 1.2 * Math.min(1, d / 1.5);
+  const ledge = (noise(x * 0.22, y * 0.22, 17) - 0.5) * 2 * Math.min(1, d / 2) * shape.ledge;
+  const rough = (noise(x * 0.9, y * 0.9, 19) - 0.5) * 1.2 * Math.min(1, d / 1.5) * shape.rough;
   const raw = top * rise + ledge + rough;
-  // in beds, as rock is: shelves a strata apart, half blended back so they are not stairs
+  // in beds, as rock is: shelves a strata apart, blended back so they are not stairs, as much as the shape says
   const bed = STRATA + (noise(x * 0.07, y * 0.07, 21) - 0.5) * 0.6;
   const q = raw / bed,
     f = q - Math.floor(q);
   const stepped = (Math.floor(q) + f * f * f * (f * (f * 6 - 15) + 10)) * bed;
-  return Math.max(0.4, raw * 0.45 + stepped * 0.55);
+  return Math.max(0.4, raw * (1 - shape.beds) + stepped * shape.beds);
+}
+
+/**
+ * What the cave looks like where, handed in by whoever knows: which palette
+ * a patch of rock or floor is drawn from, what shade within it, and how the
+ * rock is shaped. Left out, it is the cave's own everywhere.
+ */
+export interface TerrainStyle {
+  /** The palette the ground at (x, y) is drawn from; 0 is the cave's own. */
+  palette(x: number, y: number): number;
+  /** Its shade within that palette, told the shade the cave would give it. */
+  tone(palette: number, x: number, y: number, rock: boolean, tone: number): number;
+  shape(x: number, y: number): RockShape;
 }
 
 export interface SurfaceGroup {
   area: number;
   rock: boolean;
   tone: number;
+  palette: number;
   mesh: Mesh;
 }
 
@@ -117,10 +127,28 @@ export interface Spire {
   area: number;
 }
 
+/**
+ * The sample points the surface is made from, for placing things on it: `gx`
+ * across, row by row. `depth` is how far each is into the rock, 0 on the
+ * floor and Infinity past where the rock is drawn in detail; `area` is the
+ * room of the floor it stands on or beside, 255 for none.
+ */
+export interface Samples {
+  gx: number;
+  gy: number;
+  step: number;
+  x: Float32Array;
+  y: Float32Array;
+  z: Float32Array;
+  depth: Float32Array;
+  area: Uint8Array;
+}
+
 export interface Terrain {
   groups: SurfaceGroup[];
   stones: Stone[];
   spires: Spire[];
+  samples: Samples;
 }
 
 /**
@@ -234,7 +262,8 @@ class Builder {
   }
 }
 
-export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
+export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainStyle): Terrain {
+  const shapeAt = (x: number, y: number) => (style ? style.shape(x, y) : PLAIN_ROCK);
   const GX = COLS * SUB + 1,
     GY = ROWS * SUB + 1;
   const [depth, nearest] = depths(cave, revealed);
@@ -246,8 +275,11 @@ export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
     pz = new Float32Array(GX * GY);
   const corners = new Float32Array((COLS + 1) * (ROWS + 1));
   for (let ty = 0; ty <= ROWS; ty++) {
-    for (let tx = 0; tx <= COLS; tx++)
-      corners[ty * (COLS + 1) + tx] = rockHeight(ORIGIN_X + tx * TILE, ORIGIN_Y + ty * TILE, REACH);
+    for (let tx = 0; tx <= COLS; tx++) {
+      const x = ORIGIN_X + tx * TILE,
+        y = ORIGIN_Y + ty * TILE;
+      corners[ty * (COLS + 1) + tx] = rockHeight(x, y, REACH, shapeAt(x, y));
+    }
   }
   const corner = (tx: number, ty: number) => corners[ty * (COLS + 1) + tx];
   for (let j = 0; j < GY; j++) {
@@ -271,7 +303,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
       const y = ORIGIN_Y + j * STEP + (hash(i, j, 2) - 0.5) * nudge;
       px[k] = x;
       py[k] = y;
-      pz[k] = d === 0 ? floorHeight(x, y) : rockHeight(x, y, d);
+      pz[k] = d === 0 ? floorHeight(x, y) : rockHeight(x, y, d, shapeAt(x, y));
     }
   }
 
@@ -279,7 +311,9 @@ export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
   const tileArea = new Uint8Array(COLS * ROWS);
   for (let t = 0; t < tileArea.length; t++) tileArea[t] = areaAt(...tileCentre(t % COLS, (t / COLS) | 0));
   const builders = new Map<number, Builder>();
-  const key = (area: number, rock: boolean, tone: number) => (area * 2 + (rock ? 1 : 0)) * TONES + tone;
+  const PALETTES = 8;
+  const key = (area: number, rock: boolean, tone: number, palette = 0) =>
+    ((palette * AREAS_MAX + area) * 2 + (rock ? 1 : 0)) * TONES + tone;
   const emit = (a: number, b: number, c: number) => {
     const ux = px[b] - px[a],
       uy = py[b] - py[a],
@@ -307,20 +341,22 @@ export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
     // the hole's collar is the floor there
     if (!rock && Math.abs(cx - HOLE.x) < COLLAR && Math.abs(cy - HOLE.y) < COLLAR) return;
     const salt = hash(Math.round(cx * 7), Math.round(cy * 7), 23);
-    const tone = rock
+    const plain = rock
       ? nz > 0.72
         ? 2
         : salt < 0.45
           ? 0
           : 1
       : Math.min(TONES - 1, Math.floor(noise(cx * 0.09, cy * 0.09, 29) * 2.6 + salt * 0.4));
+    const palette = style ? Math.min(PALETTES - 1, style.palette(cx, cy)) : 0;
+    const tone = style && palette ? style.tone(palette, cx, cy, rock, plain) : plain;
     // Rock is the room whose floor it stands over, so the wall of an open room is not drawn dark
     // for being nearer the next; floor is the room of the tile it is on.
     let t = -1;
     if (rock) t = nearest[a] >= 0 ? nearest[a] : nearest[b] >= 0 ? nearest[b] : nearest[c];
     if (t < 0) t = Math.floor((cy - ORIGIN_Y) / TILE) * COLS + Math.floor((cx - ORIGIN_X) / TILE);
     const area = t >= 0 && t < tileArea.length ? tileArea[t] : 0;
-    const k = key(area, rock, tone);
+    const k = key(area, rock, tone, palette);
     let bld = builders.get(k);
     if (!bld) builders.set(k, (bld = new Builder()));
     bld.vertex(px[a], py[a], pz[a], nx, ny, nz);
@@ -366,10 +402,17 @@ export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
   const groups: SurfaceGroup[] = [];
   for (const [k, bld] of builders) {
     const tone = k % TONES,
-      rest = (k - tone) / TONES;
-    groups.push({ area: rest >> 1, rock: (rest & 1) === 1, tone, mesh: bld.build() });
+      rest = (k - tone) / TONES,
+      areaPalette = rest >> 1;
+    groups.push({
+      area: areaPalette % AREAS_MAX,
+      palette: Math.floor(areaPalette / AREAS_MAX),
+      rock: (rest & 1) === 1,
+      tone,
+      mesh: bld.build(),
+    });
   }
-  groups.sort((p, q) => key(p.area, p.rock, p.tone) - key(q.area, q.rock, q.tone));
+  groups.sort((p, q) => key(p.area, p.rock, p.tone, p.palette) - key(q.area, q.rock, q.tone, q.palette));
 
   // the stones: boulders fallen at the foot of the rock, a few on its tops, grit about the floor
   const areaOf = (p: number) => tileArea[nearest[p]];
@@ -405,7 +448,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
         stones.push({
           x,
           y,
-          z: rockHeight(x, y, d) - size * 0.3,
+          z: rockHeight(x, y, d, shapeAt(x, y)) - size * 0.3,
           yaw,
           tilt: 0.3,
           size: [size, size * 0.8, size * 0.7],
@@ -419,7 +462,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
         spires.push({
           x,
           y,
-          z: rockHeight(x, y, d) - 0.4,
+          z: rockHeight(x, y, d, shapeAt(x, y)) - 0.4,
           radius,
           height: radius * (2.5 + hash(i, j, 72) * 3),
           tilt: (hash(i, j, 73) - 0.5) * 0.3,
@@ -448,7 +491,14 @@ export function buildTerrain(cave: Cave, revealed: boolean[]): Terrain {
       }
     }
   }
-  return { groups, stones, spires };
+  const sampleArea = new Uint8Array(GX * GY).fill(255);
+  for (let k = 0; k < sampleArea.length; k++) if (nearest[k] >= 0) sampleArea[k] = tileArea[nearest[k]];
+  return {
+    groups,
+    stones,
+    spires,
+    samples: { gx: GX, gy: GY, step: STEP, x: px, y: py, z: pz, depth, area: sampleArea },
+  };
 }
 
 /** How far a floor point is from the nearest rock, up to two tiles; further counts as two tiles. */

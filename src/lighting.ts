@@ -19,6 +19,13 @@ import { LightPool } from 'artshape-render/game/lights';
 import { HOLE, type Lamp } from './cave';
 import { HOLE_LAMPS, HOLE_LAMP_HEIGHT, LAMP_BRIGHT, LAMP_LIGHTS, LAMP_REACH, lampsInView, type View } from './lamps';
 import { project } from './matrix';
+import { beat, type FeatureLight } from './biomes';
+import type { Rgb } from './palette';
+
+/** Room kept in the pool past the lamps and the features, for the machines' own lights and the rest. */
+const RESERVED = 24;
+/** The most feature lights lit at once. */
+const FEATURE_LIGHTS = 48;
 
 /** A machine with lights: where it is and which way it faces. */
 export interface Lit {
@@ -44,6 +51,11 @@ export interface LightState {
   bots: readonly Lit[];
   lamps: readonly Lamp[];
   lampOn: (k: number) => boolean;
+  /** The colour of a lamp's light. */
+  lampColour: (k: number) => Rgb;
+  /** The lights that are part of the biomes, and whether each is lit: its room open. */
+  features: readonly FeatureLight[];
+  featureOn: (k: number) => boolean;
   fountains: readonly Glowing[];
   /** The last room's vein, glowing once the cave is done. */
   vein: { x: number; y: number } | null;
@@ -63,6 +75,8 @@ export class SceneLights {
   readonly shadowed: number[] = [];
   /** The lamps lit near the eye this frame, nearest first. */
   readonly lampsLit: number[] = [];
+  /** The biomes' lights lit near the eye this frame, nearest first. */
+  readonly featuresLit: number[] = [];
 
   constructor(
     lightCapacity: number,
@@ -103,15 +117,29 @@ export class SceneLights {
       colour: [1.0, 0.9, 0.75],
       intensity: 1.2,
     });
+    // the biomes' lights near enough the screen to show, the nearest first, as many as are allowed
+    this.featuresLit.length = 0;
+    lampsInView(s.features, s.featureOn, { ...s.view, reach: 20 }, this.featuresLit);
+    this.featuresLit.length = Math.min(this.featuresLit.length, FEATURE_LIGHTS);
+    for (const k of this.featuresLit) {
+      const f = s.features[k];
+      lights.add({
+        position: [f.x, f.y, f.z],
+        radius: f.radius,
+        colour: f.colour,
+        intensity: f.intensity * beat(f, t),
+      });
+    }
     // the lamps whose light reaches the screen, the nearest the eye first, as many as fit
-    for (const k of lampsInView(s.lamps, s.lampOn, s.view, this.lampsLit).slice(0, LAMP_LIGHTS)) {
+    const room = Math.max(0, lights.capacity - RESERVED - lights.count);
+    for (const k of lampsInView(s.lamps, s.lampOn, s.view, this.lampsLit).slice(0, Math.min(LAMP_LIGHTS, room))) {
       const l = s.lamps[k];
       const flicker = 0.92 + 0.08 * Math.sin(t * 13 + k * 7) * Math.sin(t * 3.1 + k);
       // bright, and far-reaching enough that between them nowhere on the floor is dark
       lights.add({
         position: [l.x, l.y, l.height],
         radius: LAMP_REACH,
-        colour: [1.0, 0.8, 0.55],
+        colour: s.lampColour(k),
         intensity: LAMP_BRIGHT * flicker,
       });
     }
@@ -216,6 +244,15 @@ export class SceneLights {
       const q = project(vp, l.x, l.y, l.height);
       if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
       put([q[0], q[1], 5 / q[2], 0.85 + 0.1 * Math.sin(t * 13 + k * 7), 1.0, 0.75, 0.4, 2.0]);
+    }
+    // each biome light that glows, a glow round it: a crystal's, a mushroom's, a pool's, a beacon's
+    for (const k of this.featuresLit) {
+      const f = s.features[k];
+      if (!f.glow || n >= effectCapacity - 1) continue;
+      const q = project(vp, f.x, f.y, f.z);
+      if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
+      const b = beat(f, t);
+      put([q[0], q[1], (f.glow / q[2]) * (0.7 + 0.3 * b), 0.6 * b, f.colour[0], f.colour[1], f.colour[2], 1.8]);
     }
     for (const [x, y] of HOLE_LAMPS) {
       if (n >= effectCapacity - 1) break;

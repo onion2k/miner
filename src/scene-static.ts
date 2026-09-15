@@ -10,14 +10,16 @@
  * shape; the rest is quick.
  */
 import { MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
+import type { Mesh } from 'artshape-render/mesh/types';
 import { AREAS, HOLE, LAMP_HEIGHT, TILE, WALLS, areaAt, gateTiles, hash, type Cave } from './cave';
 import { WALL_STRENGTH } from './economy';
 import { HOLE_CORD, HOLE_LAMPS, HOLE_LAMP_HEIGHT, lampPose } from './lamps';
 import { box, collar, cone, cylinder, gem, lump, moved, pit } from './meshes';
 import { hide, identity, place, placePart } from './matrix';
-import { BAR_COLOUR, FLOOR_TONES, GEM_ALBEDO, ROCK_TONES, UNSEEN, WALL_COLOUR } from './palette';
+import { BAR_COLOUR, FLOOR_TONES, GEM_ALBEDO, ROCK_TONES, UNSEEN, WALL_COLOUR, type Rgb } from './palette';
 import { BAR } from './physics';
 import { buildTerrain, type Terrain } from './terrain';
+import { BIOME_STYLE, PROP_MESHES, decorate, groundTone, lampColour, tint, type Decor, type PropKind } from './biomes';
 import { BRICK_SIZE, standingBricks } from './walls';
 
 /** What has become of the cave, as the static scene is drawn from it. */
@@ -49,9 +51,17 @@ export class StaticScene {
     beltBase: box(1, 1, 1),
     rail: box(1, 1, 1),
   };
-  private terrain: (Terrain & { key: string }) | null = null;
+  private readonly propMeshes = Object.fromEntries(
+    Object.entries(PROP_MESHES).map(([kind, make]) => [kind, make()]),
+  ) as Record<PropKind, Mesh>;
+  private terrain: (Terrain & { key: string; decor: Decor }) | null = null;
 
   constructor(private readonly cave: Cave) {}
+
+  /** The lights that are part of the biomes, as the terrain last built stands. */
+  get features() {
+    return this.terrain?.decor.lights ?? [];
+  }
 
   groups(state: StaticState): GameGroup[] {
     const shown = (area: number) => (state.areas[area] ? 1 : UNSEEN);
@@ -71,11 +81,14 @@ export class StaticScene {
   /** The rock and the floor, the stones and spires on them. */
   private ground(state: StaticState, shown: (area: number) => number): GameGroup[] {
     const key = state.secrets.map((r) => (r ? 1 : 0)).join('');
-    if (this.terrain?.key !== key) this.terrain = { key, ...buildTerrain(this.cave, [...state.secrets]) };
+    if (this.terrain?.key !== key) {
+      const built = buildTerrain(this.cave, [...state.secrets], BIOME_STYLE);
+      this.terrain = { key, ...built, decor: decorate(built.samples) };
+    }
     const terrain = this.terrain;
     const surface: GameGroup[] = terrain.groups.map((g) => {
       const k = shown(g.area);
-      const c = (g.rock ? ROCK_TONES : FLOOR_TONES)[g.tone];
+      const c = groundTone(g.palette, g.rock, g.tone);
       return { mesh: g.mesh, matrices: identity(), materials: new Float32Array([c[0] * k, c[1] * k, c[2] * k, c[3]]) };
     });
     const stones: GameGroup[] = this.meshes.stones.map((mesh, shape) => {
@@ -83,7 +96,9 @@ export class StaticScene {
       const [m, mat] = pool(mine.length);
       mine.forEach((st, i) => {
         placePart(m, i, st.x, st.y, st.z, st.yaw, 0, 0, 0, 0, st.tilt, st.size[0], st.size[1], st.size[2]);
-        const base = st.rock ? ROCK_TONES[1] : FLOOR_TONES[0];
+        const base = tint((st.rock ? ROCK_TONES[1] : FLOOR_TONES[0]).slice(0, 3) as Rgb, st.x, st.y, (b) =>
+          st.rock ? b.stone.rock : b.stone.floor,
+        );
         const k = (0.75 + st.shade * 0.5) * shown(st.area);
         mat.set([base[0] * k, base[1] * k, base[2] * k, 0.9], i * MATERIAL_STRIDE);
       });
@@ -93,13 +108,36 @@ export class StaticScene {
     terrain.spires.forEach((sp, i) => {
       placePart(spireM, i, sp.x, sp.y, sp.z, sp.yaw, 0, 0, 0, 0, sp.tilt, sp.radius, sp.radius, sp.height);
       const k = (0.8 + sp.shade * 0.4) * shown(sp.area);
-      spireMat.set([ROCK_TONES[2][0] * k, ROCK_TONES[2][1] * k, ROCK_TONES[2][2] * k, 0.85], i * MATERIAL_STRIDE);
+      const top = tint(ROCK_TONES[2].slice(0, 3) as Rgb, sp.x, sp.y, (b) => b.rock[2].slice(0, 3) as Rgb);
+      spireMat.set([top[0] * k, top[1] * k, top[2] * k, 0.85], i * MATERIAL_STRIDE);
     });
     return [
       ...surface,
       ...stones,
       { mesh: this.meshes.spire, matrices: spireM, materials: spireMat, count: terrain.spires.length },
+      ...this.props(terrain.decor, shown),
     ];
+  }
+
+  /** What stands in the biomes: a group for each kind of thing, each thing its own colour, dark in a room not open. */
+  private props(decor: Decor, shown: (area: number) => number): GameGroup[] {
+    const byKind = new Map<PropKind, Decor['props']>();
+    for (const p of decor.props) {
+      const list = byKind.get(p.kind);
+      if (list) list.push(p);
+      else byKind.set(p.kind, [p]);
+    }
+    const out: GameGroup[] = [];
+    for (const [kind, list] of byKind) {
+      const [m, mat] = pool(list.length);
+      list.forEach((p, i) => {
+        placePart(m, i, p.x, p.y, p.z, p.yaw, 0, 0, 0, 0, p.tilt, p.size[0], p.size[1], p.size[2]);
+        const k = shown(p.area);
+        mat.set([p.colour[0] * k, p.colour[1] * k, p.colour[2] * k, p.roughness], i * MATERIAL_STRIDE);
+      });
+      out.push({ mesh: this.propMeshes[kind], matrices: m, materials: mat, count: list.length });
+    }
+    return out;
   }
 
   /** The rock across the gates of the rooms not open, block by block. */
@@ -126,7 +164,14 @@ export class StaticScene {
       const pose = lampPose(l, k, down);
       placePart(postM, k, ...pose.post, pose.yaw, 0, 0, 0, 0, pose.pitch, 1, 1, pose.postScale);
       placePart(headM, k, ...pose.head, pose.yaw, 0, 0, 0, 0, pose.pitch, 1, 1, 1);
-      headMat.set(down ? [0.18, 0.17, 0.16, 0.6] : [1.0, 0.86, 0.6, 0.3], k * MATERIAL_STRIDE);
+      // the glass the colour of the lamp's light, which a biome's lamps change
+      const light = lampColour(l.x, l.y),
+        bright = Math.max(...light);
+      const glass = light.map((c) => c / bright) as Rgb;
+      headMat.set(
+        down ? [0.18, 0.17, 0.16, 0.6] : [glass[0], glass[1] * 1.07, glass[2] * 1.09, 0.3],
+        k * MATERIAL_STRIDE,
+      );
     });
     // the lamps over the hole: a cord up into the dark, and a shade on the end of it
     const cordM = new Float32Array(HOLE_LAMPS.length * 16),

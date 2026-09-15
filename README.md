@@ -19,6 +19,16 @@ still in it. Up at the gate the game says so, and the line that seals it
 glows red. Only a room or two is ever in play, so a cave that has been worked
 through does not weigh on the frame.
 
+Each gallery is a world of its own. The South Gallery is jungle: mossy rock,
+ferns and trees, and mushrooms that glow in the dark with fireflies about them.
+The North Vault is ice: blue walls, snow falling, and crystal clusters lit from
+inside. The East Gallery is lava: black basalt, pools of it glowing on the
+rock, embers rising. The West Gallery is the future: steel panels, neon along
+the walls, beacons blinking on pylons. The hollow is the cave as it always was,
+and each world creeps in down the corridor out to its room rather than starting
+at a line. A world is only how a room looks: the rock, the floor and the coins
+play the same in all of them.
+
 Off each gallery a stretch of the wall looks like any other rock and is not.
 Knock into it and it sounds hollow; drive square into it at speed and it
 smashes, and behind it is a hidden chamber with gold bars in it. What is in a
@@ -138,6 +148,8 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/tools.ts          conveyor belts, drones, and the fountains
     src/nav.ts            the way round the rock and the heaps, for the drones
     src/terrain.ts        the cave to look at: the rock and floor as one faceted surface over the tiles, and the stones on it
+    src/biomes.ts         each gallery's world: its palette and rock, how it blends in, what stands in it, its lights and air
+    src/noise.ts          smooth noise, for rock, floor and the patches a world creeps in by
     src/tracks.ts         the marks the tracks press into the floor, kept a page at a time, the oldest fading
     src/scene-static.ts   what does not move, as groups for the renderer: ground, hole, gates, walls, lamps, belts
     src/scene-dynamic.ts  what moves, written each frame: bodies, machines, treads, stripes, pennant, track marks

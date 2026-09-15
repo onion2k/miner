@@ -75,10 +75,17 @@ export interface View {
 
 /**
  * The lamps lit whose light can reach the screen: the floor under one is in
- * view, or off the edge by less than its light carries. The nearest the eye
- * first. Into `out`, which is emptied first.
+ * view, or off the edge by less than its light carries (`reach`, a lamp's
+ * unless said). The nearest the eye first. Into `out`, which is emptied
+ * first. Anything else that lights the floor round it is culled the same way.
  */
-export function lampsInView(lamps: readonly Lamp[], lit: (k: number) => boolean, view: View, out: number[]): number[] {
+export function lampsInView(
+  lamps: readonly { x: number; y: number }[],
+  lit: (k: number) => boolean,
+  view: View & { reach?: number },
+  out: number[],
+): number[] {
+  const reach = view.reach ?? LAMP_REACH;
   const [ex, ey] = view.target,
     lens = 1 / Math.tan((view.fov * Math.PI) / 360);
   out.length = 0;
@@ -86,9 +93,9 @@ export function lampsInView(lamps: readonly Lamp[], lit: (k: number) => boolean,
     if (!lit(k)) return;
     const q = project(view.viewProjection, l.x, l.y, 0);
     // how much of the screen its light's reach is at that depth: up, by the lens, and across, by that over the frame's shape
-    const up = q ? (LAMP_REACH * lens * 1.1) / q[2] : 0,
+    const up = q ? (reach * lens * 1.1) / q[2] : 0,
       across = up / view.aspect;
-    if (q ? Math.abs(q[0]) < 1 + across && Math.abs(q[1]) < 1 + up : Math.hypot(l.x - ex, l.y - ey) < LAMP_REACH)
+    if (q ? Math.abs(q[0]) < 1 + across && Math.abs(q[1]) < 1 + up : Math.hypot(l.x - ex, l.y - ey) < reach)
       out.push(k);
   });
   const dist = (k: number) => Math.hypot(lamps[k].x - ex, lamps[k].y - ey);
