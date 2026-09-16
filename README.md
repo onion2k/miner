@@ -107,6 +107,7 @@ and how much the drones got in each other's way — see the top of
     npm run balance:check -- --update
     npm run fuzz           # the game played at random, the rules that must hold checked
     npm run fuzz -- --seed 17
+    npm run determinism    # every seed played twice: the same game both times
     npm run bench          # the physics' time a frame held to its baseline
     npm run bench -- --update
     npm run smoke          # the game in a real browser (once: npx playwright install chromium)
@@ -127,6 +128,19 @@ way, has got worse than `scripts/sim-baseline.json` by more than a tolerance.
 A run is the same from the same seed, so any change to the physics, cave or
 drones moves the figures; when a change makes them better, `--update` holds
 the next change to the better figures.
+
+Every seed has to play out the same way twice (`npm run determinism`): two
+runs of the same seed, hashed every 300 frames — every body's place and speed,
+the machines, the fuses and the save — and the frame they first part at if they
+ever do. Everything that holds the game to a figure rests on that, so what
+breaks it shows up nowhere else, only as gates whose numbers wander.
+
+`test/saves/` keeps a save of every shape the game has ever written, from the
+three-room cave before there were magnets to the one it writes today. Each one
+has to load, keep what it bought, fill out every list to the cave as it stands,
+play on without breaking a rule, and survive being written again. A new field
+in the save means a new file there; the last test in `test/saves.test.ts` fails
+until it is added.
 
 The balance run (`scripts/balancer.ts`) plays the whole game through, from a
 new save to the cave cleared, with the autopilot (`src/autopilot.ts`) at the
@@ -219,8 +233,10 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     scripts/sim-check.ts  the drones held to a baseline
     scripts/fuzzer.ts     the game played at random, its rules checked; fuzz.ts runs it over seeds
     scripts/balancer.ts   the whole game played through by the autopilot; balance.ts runs it over seeds and gates it
+    scripts/determinism.ts  a seed played twice and hashed; determinism-check.ts runs it over seeds
     scripts/physics-bench.ts  the physics' time a frame, held to a baseline
     test/                 unit tests, run by Vitest
+    test/saves/           a save of every shape the game has written, all still loading
     smoke/                the game in a real browser, run by Playwright
 
 The coins collide as balls a little smaller than their rims, which is what

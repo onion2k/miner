@@ -10,10 +10,11 @@ without breaking it.
 
     npm run dev            the game at http://localhost:5194
     npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~15 s)
-    npm run check          all of it: check:quick, fuzz, drone gate, balance gate, physics bench, smoke (~2.5 min)
+    npm run check          all of it: check:quick, fuzz, determinism, drone gate, balance gate, physics bench, smoke (~2.5 min)
     npm test               unit tests (Vitest, test/)
     npm run fuzz           the game played at random, rules checked (scripts/fuzz.ts)
     npm run fuzz -- --seed N           one failing seed again, with what led up to it
+    npm run determinism    the same seed played twice, hashed, to catch chance not from the seed
     npm run sim:check      the drones held to scripts/sim-baseline.json
     npm run balance        the whole game played through by the autopilot: room times, purchases, bank
     npm run balance:check  the first two rooms' pacing held to scripts/balance-baseline.json
@@ -50,7 +51,9 @@ change is meant to move the figures, and say so in the commit.
   field or room has to work in every path it can reach. See the checklist
   below. Most bugs so far were a new thing missing from one of those paths.
 - **Save compatibility.** Old saves must still load. A new save field needs a
-  default for saves that don't have it, and a test that loads a save without it.
+  default for saves that don't have it, and a save in the new shape added to
+  `test/saves/`, which keeps one of every shape the game has ever written. The
+  corpus test fails until the new one is there.
 
 ## Definition of done
 
