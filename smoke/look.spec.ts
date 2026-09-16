@@ -109,6 +109,34 @@ test.describe('what it looks like', () => {
     });
   }
 
+  test('the dozer, up close', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, save: inRoom(1, { flag: true }) });
+    const [x, y] = await heart(page, 1);
+    await scene(page, { x, y, azimuth: 0.7, polar: 1.0, radius: 22 }, 120, [x, y, Math.PI / 2]);
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('dozer.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('a drone, up close', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, save: inRoom(1, { drones: 1 }) });
+    const at = await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      api.step(120);
+      const b = api.state().bots[0];
+      api.look(b.x, b.y, { azimuth: 0.7, polar: 1.0, radius: 16 });
+      api.step(1);
+      return b;
+    });
+    expect(at).toBeDefined();
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('drone.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('a barrel going off, mid-blast', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

@@ -11,8 +11,9 @@
 import { mergeMeshes, type Mesh } from 'artshape-render/mesh/types';
 import type { GameGroup } from 'artshape-render/game/renderer';
 import { AREAS } from './cave';
-import { BLADE_HEIGHT, TRACK_GAUGE, bladePieces, type Dozer } from './dozer';
-import { bar, ball, box, coin, cylinder, gem, moved, square, turned } from './meshes';
+import { TRACK_GAUGE, type Dozer } from './dozer';
+import { ANCHORS, bladeMesh, machineMeshes, type MachineMeshes } from './machine';
+import { bar, box, coin, cylinder, gem, moved, square } from './meshes';
 import { place, placePart, placeQuat } from './matrix';
 import { BARREL_COLOUR, BAR_COLOUR, COIN_COLOUR, GEM_ALBEDO, TRACK_MARK, WALL_COLOUR, type Rgb } from './palette';
 import { BAR, BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, type World } from './physics';
@@ -71,19 +72,29 @@ const COINS = 0,
   GEMS = 1,
   HULL = 5,
   DARK = 6,
-  BLADE = 7,
-  TREADS = 8,
-  BOT_HULL = 9,
-  BOT_DARK = 10,
-  BOT_BLADE = 11,
-  STRIPES = 12,
-  POLE = 13,
-  FLAG = 14,
-  BARS = 15,
-  RUBBLE = 16,
-  BARRELS = 19,
-  HOOPS = 20,
-  TRACKS = 21;
+  METAL = 7,
+  GLASS = 8,
+  BLADE = 9,
+  TREADS = 10,
+  BOT_HULL = 11,
+  BOT_DARK = 12,
+  BOT_METAL = 13,
+  BOT_GLASS = 14,
+  BOT_BLADE = 15,
+  STRIPES = 16,
+  POLE = 17,
+  FLAG = 18,
+  BARS = 19,
+  RUBBLE = 20,
+  BARRELS = 23,
+  HOOPS = 24,
+  TRACKS = 25;
+/** The bright steel and the glass, the same on every machine. */
+const METAL_ALBEDO: Rgb = [0.6, 0.62, 0.66],
+  METAL_ROUGHNESS = 0.3,
+  GLASS_ALBEDO: Rgb = [0.2, 0.32, 0.42],
+  GLASS_ROUGHNESS = 0.06,
+  DARK_ALBEDO: Rgb = [0.15, 0.15, 0.17];
 /** A barrel's colour standing, lit, and in a flash; roughness last. */
 const BARREL_IDLE = [...BARREL_COLOUR, 0.5],
   BARREL_LIT = [0.8, 0.12, 0.06, 0.4],
@@ -97,13 +108,12 @@ export class DynamicScene {
   private readonly coinM: Float32Array;
   private readonly gemM: Float32Array[];
   private readonly rubbleM: Float32Array[];
-  private readonly hullM = new Float32Array(16);
-  private readonly darkM = new Float32Array(16);
-  private readonly bladeM = new Float32Array(16);
+  /** The one matrix every part of the player's machine is placed by, and the drones' each. */
+  private readonly machineM = new Float32Array(16);
+  private readonly botM: Float32Array;
   private readonly treadM: Float32Array;
-  private readonly botHullM: Float32Array;
-  private readonly botDarkM: Float32Array;
-  private readonly botBladeM: Float32Array;
+  /** The machine's parts, as built once, for whoever asks what is painted and what is not. */
+  readonly machineParts: MachineMeshes;
   private readonly stripeM = new Float32Array(STRIPE_CAPACITY * 16);
   private readonly poleM = new Float32Array(16);
   private readonly flagM = new Float32Array(FLAG_SLATS * 16);
@@ -123,28 +133,10 @@ export class DynamicScene {
     this.barrelM = new Float32Array(Math.max(1, kindCapacity[BARREL_KIND]) * 16);
     this.barrelMat = new Float32Array(Math.max(1, kindCapacity[BARREL_KIND]) * MATERIAL_STRIDE);
     this.treadM = new Float32Array((1 + bots) * TREAD_BARS * 2 * 16);
-    this.botHullM = new Float32Array(bots * 16);
-    this.botDarkM = new Float32Array(bots * 16);
-    this.botBladeM = new Float32Array(bots * 16);
+    this.botM = new Float32Array(bots * 16);
 
-    const hull = mergeMeshes([
-      moved(box(5.4, 3.4, 1.7), 0, 0, 0.8), // the body
-      moved(box(2.8, 2.8, 1.1), 1.1, 0, 2.5), // the hood
-      moved(box(2.3, 3.0, 2.3), -1.5, 0, 2.5), // the cab
-      moved(box(0.7, 0.5, 0.4), 2.5, 0.9, 2.9), // a headlamp each side
-      moved(box(0.7, 0.5, 0.4), 2.5, -0.9, 2.9),
-    ]);
-    const dark = mergeMeshes([
-      moved(box(6.6, 1.7, 1.9), 0, 2.15, 0), // the tracks
-      moved(box(6.6, 1.7, 1.9), 0, -2.15, 0),
-      moved(box(2.4, 3.1, 1.1), -1.5, 0, 3.2), // the glass, a band round the cab
-      moved(cylinder(0.26, 1.7, 8), 1.7, 0.9, 3.5), // the exhaust
-      moved(box(3.4, 0.45, 0.45), 2.6, 2.4, 1.7), // the blade's arms
-      moved(box(3.4, 0.45, 0.45), 2.6, -2.4, 1.7),
-      moved(box(0.9, 3.6, 0.4), -3.2, 0, 1.9), // a rear step
-    ]);
-    // the robo-dozer's beacon, on the cab roof, so it reads as a machine and not a second player
-    const botExtras = mergeMeshes([moved(ball(0.45, 5, 8), -1.5, 0, 4.2), moved(cylinder(0.12, 0.6, 6), -1.5, 0, 3.6)]);
+    const machine = machineMeshes();
+    this.machineParts = machine;
     const gemMesh = gem(1.05, 2.3);
     this.groups = [
       { mesh: coin(0.52, 0.26, 0), matrices: this.coinM, count: 0, albedo: COIN_COLOUR, roughness: 0.26 },
@@ -152,9 +144,16 @@ export class DynamicScene {
       { mesh: gemMesh, matrices: this.gemM[2], count: 0, albedo: GEM_ALBEDO[2], roughness: 0.28 },
       { mesh: gemMesh, matrices: this.gemM[3], count: 0, albedo: GEM_ALBEDO[3], roughness: 0.28 },
       { mesh: gemMesh, matrices: this.gemM[4], count: 0, albedo: GEM_ALBEDO[4], roughness: 0.15 },
-      { mesh: hull, matrices: this.hullM, albedo: options.paint.colour, roughness: options.paint.roughness },
-      { mesh: dark, matrices: this.darkM, albedo: [0.15, 0.15, 0.17], roughness: 0.75 },
-      { mesh: bladeMesh(options.bladeWidth), matrices: this.bladeM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
+      {
+        mesh: machine.paint,
+        matrices: this.machineM,
+        albedo: options.paint.colour,
+        roughness: options.paint.roughness,
+      },
+      { mesh: machine.dark, matrices: this.machineM, albedo: DARK_ALBEDO, roughness: 0.75 },
+      { mesh: machine.metal, matrices: this.machineM, albedo: METAL_ALBEDO, roughness: METAL_ROUGHNESS },
+      { mesh: machine.glass, matrices: this.machineM, albedo: GLASS_ALBEDO, roughness: GLASS_ROUGHNESS },
+      { mesh: bladeMesh(options.bladeWidth), matrices: this.machineM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
       {
         mesh: box(0.55, 1.9, 0.35),
         matrices: this.treadM,
@@ -162,23 +161,32 @@ export class DynamicScene {
         albedo: [0.3, 0.3, 0.32],
         roughness: 0.8,
       },
+      // the robo-dozers: the same parts, white where the player's are painted, with their beacon and aerial in orange
+      { mesh: machine.paint, matrices: this.botM, count: 0, albedo: [0.88, 0.9, 0.92], roughness: 0.45 },
       {
-        mesh: mergeMeshes([hull, botExtras]),
-        matrices: this.botHullM,
+        mesh: mergeMeshes([machine.dark, machine.drone]),
+        matrices: this.botM,
         count: 0,
-        albedo: [0.88, 0.9, 0.92],
-        roughness: 0.45,
+        albedo: [0.95, 0.45, 0.1],
+        roughness: 0.6,
       },
-      { mesh: dark, matrices: this.botDarkM, count: 0, albedo: [0.95, 0.45, 0.1], roughness: 0.6 },
+      { mesh: machine.metal, matrices: this.botM, count: 0, albedo: METAL_ALBEDO, roughness: METAL_ROUGHNESS },
+      { mesh: machine.glass, matrices: this.botM, count: 0, albedo: GLASS_ALBEDO, roughness: GLASS_ROUGHNESS },
       {
         mesh: bladeMesh(options.botBladeWidth),
-        matrices: this.botBladeM,
+        matrices: this.botM,
         count: 0,
         albedo: [0.4, 0.42, 0.48],
         roughness: 0.35,
       },
       { mesh: box(0.5, 1, 0.15), matrices: this.stripeM, count: 0, albedo: [0.9, 0.78, 0.3], roughness: 0.5 },
-      { mesh: cylinder(0.09, 4.2, 6), matrices: this.poleM, count: 0, albedo: [0.3, 0.3, 0.32], roughness: 0.5 },
+      {
+        mesh: cylinder(0.09, ANCHORS.poleHeight, 6),
+        matrices: this.poleM,
+        count: 0,
+        albedo: [0.3, 0.3, 0.32],
+        roughness: 0.5,
+      },
       {
         mesh: box(0.4, 0.06, 0.9, true),
         matrices: this.flagM,
@@ -306,12 +314,8 @@ export class DynamicScene {
 
   private machines({ dozer, bots }: DynamicFrame) {
     const { target, treadM } = this;
-    place(this.hullM, 0, dozer.x, dozer.y, 0, dozer.yaw);
-    place(this.darkM, 0, dozer.x, dozer.y, 0, dozer.yaw);
-    place(this.bladeM, 0, dozer.x, dozer.y, 0, dozer.yaw);
-    target.move(HULL, this.hullM);
-    target.move(DARK, this.darkM);
-    target.move(BLADE, this.bladeM);
+    place(this.machineM, 0, dozer.x, dozer.y, 0, dozer.yaw);
+    for (const g of [HULL, DARK, METAL, GLASS, BLADE]) target.move(g, this.machineM);
     // each track's bars, run round with how far the track has run; a drone's at its scale, its run
     // measured in the player's lengths so a bar laps a smaller track as often
     [dozer, ...bots.map((b) => b.dozer)].forEach((d, j) => {
@@ -326,14 +330,8 @@ export class DynamicScene {
     });
     target.move(TREADS, treadM, (1 + bots.length) * TREAD_BARS * 2);
     const s = this.options.botScale;
-    bots.forEach(({ dozer: b }, i) => {
-      placePart(this.botHullM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, s, s, s);
-      placePart(this.botDarkM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, s, s, s);
-      placePart(this.botBladeM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, s, s, s);
-    });
-    target.move(BOT_HULL, this.botHullM, bots.length);
-    target.move(BOT_DARK, this.botDarkM, bots.length);
-    target.move(BOT_BLADE, this.botBladeM, bots.length);
+    bots.forEach(({ dozer: b }, i) => placePart(this.botM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, s, s, s));
+    for (const g of [BOT_HULL, BOT_DARK, BOT_METAL, BOT_GLASS, BOT_BLADE]) target.move(g, this.botM, bots.length);
   }
 
   /** The bars across each running belt, carried along it. */
@@ -358,11 +356,12 @@ export class DynamicScene {
   /** The pennant: a pole on the cab's roof, and slats that wave behind it, harder the faster the dozer goes. */
   private pennant(dozer: Dozer, flag: boolean, t: number) {
     if (flag) {
-      placePart(this.poleM, 0, dozer.x, dozer.y, 0, dozer.yaw, -2.2, -1.1, 3.6);
+      const [px, py, pz] = ANCHORS.pole;
+      placePart(this.poleM, 0, dozer.x, dozer.y, 0, dozer.yaw, px, py, pz);
       const wind = 0.5 + Math.min(1, Math.abs(dozer.speed) / 10);
       for (let k = 0; k < FLAG_SLATS; k++) {
         const wave = Math.sin(t * 9 * wind - k * 1.1) * 0.12 * (k + 1);
-        const x = -2.2 - 0.2 - k * 0.38,
+        const x = px - 0.2 - k * 0.38,
           sway = Math.cos(t * 9 * wind - k * 1.1) * 0.3;
         placePart(
           this.flagM,
@@ -372,8 +371,8 @@ export class DynamicScene {
           0,
           dozer.yaw,
           x,
-          -1.1 + wave,
-          7.3 - k * 0.03,
+          py + wave,
+          pz + ANCHORS.poleHeight - 0.5 - k * 0.03,
           sway,
           0,
           1,
@@ -385,30 +384,6 @@ export class DynamicScene {
     this.target.move(POLE, this.poleM, flag ? 1 : 0);
     this.target.move(FLAG, this.flagM, flag ? FLAG_SLATS : 0);
   }
-}
-
-/**
- * The blade, in the dozer's own frame: its pieces along the arc, each a plate
- * with a lip along the top and a cutting edge along the bottom.
- */
-function bladeMesh(width: number): Mesh {
-  return mergeMeshes(
-    bladePieces(width).map((p) =>
-      moved(
-        turned(
-          mergeMeshes([
-            box(0.35, p.length, BLADE_HEIGHT, true),
-            moved(box(0.7, p.length, 0.22, true), 0.17, 0, BLADE_HEIGHT / 2 - 0.11),
-            moved(box(0.6, p.length, 0.18, true), 0.12, 0, -BLADE_HEIGHT / 2 + 0.09),
-          ]),
-          p.turn,
-        ),
-        p.x,
-        p.y,
-        BLADE_HEIGHT / 2,
-      ),
-    ),
-  );
 }
 
 /**

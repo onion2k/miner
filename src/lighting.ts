@@ -14,6 +14,7 @@
  * Built into a pool of lights and a buffer of glows for whoever draws them;
  * nothing here draws.
  */
+import { ANCHORS } from './machine';
 import { EFFECT_STRIDE } from 'artshape-render/game/renderer';
 import { LightPool } from 'artshape-render/game/lights';
 import { HOLE, type Lamp } from './cave';
@@ -32,6 +33,8 @@ export interface Lit {
   x: number;
   y: number;
   yaw: number;
+  /** The machine's size against the player's; left out, the player's. Its lights sit where its parts are, at that scale. */
+  scale?: number;
 }
 
 /** A cracking floor, as it glows. */
@@ -70,6 +73,14 @@ export interface LightState {
   holePulse: number;
 }
 
+/** A point in a machine's frame, in the world: turned to its heading, at its scale, from where it stands. */
+function onMachine(m: Lit, [ax, ay, az]: readonly number[]): [number, number, number] {
+  const c = Math.cos(m.yaw),
+    s = Math.sin(m.yaw),
+    k = m.scale ?? 1;
+  return [m.x + (c * ax - s * ay) * k, m.y + (s * ax + c * ay) * k, az * k];
+}
+
 export class SceneLights {
   readonly lights: LightPool;
   readonly quads: Float32Array<ArrayBuffer>;
@@ -103,20 +114,21 @@ export class SceneLights {
     shadowed.length = 0;
     const c = Math.cos(dozer.yaw),
       sn = Math.sin(dozer.yaw);
-    for (const side of [1, -1]) {
+    // the headlamps, where the machine's lenses are; the first casts a shadow
+    ANCHORS.headlamps.forEach((lamp, k) => {
       const i = lights.add({
-        position: [dozer.x + c * 2.6 - sn * side * 0.9, dozer.y + sn * 2.6 + c * side * 0.9, 3.0],
+        position: onMachine(dozer, lamp),
         radius: 64,
         colour: [1.0, 0.92, 0.7],
         intensity: 16,
         direction: [c, sn, -0.2],
         cone: [20, 36],
       });
-      if (side === 1) shadowed.push(i);
-    }
+      if (k === 0) shadowed.push(i);
+    });
     // a small light over the cab, so the machine can be seen in the dark: it lights the dozer, not the floor
     lights.add({
-      position: [dozer.x - c * 0.8, dozer.y - sn * 0.8, 6.5],
+      position: onMachine(dozer, ANCHORS.cabLight),
       radius: 7,
       colour: [1.0, 0.9, 0.75],
       intensity: 1.2,
@@ -166,7 +178,7 @@ export class SceneLights {
       const bc = Math.cos(b.yaw),
         bs = Math.sin(b.yaw);
       lights.add({
-        position: [b.x + bc * 1.8, b.y + bs * 1.8, 2.2],
+        position: onMachine(b, ANCHORS.droneLamp),
         radius: 44,
         colour: [1.0, 0.92, 0.7],
         intensity: 10,
@@ -176,7 +188,7 @@ export class SceneLights {
       // the beacon, turning
       const beat = 0.5 + 0.5 * Math.sin(t * 6 + b.x);
       lights.add({
-        position: [b.x - bc * 1.0, b.y - bs * 1.0, 3.2],
+        position: onMachine(b, ANCHORS.beacon),
         radius: 9,
         colour: [1.0, 0.45, 0.1],
         intensity: 1 + 2 * beat,

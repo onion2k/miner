@@ -140,6 +140,10 @@ export class Bot {
   get yaw() {
     return this.dozer.yaw;
   }
+  /** The machine's size against the player's, for whatever draws or lights it. */
+  get scale() {
+    return this.dozer.scale;
+  }
 
   /** How many coins it is giving a miss just now, for anything watching that this does not grow without end. */
   get shunning(): number {

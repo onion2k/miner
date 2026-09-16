@@ -250,6 +250,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/effects.ts        the bursts of particles: glass, chips, dust, sparkle
     src/audio.ts          every sound, synthesised: clinks, thunks, the engine, the rumble
     src/meshes.ts         flat-shaded shapes: coin, gem, box, cone, ball, stone, the hole's collar and pit
+    src/machine.ts        the bulldozer and the robo-dozers as drawn, part by part, and where their lights attach
     src/matrix.ts         column-major placements
     src/input.ts          the keyboard
     src/touch.ts          a phone's sliders

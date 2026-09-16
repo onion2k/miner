@@ -317,6 +317,52 @@ export function moved(mesh: Mesh, dx: number, dy: number, dz: number): Mesh {
   return { positions, normals: mesh.normals, uvs: mesh.uvs, indices: mesh.indices };
 }
 
+/**
+ * A copy of a mesh stood along a line: what stood up Z from the origin now
+ * runs from `from` to `to`, its length kept, positions and normals both. For
+ * a ram, a rail or a strut that lies at an angle.
+ */
+export function pointed(mesh: Mesh, from: V3, to: V3): Mesh {
+  const dx = to[0] - from[0],
+    dy = to[1] - from[1],
+    dz = to[2] - from[2];
+  const len = Math.hypot(dx, dy, dz) || 1;
+  const ux = dx / len,
+    uy = dy / len,
+    uz = dz / len;
+  // Rodrigues: Z turned onto the line about their cross product
+  const ax = -uy,
+    ay = ux;
+  const s = Math.hypot(ax, ay);
+  const c = uz;
+  const nx = s > 1e-6 ? ax / s : 0,
+    ny = s > 1e-6 ? ay / s : 0;
+  const rot = (x: number, y: number, z: number): V3 => {
+    if (s <= 1e-6) return c > 0 ? [x, y, z] : [x, -y, -z];
+    const dot = nx * x + ny * y;
+    // v cos + (k x v) sin + k (k.v)(1 - cos), with k = (nx, ny, 0)
+    // v cos + (k x v) sin + k (k.v)(1 - cos), with k = (nx, ny, 0)
+    return [
+      x * c + ny * z * s + nx * dot * (1 - c),
+      y * c - nx * z * s + ny * dot * (1 - c),
+      z * c + (nx * y - ny * x) * s,
+    ];
+  };
+  const positions = new Float32Array(mesh.positions),
+    normals = new Float32Array(mesh.normals);
+  for (let i = 0; i < positions.length; i += 3) {
+    const [x, y, z] = rot(positions[i], positions[i + 1], positions[i + 2]);
+    positions[i] = x + from[0];
+    positions[i + 1] = y + from[1];
+    positions[i + 2] = z + from[2];
+    const [a, b, d] = rot(normals[i], normals[i + 1], normals[i + 2]);
+    normals[i] = a;
+    normals[i + 1] = b;
+    normals[i + 2] = d;
+  }
+  return { positions, normals, uvs: mesh.uvs, indices: mesh.indices };
+}
+
 /** A copy of a mesh turned about Z, positions and normals both. */
 export function turned(mesh: Mesh, yaw: number): Mesh {
   const c = Math.cos(yaw),
