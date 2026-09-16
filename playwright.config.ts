@@ -14,6 +14,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: [['list']],
+  // the pictures the look tests are held to, kept by name in smoke/screens; they are this machine's GPU
+  snapshotPathTemplate: 'smoke/screens/{arg}{ext}',
   use: {
     baseURL: `http://localhost:${PORT}`,
     browserName: 'chromium',

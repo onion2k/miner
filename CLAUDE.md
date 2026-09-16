@@ -20,9 +20,14 @@ without breaking it.
     npm run balance:check  the first two rooms' pacing held to scripts/balance-baseline.json
     npm run bench          the physics' frame time held to scripts/bench-baseline.json
     npm run smoke          the game in headless Chromium on the real GPU (Playwright, smoke/)
+    npm run look           the scenes held to the pictures in smoke/screens
+    npm run look:update    the pictures written again, after a change meant to alter them
 
-`--update` on `sim:check`, `balance:check` or `bench` writes a new baseline. Only do that when a
-change is meant to move the figures, and say so in the commit.
+`--update` on `sim:check`, `balance:check` or `bench` writes a new baseline, and
+`npm run look:update` writes the pictures again. Only do that when a change is
+meant to move the figures or alter the picture, and say so in the commit. Look
+at every picture you write; a baseline updated without being looked at holds
+the game to whatever it happened to draw that day.
 
 ## How the code is laid out
 
@@ -74,9 +79,10 @@ says so point by point:
    `npm run fuzz -- --seeds 1-24` is clean.
 6. **Performance checked.** Use `measureFrame` through the API in the scenes
    the feature touches, compared with the same scenes before the change.
-7. **Looked at.** Take headless Playwright screenshots of the feature in each
-   room or biome it appears in, and at phone size if it has UI. Look at every
-   one.
+7. **Looked at.** `npm run look` green, or its pictures written again and
+   every one looked at. A feature with a look of its own gets a scene in
+   `smoke/look.spec.ts`; one that changes an existing scene changes its
+   picture, and the change is described in the report.
 8. **New tests mutation-checked.** Put the bug back (or remove the feature) and
    watch the test fail, then restore it.
 9. **Anything not verified is said plainly.**

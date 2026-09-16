@@ -111,6 +111,8 @@ and how much the drones got in each other's way — see the top of
     npm run bench          # the physics' time a frame held to its baseline
     npm run bench -- --update
     npm run smoke          # the game in a real browser (once: npx playwright install chromium)
+    npm run look           # the scenes held to the pictures in smoke/screens
+    npm run look:update    # the pictures written again, after a change meant to alter them
 
 `npm install` points git at `.githooks`, whose pre-commit hook runs
 `check:quick` (a few seconds). `git commit --no-verify` skips it.
@@ -128,6 +130,15 @@ way, has got worse than `scripts/sim-baseline.json` by more than a tolerance.
 A run is the same from the same seed, so any change to the physics, cave or
 drones moves the figures; when a change makes them better, `--update` holds
 the next change to the better figures.
+
+What the game looks like is held to pictures (`npm run look`, part of the smoke
+run): the hollow, each of the four biomes, a barrel mid-blast, the cave cleared
+with its vein, the workshop, and a phone's controls and workshop. Each scene is
+set through the test API with chance seeded from before the game is built and
+the page started stopped (`?paused=1`), so nothing has moved but what the test
+stepped, and the same machine draws the same pixels every run. The pictures are
+this machine's GPU, and another will draw them a little differently. A failure
+leaves the picture, what was drawn, and the difference in `test-results/`.
 
 Every seed has to play out the same way twice (`npm run determinism`): two
 runs of the same seed, hashed every 300 frames — every body's place and speed,
@@ -238,6 +249,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     test/                 unit tests, run by Vitest
     test/saves/           a save of every shape the game has written, all still loading
     smoke/                the game in a real browser, run by Playwright
+    smoke/screens/        what each scene is meant to look like, on this machine's GPU
 
 The coins collide as balls a little smaller than their rims, which is what
 lets thousands of them be stepped in JavaScript at 120 Hz. They are drawn
