@@ -29,7 +29,7 @@ test('the whole cave: rooms, chambers, walls, lamps, barrels, a drone, the horn,
 }, info) => {
   test.setTimeout(180_000);
   const problems = watch(page);
-  await start(page);
+  await start(page, { seed: 1, paused: true });
   await page.evaluate(() => {
     window.pushminer!.pause();
     window.pushminer!.seed(1);
