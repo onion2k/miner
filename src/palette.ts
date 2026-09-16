@@ -33,6 +33,8 @@ export const FLOOR_TONES = [
   [0.27, 0.19, 0.12, 0.95],
   [0.3, 0.212, 0.134, 0.95],
   [0.325, 0.232, 0.148, 0.93],
+  // the foot of the rock: the floor a shade darker and greyer where the scree lies
+  [0.215, 0.158, 0.105, 0.96],
 ];
 export const ROCK_TONES = [
   [0.045, 0.047, 0.06, 0.9],

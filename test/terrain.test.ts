@@ -12,7 +12,16 @@ import {
   chamberCentre,
   rockish,
 } from '../src/cave';
-import { TONES, buildTerrain, floorHeight } from '../src/terrain';
+import {
+  FOOT_BAND,
+  FOOT_TONE,
+  PLAIN_ROCK,
+  SCREE_REACH,
+  TONES,
+  buildTerrain,
+  floorHeight,
+  rockHeight,
+} from '../src/terrain';
 
 const cave = buildCave();
 const hidden = SECRETS.map(() => false);
@@ -105,5 +114,73 @@ describe('the terrain', () => {
         ),
       ),
     ).toBeLessThan(0.5);
+  });
+
+  it('meets the floor at a slope and not a step, and climbs from there', () => {
+    // the first sample row into the rock, the half tile, and the tile: rising, and gently at first
+    const rows = [TILE / 4, TILE / 2, TILE];
+    const heights = rows.map(() => [] as number[]);
+    for (let x = -80; x <= 80; x += 2.3)
+      for (let y = -50; y <= 50; y += 1.9) rows.forEach((d, k) => heights[k].push(rockHeight(x, y, d, PLAIN_ROCK)));
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const [first, half, tile] = heights.map(mean);
+    // under 35 degrees over the first sample row, everywhere on average and nowhere a cliff
+    expect(first / (TILE / 4)).toBeLessThan(Math.tan((35 * Math.PI) / 180));
+    expect(Math.max(...heights[0])).toBeLessThan(1.1);
+    expect(half).toBeGreaterThan(first);
+    expect(tile).toBeGreaterThan(half * 1.3);
+    // and still rock by the tile: tall enough to read as a wall
+    expect(tile).toBeGreaterThan(1.5);
+  });
+
+  it('sheds a skirt of scree along the foot, thick against the wall and thinning out, none of it tall', () => {
+    const grit = terrain.stones.filter((s) => s.size[0] < 0.7);
+    const edge = (s: (typeof grit)[number]) => toRock(s.x, s.y, hidden);
+    const within = (lo: number, hi: number) => grit.filter((s) => edge(s) >= lo && edge(s) < hi);
+    const floorSamples = (lo: number, hi: number) => {
+      let n = 0;
+      const sm = terrain.samples;
+      for (let k = 0; k < sm.depth.length; k++) {
+        if (sm.depth[k] !== 0) continue;
+        const e = toRock(sm.x[k], sm.y[k], hidden);
+        if (e >= lo && e < hi) n++;
+      }
+      return n;
+    };
+    const density = (lo: number, hi: number) => within(lo, hi).length / floorSamples(lo, hi);
+    // most of the floor right at the wall has something on it; well out, little does
+    expect(density(0, 1)).toBeGreaterThan(0.5);
+    expect(density(0, 1)).toBeGreaterThan(density(SCREE_REACH, SCREE_REACH + 3) * 3);
+    // the chunks against the wall are bigger than the grit further out
+    const meanSize = (xs: typeof grit) => xs.reduce((n, s) => n + s.size[0], 0) / xs.length;
+    expect(meanSize(within(0, 1))).toBeGreaterThan(meanSize(within(2, SCREE_REACH)) * 1.3);
+    // nothing on the floor proper so tall a coin could hide behind it; the boulders at the very foot are the rock's
+    for (const s of grit)
+      if (edge(s) > 0.05)
+        expect(s.size[2], `scree at ${s.x.toFixed(1)},${s.y.toFixed(1)} too tall`).toBeLessThanOrEqual(0.6);
+  });
+
+  it('shades the floor within reach of the rock in the foot tone, and the open floor never', () => {
+    const centroids = (g: (typeof terrain.groups)[number]) => {
+      const out: [number, number][] = [];
+      const p = g.mesh.positions;
+      for (let v = 0; v < p.length; v += 9)
+        out.push([(p[v] + p[v + 3] + p[v + 6]) / 3, (p[v + 1] + p[v + 4] + p[v + 7]) / 3]);
+      return out;
+    };
+    const foot = terrain.groups.filter((g) => !g.rock && g.tone === FOOT_TONE);
+    const open = terrain.groups.filter((g) => !g.rock && g.tone !== FOOT_TONE);
+    expect(foot.length).toBeGreaterThan(0);
+    for (const g of foot) for (const [x, y] of centroids(g)) expect(toRock(x, y, hidden)).toBeLessThan(FOOT_BAND + 1.5);
+    for (const g of open)
+      for (const [x, y] of centroids(g)) expect(toRock(x, y, hidden)).toBeGreaterThan(FOOT_BAND * 0.4);
+    // rock never takes the foot tone
+    for (const g of terrain.groups) if (g.rock) expect(g.tone).toBeLessThan(FOOT_TONE);
+  });
+
+  it('builds in well under a frame of thought', () => {
+    const t0 = performance.now();
+    buildTerrain(cave, hidden);
+    expect(performance.now() - t0).toBeLessThan(400);
   });
 });

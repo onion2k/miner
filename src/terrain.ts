@@ -32,8 +32,20 @@ const REACH = TILE * 3;
 const ROUND = 1.8;
 /** The half-width of the square the hole's collar covers. */
 const COLLAR = TILE * 1.5;
-/** Shades of each: floor, and rock by steepness (steep and dark, steep, and the tops). */
-export const TONES = 3;
+/**
+ * Shades of each: floor by its lie, and rock by steepness (steep and dark,
+ * steep, and the tops). The floor has one more, the foot: the band along
+ * the bottom of every cliff, drawn a shade darker and rockier, where the
+ * rock's colour crosses into the floor's rather than stopping at a line.
+ */
+export const TONES = 4;
+export const FOOT_TONE = 3;
+/** How far out from the rock the floor is the foot, in world units, give or take the raggedness of the edge. */
+export const FOOT_BAND = 2.4;
+/** How far out from the rock the scree lies: chunks against the wall, thinning to grit by here. */
+export const SCREE_REACH = 3;
+/** Over how far into the rock its foot rises from the floor as a slope, before the wall proper. */
+const FILLET = 2.6;
 /** More rooms than there will ever be, for packing a room and a palette into one key. */
 const AREAS_MAX = 16;
 /** How thick the beds of rock are, about. */
@@ -65,17 +77,20 @@ export const PLAIN_ROCK: RockShape = { rough: 1, ledge: 1, beds: 0.55, top: 1 };
 /** The height of the rock at a point `d` in from the nearest open floor, shaped as `shape` says. */
 export function rockHeight(x: number, y: number, d: number, shape: RockShape = PLAIN_ROCK): number {
   const top = (4 + fbm(x, y, 11) * 6.5) * shape.top;
-  // up from the foot over about a tile, to a ragged top
-  const rise = 1 - Math.exp(-d / 1.9);
-  const ledge = (noise(x * 0.22, y * 0.22, 17) - 0.5) * 2 * Math.min(1, d / 2) * shape.ledge;
-  const rough = (noise(x * 0.9, y * 0.9, 19) - 0.5) * 1.2 * Math.min(1, d / 1.5) * shape.rough;
+  // up from the foot over about a tile, to a ragged top; and the foot itself a slope, not a step:
+  // the first stretch in from the floor is held down, harder the nearer the floor, so the rock
+  // meets it as scree does, and stands up as a wall past it
+  const fillet = Math.min(1, d / FILLET) ** 2;
+  const rise = (1 - Math.exp(-d / 1.9)) * fillet;
+  const ledge = (noise(x * 0.22, y * 0.22, 17) - 0.5) * 2 * Math.min(1, d / 2) * shape.ledge * fillet;
+  const rough = (noise(x * 0.9, y * 0.9, 19) - 0.5) * 1.2 * Math.min(1, d / 1.5) * shape.rough * fillet;
   const raw = top * rise + ledge + rough;
   // in beds, as rock is: shelves a strata apart, blended back so they are not stairs, as much as the shape says
   const bed = STRATA + (noise(x * 0.07, y * 0.07, 21) - 0.5) * 0.6;
   const q = raw / bed,
     f = q - Math.floor(q);
   const stepped = (Math.floor(q) + f * f * f * (f * (f * 6 - 15) + 10)) * bed;
-  return Math.max(0.4, raw * (1 - shape.beds) + stepped * shape.beds);
+  return Math.max(0.4 * Math.min(1, d / 1.2), raw * (1 - shape.beds) + stepped * shape.beds);
 }
 
 /**
@@ -89,6 +104,8 @@ export interface TerrainStyle {
   /** Its shade within that palette, told the shade the cave would give it. */
   tone(palette: number, x: number, y: number, rock: boolean, tone: number): number;
   shape(x: number, y: number): RockShape;
+  /** How much the rock sheds onto the floor at (x, y), 0 to 1: the cave's own rock sheds fully. */
+  scree(x: number, y: number): number;
 }
 
 export interface SurfaceGroup {
@@ -307,6 +324,10 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
     }
   }
 
+  // how far each floor sample is from the rock, for the foot and the scree; nothing for the rest
+  const edge = new Float32Array(GX * GY).fill(Infinity);
+  for (let k = 0; k < GX * GY; k++) if (depth[k] === 0) edge[k] = depthToRock(cave, revealed, px[k], py[k]);
+
   // the room each tile is drawn with
   const tileArea = new Uint8Array(COLS * ROWS);
   for (let t = 0; t < tileArea.length; t++) tileArea[t] = areaAt(...tileCentre(t % COLS, (t / COLS) | 0));
@@ -341,13 +362,20 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
     // the hole's collar is the floor there
     if (!rock && Math.abs(cx - HOLE.x) < COLLAR && Math.abs(cy - HOLE.y) < COLLAR) return;
     const salt = hash(Math.round(cx * 7), Math.round(cy * 7), 23);
+    // the foot: floor within the band of the rock, its edge ragged by a little noise, and the
+    // triangles that climb from the floor into the fillet with it
+    const nearest3 = Math.min(edge[a], edge[b], edge[c]);
+    const climbing = depth[a] > 0 || depth[b] > 0 || depth[c] > 0;
+    const foot = !rock && (climbing || nearest3 < FOOT_BAND + (noise(cx * 0.5, cy * 0.5, 31) - 0.5) * 1.6);
     const plain = rock
       ? nz > 0.72
         ? 2
         : salt < 0.45
           ? 0
           : 1
-      : Math.min(TONES - 1, Math.floor(noise(cx * 0.09, cy * 0.09, 29) * 2.6 + salt * 0.4));
+      : foot
+        ? FOOT_TONE
+        : Math.min(FOOT_TONE - 1, Math.floor(noise(cx * 0.09, cy * 0.09, 29) * 2.6 + salt * 0.4));
     const palette = style ? Math.min(PALETTES - 1, style.palette(cx, cy)) : 0;
     const tone = style && palette ? style.tone(palette, cx, cy, rock, plain) : plain;
     // Rock is the room whose floor it stands over, so the wall of an open room is not drawn dark
@@ -470,20 +498,27 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
           shade: hash(i, j, 74),
           area: areaOf(k),
         });
-      } else if (d === 0) {
-        // grit on the floor, thicker near the rock
-        const edge = Math.min(depthToRock(cave, revealed, x, y), 8);
-        if (r < 0.1 + (8 - edge) * 0.03 && Math.max(Math.abs(x - HOLE.x), Math.abs(y - HOLE.y)) > COLLAR + 1) {
-          const size = 0.1 + hash(i, j, 66) ** 2 * (edge < 3 ? 0.6 : 0.3);
+      } else if (d === 0 && Math.max(Math.abs(x - HOLE.x), Math.abs(y - HOLE.y)) > COLLAR + 1) {
+        // The skirt of scree: what the rock has shed, thick against its foot and thinning out over
+        // SCREE_REACH, chunks against the wall and grit further out, coloured as the rock it fell
+        // from and half sunk in the floor; and past it the odd bit of grit about the floor.
+        const e = Math.min(edge[k], 8);
+        const sheds = style ? style.scree(x, y) : 1;
+        const near = Math.max(0, 1 - e / SCREE_REACH);
+        const chance = (0.05 + 0.75 * near * near + 0.2 * near) * sheds;
+        if (r < chance) {
+          const grade = near * sheds;
+          // never so big it reads as a boulder, nor so tall a coin could hide behind it
+          const size = Math.min(0.66, (0.1 + hash(i, j, 66) ** 2 * 0.3) * (1 + grade * 1.3));
           stones.push({
             x,
             y,
-            z: floorHeight(x, y) - size * 0.2,
+            z: floorHeight(x, y) - size * (0.2 + grade * 0.2),
             yaw,
             tilt: (hash(i, j, 67) - 0.5) * 0.8,
             size: [size, size * (0.6 + hash(i, j, 68) * 0.6), size * 0.6],
             shape,
-            rock: hash(i, j, 75) < 0.4,
+            rock: hash(i, j, 75) < 0.4 + grade * 0.5,
             shade: hash(i, j, 70),
             area: areaOf(k),
           });

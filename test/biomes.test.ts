@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AREAS, COLS, HOLE, HOLLOW, ROWS, TILE, WINGS, buildCave, rockish, tileCentre } from '../src/cave';
 import { BIOMES, BIOME_STYLE, biomeAt, decorate, groundTone, lampColour, LAMP_COLOUR, tint } from '../src/biomes';
 import { FLOOR_TONES, ROCK_TONES } from '../src/palette';
-import { PLAIN_ROCK, buildTerrain } from '../src/terrain';
+import { FOOT_TONE, PLAIN_ROCK, buildTerrain } from '../src/terrain';
 
 const cave = buildCave();
 const hidden = [false, false, false, false];
@@ -129,6 +129,28 @@ describe('the biomes', () => {
     }
     expect(solid.length).toBe(COLS * ROWS);
     expect(Math.hypot(HOLE.x, HOLE.y)).toBe(0);
+  });
+
+  it('shed a skirt each of their own, and the future room none, only a gutter along its panels', () => {
+    // how much the rock sheds: whole in the galleries that are rock, nothing in the future's, none in the hollow's own
+    expect(BIOME_STYLE.scree(...roomMiddle(1))).toBeGreaterThan(0.9);
+    expect(BIOME_STYLE.scree(...roomMiddle(3))).toBeGreaterThan(0.9);
+    expect(BIOME_STYLE.scree(...roomMiddle(4))).toBe(0);
+    expect(BIOME_STYLE.scree(0, -14)).toBe(1);
+    // and so no scree lies about in the future room, where the jungle is thick with it
+    const grit = (area: number) => terrain.stones.filter((s) => s.area === area && s.size[0] < 0.7).length;
+    expect(grit(4)).toBeLessThan(grit(1) / 4);
+    // every biome has a foot tone of its own for its floor, darker than its open floor; the future's is its gutter
+    for (const b of BIOMES) {
+      if (!b) continue;
+      expect(b.floor.length).toBe(FOOT_TONE + 1);
+      const sum = (t: readonly number[]) => t[0] + t[1] + t[2];
+      expect(sum(b.floor[FOOT_TONE])).toBeLessThan(sum(b.floor[1]));
+    }
+    expect(groundTone(0, false, FOOT_TONE)).toEqual(FLOOR_TONES[FOOT_TONE]);
+    // the future's floor keeps its panels and seams, and its foot is the gutter
+    expect(BIOME_STYLE.tone(4, ...roomMiddle(4), false, FOOT_TONE)).toBe(FOOT_TONE);
+    expect(BIOME_STYLE.tone(4, ...roomMiddle(4), false, 0)).toBeLessThan(FOOT_TONE);
   });
 
   it('light their features only in their own rooms', () => {

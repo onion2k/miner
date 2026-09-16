@@ -236,7 +236,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/tools.ts          conveyor belts, drones, and the fountains
     src/autopilot.ts      the player's dozer driven by the drones' mind, for playing the whole game through
     src/nav.ts            the way round the rock and the heaps, for the drones
-    src/terrain.ts        the cave to look at: the rock and floor as one faceted surface over the tiles, and the stones on it
+    src/terrain.ts        the cave to look at: the rock and floor as one faceted surface over the tiles, the scree at the foot of the walls, and the stones on it
     src/biomes.ts         each gallery's world: its palette and rock, how it blends in, what stands in it, its lights and air
     src/noise.ts          smooth noise, for rock, floor and the patches a world creeps in by
     src/tracks.ts         the marks the tracks press into the floor, kept a page at a time, the oldest fading

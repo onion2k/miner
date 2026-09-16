@@ -137,6 +137,33 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  // the foot of the rock, up close, in every room: where the floor meets the wall, and what lies there
+  for (const [name, room] of [
+    ['hollow', 0],
+    ['jungle', 1],
+    ['ice', 2],
+    ['lava', 3],
+    ['future', 4],
+  ] as const) {
+    test(`the foot of the rock in the ${name}`, async ({ page }) => {
+      const problems = watch(page);
+      await start(page, { seed: 11, paused: true, save: inRoom(room) });
+      await page.evaluate((a) => {
+        const api = window.pushminer!;
+        api.step(60);
+        // by the room's edge: the heap furthest from the hole, and on outward from it toward the wall
+        const heaps = api.content().rooms[a].heaps;
+        const h = heaps.reduce((f, p) => (Math.hypot(p.x, p.y) > Math.hypot(f.x, f.y) ? p : f));
+        const len = Math.hypot(h.x, h.y) || 1;
+        api.look(h.x + (h.x / len) * 9, h.y + (h.y / len) * 9, { azimuth: 0.9, polar: 1.05, radius: 26 });
+        api.step(1);
+      }, room);
+      await hideStats(page);
+      await expect(cave(page)).toHaveScreenshot(`foot-${name}.png`, TOLERANCE);
+      expect(problems).toEqual([]);
+    });
+  }
+
   test('a barrel going off, mid-blast', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true });

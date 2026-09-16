@@ -24,7 +24,7 @@ import { AREAS, ORIGIN_X, ORIGIN_Y, TILE, WINGS, hash } from './cave';
 import { ball, box, cone, cylinder, frond, gem, lump, moved, scaled, tuft } from './meshes';
 import { noise, smoothstep } from './noise';
 import { FLOOR_TONES, ROCK_TONES, type Rgb } from './palette';
-import { PLAIN_ROCK, TONES, type RockShape, type Samples, type TerrainStyle } from './terrain';
+import { FOOT_TONE, PLAIN_ROCK, type RockShape, type Samples, type TerrainStyle } from './terrain';
 
 /** A shade: colour and roughness. */
 export type Tone = [number, number, number, number];
@@ -44,6 +44,9 @@ export interface Biome {
   shape: RockShape;
 }
 
+/** The future's floor: the dark seam round each panel is its third floor tone. */
+const SEAM_TONE = 2;
+
 /** The colour of the cave's own lamps. */
 export const LAMP_COLOUR: Rgb = [1.0, 0.8, 0.55];
 
@@ -53,6 +56,8 @@ const JUNGLE: Biome = {
     [0.12, 0.1, 0.05, 0.95],
     [0.1, 0.13, 0.055, 0.95],
     [0.15, 0.19, 0.075, 0.9],
+    // the foot: leaf litter and moss against the rock
+    [0.075, 0.095, 0.04, 0.95],
   ],
   rock: [
     [0.04, 0.06, 0.035, 0.9],
@@ -71,6 +76,8 @@ const ICE: Biome = {
     [0.19, 0.24, 0.31, 0.5],
     [0.24, 0.29, 0.37, 0.4],
     [0.31, 0.36, 0.43, 0.35],
+    // the foot: the drift, packed and blue in the shade of the wall
+    [0.17, 0.22, 0.3, 0.45],
   ],
   rock: [
     [0.07, 0.12, 0.21, 0.4],
@@ -89,6 +96,8 @@ const LAVA: Biome = {
     [0.035, 0.03, 0.03, 0.9],
     [0.05, 0.042, 0.038, 0.9],
     [0.065, 0.035, 0.025, 0.85],
+    // the foot: ash and clinker
+    [0.028, 0.024, 0.022, 0.95],
   ],
   rock: [
     [0.025, 0.022, 0.024, 0.7],
@@ -107,6 +116,8 @@ const FUTURE: Biome = {
     [0.05, 0.06, 0.075, 0.65],
     [0.08, 0.09, 0.11, 0.6],
     [0.02, 0.025, 0.035, 0.7],
+    // the foot: a gutter along the panels' edge, darker than their seams
+    [0.015, 0.018, 0.026, 0.7],
   ],
   rock: [
     [0.025, 0.03, 0.045, 0.5],
@@ -179,14 +190,19 @@ export const BIOME_STYLE: TerrainStyle = {
     return weight >= 0.999 || weight > threshold ? area : 0;
   },
   tone(palette, x, y, rock, tone) {
-    if (BIOMES[palette]?.name !== 'future' || rock) return tone;
+    if (BIOMES[palette]?.name !== 'future' || rock || tone === FOOT_TONE) return tone;
     // the future's floor is panels, a tile each, alternating, with a dark seam round each
     const fx = (x - ORIGIN_X) / TILE,
       fy = (y - ORIGIN_Y) / TILE;
     const ex = fx - Math.floor(fx),
       ey = fy - Math.floor(fy);
-    if (Math.min(ex, 1 - ex, ey, 1 - ey) < 0.07) return TONES - 1;
+    if (Math.min(ex, 1 - ex, ey, 1 - ey) < 0.07) return SEAM_TONE;
     return (Math.floor(fx) + Math.floor(fy)) & 1;
+  },
+  scree(x, y) {
+    // the future's rock is cut and does not shed; the rest sheds as the cave's own does
+    const { area, weight } = biomeAt(x, y);
+    return BIOMES[area]?.name === 'future' ? 1 - weight : 1;
   },
   shape(x, y) {
     const { area, weight } = biomeAt(x, y);
