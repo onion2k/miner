@@ -69,6 +69,7 @@ const WORKED_OUT = 0.05;
  */
 const SWEEP_BELOW = 3,
   PATCH = 8,
+  SWEPT_FOR = 40,
   GATHER_FOR = 30,
   FULL_LOAD = 25;
 /** Nothing banked for this long, with nothing else to do, and it is stuck. */
@@ -118,7 +119,7 @@ export class Autopilot {
   private sinceBanked = 0;
   /** The last pick found nothing it could set up behind: time to sweep up strays instead. */
   private strays = false;
-  /** Patches of strays swept lately, by patch, and until when to leave them be. */
+  /** Patches of strays swept lately, by tile, and until when to leave them be; cleared out as they come round again. */
   private readonly swept = new Map<number, number>();
   /** The way to wherever it is driving, kept while it drives there. */
   private way: { x: number; y: number; field: Float32Array } | null = null;
@@ -135,6 +136,11 @@ export class Autopilot {
       spec: () => game.economy.spec(),
     });
     this.lastBanked = game.economy.save.banked;
+  }
+
+  /** How many patches of strays it is leaving be just now, for anything watching that this does not grow without end. */
+  get sweptPatches(): number {
+    return this.swept.size;
   }
 
   /** What it is doing now. */
@@ -399,7 +405,11 @@ export class Autopilot {
         plan.gathering += dt;
         const arrived = plan.target && Math.hypot(plan.target[0] - dozer.x, plan.target[1] - dozer.y) < 3;
         if (!plan.target || arrived || plan.timer <= 0) {
-          if (plan.target) this.swept.set(nav.tileOf(plan.target[0], plan.target[1]), t + 40);
+          if (plan.target) {
+            this.swept.set(nav.tileOf(plan.target[0], plan.target[1]), t + SWEPT_FOR);
+            // the ones whose turn has come round again are dropped, so this never grows without end
+            if (this.swept.size > 64) for (const [tile, until] of this.swept) if (until <= t) this.swept.delete(tile);
+          }
           plan.target = plan.gathering < GATHER_FOR && load < FULL_LOAD ? this.patch() : null;
           plan.timer = 12;
           if (!plan.target) {

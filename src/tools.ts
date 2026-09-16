@@ -141,6 +141,11 @@ export class Bot {
     return this.dozer.yaw;
   }
 
+  /** How many coins it is giving a miss just now, for anything watching that this does not grow without end. */
+  get shunning(): number {
+    return this.shunned.size;
+  }
+
   /** Whether it has given up on a coin for now. */
   shuns(i: number): boolean {
     return (this.shunned.get(i) ?? 0) > this.clock;

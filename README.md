@@ -108,6 +108,8 @@ and how much the drones got in each other's way — see the top of
     npm run fuzz           # the game played at random, the rules that must hold checked
     npm run fuzz -- --seed 17
     npm run determinism    # every seed played twice: the same game both times
+    npm run leaks          # an hour of play, watching what must stay bounded
+    npm run leaks -- --minutes 20 --show
     npm run bench          # the physics' time a frame held to its baseline
     npm run bench -- --update
     npm run smoke          # the game in a real browser (once: npx playwright install chromium)
@@ -139,6 +141,17 @@ the page started stopped (`?paused=1`), so nothing has moved but what the test
 stepped, and the same machine draws the same pixels every run. The pictures are
 this machine's GPU, and another will draw them a little differently. A failure
 leaves the picture, what was drawn, and the difference in `test-results/`.
+
+An hour of play is watched for anything that is kept and never let go of
+(`npm run leaks`, twenty minutes of it in `npm run check`): the bodies in the
+cave and the slots they sit in, the fuses, the rubble, the save, the coins each
+machine has given up on, the patches of strays swept, and the heap. Every size
+is held under a ceiling — what it could ever reasonably be, not what the game
+does now — and the ones that are remembered and then meant to be forgotten
+again must also not still be climbing by the end, the last third of the run
+against the middle. A map that is never emptied throws nothing, breaks no rule
+and moves no gate's figure; it shows up an hour in, on somebody else's
+computer. The first run of this found one, in the autopilot.
 
 Every seed has to play out the same way twice (`npm run determinism`): two
 runs of the same seed, hashed every 300 frames — every body's place and speed,
@@ -245,6 +258,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     scripts/fuzzer.ts     the game played at random, its rules checked; fuzz.ts runs it over seeds
     scripts/balancer.ts   the whole game played through by the autopilot; balance.ts runs it over seeds and gates it
     scripts/determinism.ts  a seed played twice and hashed; determinism-check.ts runs it over seeds
+    scripts/leaks.ts      what must stay bounded over a long game; leak-check.ts runs it over seeds
     scripts/physics-bench.ts  the physics' time a frame, held to a baseline
     test/                 unit tests, run by Vitest
     test/saves/           a save of every shape the game has written, all still loading

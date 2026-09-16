@@ -15,6 +15,7 @@ without breaking it.
     npm run fuzz           the game played at random, rules checked (scripts/fuzz.ts)
     npm run fuzz -- --seed N           one failing seed again, with what led up to it
     npm run determinism    the same seed played twice, hashed, to catch chance not from the seed
+    npm run leaks          an hour of play, watching what must stay bounded (20 min of it in check)
     npm run sim:check      the drones held to scripts/sim-baseline.json
     npm run balance        the whole game played through by the autopilot: room times, purchases, bank
     npm run balance:check  the first two rooms' pacing held to scripts/balance-baseline.json
@@ -52,6 +53,9 @@ the game to whatever it happened to draw that day.
   to the game.
 - **Match the style.** Comments are full sentences in the house voice, saying
   why and not what. Keep names plain. Prettier decides the formatting.
+- **Nothing is kept for ever.** A list, map or cache that is added to has to
+  be emptied somewhere, and the size it can reach named in `scripts/leaks.ts`.
+  `npm run leaks` plays an hour and fails on anything still climbing at the end.
 - **Every kind of thing is handled everywhere.** A new body kind, event, save
   field or room has to work in every path it can reach. See the checklist
   below. Most bugs so far were a new thing missing from one of those paths.
