@@ -87,6 +87,21 @@ test('drives the dozer by the keyboard, and it leaves tracks', async ({ page }, 
   expect(problems).toEqual([]);
 });
 
+test('mutes and unmutes the sound from the keyboard', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { paused: true });
+  const muted = () => page.evaluate(() => window.pushminer!.state().muted);
+  expect(await muted()).toBe(false);
+  // the key is read in a frame of the game, so one is stepped for it to land
+  await page.keyboard.press('m');
+  await page.evaluate(() => window.pushminer!.step(1));
+  expect(await muted(), 'muted by M').toBe(true);
+  await page.keyboard.press('m');
+  await page.evaluate(() => window.pushminer!.step(1));
+  expect(await muted(), 'unmuted by M again').toBe(false);
+  expect(problems).toEqual([]);
+});
+
 test('opens and closes the workshop', async ({ page }, info) => {
   const problems = watch(page);
   await start(page);
@@ -143,6 +158,22 @@ test.describe('on a phone', () => {
     await info.attach('phone', { body: await page.screenshot(), contentType: 'image/png' });
     // nothing wider than the screen
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+    expect(problems).toEqual([]);
+  });
+
+  test('mutes and unmutes the sound from its button, and the button says which', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { paused: true });
+    const button = page.locator('#muteButton');
+    const muted = () => page.evaluate(() => window.pushminer!.state().muted);
+    expect(await muted()).toBe(false);
+    await expect(button).toHaveAttribute('aria-label', 'mute');
+    await button.tap();
+    expect(await muted(), 'muted by the button').toBe(true);
+    await expect(button).toHaveAttribute('aria-label', 'unmute');
+    await button.tap();
+    expect(await muted(), 'unmuted by the button').toBe(false);
+    await expect(button).toHaveAttribute('aria-label', 'mute');
     expect(problems).toEqual([]);
   });
 });

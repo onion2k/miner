@@ -520,7 +520,12 @@ async function main() {
     if (horn) sound.horn();
     if (input.takeRecentre()) rig.recentre();
     if (input.takeCamera()) hud.note(`camera: ${rig.cycle()}`);
-    if (input.takeMute()) pad?.showMute(sound.toggleMute());
+    if (input.takeMute()) {
+      // the toggle first, on its own: written as pad?.showMute(sound.toggleMute()) it never ran
+      // without a pad, since an optional call skips its arguments too
+      const muted = sound.toggleMute();
+      pad?.showMute(muted);
+    }
 
     const drive = input.read();
     game.step(dt, drive, { horn });
@@ -625,6 +630,7 @@ async function main() {
     setCoinDetail,
     lampsLit: () => lights.lampsLit,
     trackMarks: () => tracks.size,
+    muted: () => sound.muted,
     events: eventLog,
   });
 

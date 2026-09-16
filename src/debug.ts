@@ -54,6 +54,8 @@ export interface GameState {
   barrels: { count: number; lit: number[] };
   fountains: number;
   trackMarks: number;
+  /** Whether the sound is muted. */
+  muted: boolean;
 }
 
 /** A body in the cave. */
@@ -151,6 +153,7 @@ export interface DebugHost {
   setCoinDetail(level: number): void;
   lampsLit(): number[];
   trackMarks(): number;
+  muted(): boolean;
   events: string[];
 }
 
@@ -209,6 +212,7 @@ export function createApi(host: DebugHost): PushminerApi {
         barrels: { count: game.stock.kinds[BARREL_KIND], lit: game.barrels.lit },
         fountains: game.fountains.length,
         trackMarks: host.trackMarks(),
+        muted: host.muted(),
       };
     },
     bodies(kind) {
