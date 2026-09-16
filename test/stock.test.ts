@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { AREAS, BODY_CAPACITY, HOLE, ORDER, SECRETS, STASHES, WALLS, buildCave } from '../src/cave';
 import { SOURCES, chamberSource, roomStock, stashSource } from '../src/economy';
-import { BARREL_KIND, BRICK_KIND, KINDS, KIND_VALUE, World } from '../src/physics';
+import { BARREL_KIND, BRICK_KIND, KINDS, KIND_VALUE, makeWorld, type World } from '../src/physics';
 import { NO_SOURCE, Stock, lootHeap, type Progress, type SavedStock } from '../src/stock';
 import { withSeed } from './helpers';
 
 const CAPACITY = [0, 320, 240, 260, 160, 60, 900];
 const cave = buildCave();
-const fresh = () => new World(BODY_CAPACITY, cave.solid(AREAS.map(() => true)));
+const fresh = () => makeWorld(BODY_CAPACITY, cave.solid(AREAS.map(() => true)));
 /** Where the player has got to: `room` being cleared, and the next open if `nextOpen`. */
 const at = (n: number, nextOpen = false): Progress => ({
   current: () => ORDER[n],

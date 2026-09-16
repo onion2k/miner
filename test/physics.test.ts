@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AREAS, BODY_CAPACITY, HOLE, buildCave } from '../src/cave';
-import { KIND_RADIUS, KIND_VALUE, World, type Pusher } from '../src/physics';
+import { KIND_RADIUS, KIND_VALUE, makeWorld, type Pusher, type World } from '../src/physics';
 import { beltOf } from '../src/tools';
 import { Dozer } from '../src/dozer';
 import { COLS, ORIGIN_X, TILE } from '../src/cave';
@@ -85,7 +85,7 @@ function sweeper(cx: number, cy: number, radius: number, t: number, prev: Pusher
 
 describe('the physics', () => {
   it('lets a dropped coin come to rest on the floor, and sleep', () => {
-    const world = new World(16, openSolid());
+    const world = makeWorld(16, openSolid());
     const i = world.spawn(0, -30, 10, 5);
     for (let f = 0; f < 180; f++) world.step(DT, () => {});
     expect(world.z[i]).toBeCloseTo(KIND_RADIUS[0], 2);
@@ -93,7 +93,7 @@ describe('the physics', () => {
   });
 
   it('banks what goes down the hole, once, and frees its slot', () => {
-    const world = new World(16, openSolid());
+    const world = makeWorld(16, openSolid());
     const kinds = [0, 1, 4, 5];
     for (const k of kinds) world.spawn(k, HOLE.x + (Math.random() - 0.5), HOLE.y + (Math.random() - 0.5), 2);
     const banked: number[] = [];
@@ -107,7 +107,7 @@ describe('the physics', () => {
   });
 
   it('refuses a body when full', () => {
-    const world = new World(2, openSolid());
+    const world = makeWorld(2, openSolid());
     expect(world.spawn(0, -30, 10, 1)).toBe(0);
     expect(world.spawn(0, -31, 10, 1)).toBe(1);
     expect(world.spawn(0, -32, 10, 1)).toBe(-1);
@@ -115,7 +115,7 @@ describe('the physics', () => {
 
   it('keeps its sleep bookkeeping straight, and every body out of the rock, while blades churn a heap', () => {
     withSeed(7, () => {
-      const world = new World(BODY_CAPACITY, openSolid());
+      const world = makeWorld(BODY_CAPACITY, openSolid());
       const heap = AREAS[0].heaps[0];
       for (let k = 0; k < 900; k++) {
         const r = Math.sqrt(Math.random()) * 9,
@@ -156,7 +156,7 @@ describe('the physics', () => {
       const face = ORIGIN_X + 40 * TILE;
       for (const angle of [0, 0.3, -0.5]) {
         withSeed(7 + thick, () => {
-          const world = new World(2000, solid);
+          const world = makeWorld(2000, solid);
           // a band of coins against the wall, and a big blade driven at them, backed off, and driven at them again
           for (let k = 0; k < 500; k++)
             world.spawn(0, face - 0.5 - Math.random() * 4, -10 + Math.random() * 20, 0.5 + Math.random() * 2);
@@ -187,7 +187,7 @@ describe('the physics', () => {
 
   it('carries a coin along a running belt', () => {
     const belt = AREAS.find((a) => a.belt)!.belt!.spec;
-    const world = new World(16, openSolid());
+    const world = makeWorld(16, openSolid());
     world.belts = [beltOf(belt)];
     const b = world.belts[0];
     const start = { x: b.cx - b.dx * b.half * 0.5, y: b.cy - b.dy * b.half * 0.5 };

@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { AREAS, BODY_CAPACITY, HOLE, buildCave, type Heap } from '../src/cave';
-import { World, type Pusher } from '../src/physics';
+import { makeWorld, type Pusher, type World } from '../src/physics';
 
 const BASELINE = 'scripts/bench-baseline.json';
 /**
@@ -63,7 +63,7 @@ function seeded(seed: number) {
 /** Every room open and every heap dropped as the game drops them, settled. */
 function cave(settle = true): World {
   seeded(1);
-  const world = new World(BODY_CAPACITY, buildCave().solid(AREAS.map(() => true)));
+  const world = makeWorld(BODY_CAPACITY, buildCave().solid(AREAS.map(() => true)));
   const drop = (h: Heap) => {
     const R = Math.sqrt(h.coins) * 0.36 + 1.5,
       H = Math.sqrt(h.coins) * 0.3 + 1.5;
@@ -144,7 +144,7 @@ const SCENARIOS: Scenario[] = [
     frames: 240,
     setup: () => {
       seeded(2);
-      const world = new World(BODY_CAPACITY, buildCave().solid(AREAS.map(() => true)));
+      const world = makeWorld(BODY_CAPACITY, buildCave().solid(AREAS.map(() => true)));
       for (let k = 0; k < 4000; k++) {
         const r = Math.sqrt(Math.random()) * 14,
           a = Math.random() * Math.PI * 2;

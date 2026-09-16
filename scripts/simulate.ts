@@ -3,7 +3,7 @@
  * reports and what `npm run sim:check` holds to its baseline. See sim.ts.
  */
 import { AREAS, BODY_CAPACITY, HOLE, SECRETS, buildCave, chamberCentre, gateCentre, type Heap } from '../src/cave';
-import { World, BAR, KIND_VALUE, type Pusher } from '../src/physics';
+import { BAR, KIND_VALUE, makeWorld, type Pusher } from '../src/physics';
 import { Dozer, BLADE_AT, separate } from '../src/dozer';
 import { Bot, BOT_SCALE, BOT_SPEC, Foreman, beltOf } from '../src/tools';
 import { Nav } from '../src/nav';
@@ -51,7 +51,7 @@ function runSeeded(opts: SimOptions, seed: number) {
   const cave = buildCave();
   const secret = SECRETS.findIndex((sc) => sc.area === room);
   const revealed = SECRETS.map((_, k) => opts.secret && k === secret);
-  const world = new World(
+  const world = makeWorld(
     BODY_CAPACITY,
     cave.solid(
       AREAS.map((_, a) => a === 0 || a === room),

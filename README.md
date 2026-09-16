@@ -231,7 +231,7 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/tally.ts          a run of things into the hole, and how hot it is
     src/barrels.ts        barrels: fuses lit by the player, flashing, and the blast that throws what is near
     src/vein.ts           the last room's vein, once the cave is cleared
-    src/physics.ts        the coins as spheres: spatial hash, sleeping, floor, hole, walls, pushers, belts
+    src/physics.ts        the kinds of thing there are to push, and a world from this cave, made with artshape-physics
     src/dozer.ts          the bulldozer: tank steering, the blade and hull as pushers, load
     src/tools.ts          conveyor belts, drones, and the fountains
     src/autopilot.ts      the player's dozer driven by the drones' mind, for playing the whole game through
@@ -277,36 +277,22 @@ it gets there.
 The blade's load slows the engine: a heap in front of the blade is a heap
 the engine has to move, and that is what the engine upgrades are for.
 
-## Where it is going: the physics on its own
+## The physics on its own
 
-The renderer is already a project of its own,
-[artshape-render](https://github.com/onion2k/artshape-render), and the game
-only uses it through its interface. The physics is meant to go the same way:
-a package the game depends on, knowing nothing about coins, caves or bank
-balances. It has not moved yet. For now it lives here, and it is still tied
-to the game in a handful of places, which are the work to be done first:
+The renderer is a project of its own,
+[artshape-render](https://github.com/onion2k/artshape-render), and so now is
+the physics: [artshape-physics](https://github.com/onion2k/artshape-physics),
+a world of spheres that knows nothing about coins, caves or bank balances. It
+is handed the tile grid and its rock, the radius of each kind of thing, the
+holes things fall out of the world through, where chance comes from and the
+tuning, and it reports what fell in through a callback. `src/physics.ts` is
+the game's side of the door: the kinds of thing there are, what each is worth
+and is called, and `makeWorld`, which builds a world from this cave. Nothing
+else in the game imports the package directly.
 
-- **The cave.** It imports the tile grid's size, origin and tile size from
-  `cave.ts`, to size its hash and to collide with the rock. The rock should
-  be handed to it as a grid of solid tiles when a world is made.
-- **The hole.** There is exactly one, taken from `HOLE`, rim slope and all.
-  The places things fall out of the world should be handed in, as many as
-  there are.
-- **The kinds of thing.** `KIND_VALUE`, `KIND_NAME`, `BAR` and `BRICK_KIND`
-  are the economy's, not the physics'. All the physics needs of a kind is its
-  radius.
-- **Chance.** `spawn` calls `Math.random`, which the drone sim has to swap
-  out to get a repeatable run. A world should take its own random source.
-- **The tuning.** Gravity, friction, restitution, sleep thresholds, and how
-  stiff the belts and blades are, are constants tuned for coins at this
-  scale. They should be options, with today's values as the defaults.
-
-Moving it will change how the rest of the game is built: it will make a
-world by handing the physics its rock, its holes and its kinds, and read
-back what fell in, rather than the physics reaching into the game for them.
-The plan is to cut those ties first, inside this repo, with the physics
-importing nothing from the game, and to lift it into its own package once a
-second game or demo wants it.
+The move changed nothing the game does: the drone gate, the balance gate,
+the determinism check and the physics bench came through it unchanged, which
+is what those gates are for.
 
 ### No tight coupling, anywhere
 

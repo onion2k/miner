@@ -46,11 +46,12 @@ the game to whatever it happened to draw that day.
 ## Rules for the code
 
 - **No tight coupling.** A module takes what it needs as arguments or
-  options. It does not import game state, and lower modules (physics, nav,
-  tracks, terrain) do not import content. `main.ts` is the only place that
-  wires everything together. The physics is meant to become a package of its
-  own (see the README), so add nothing to `physics.ts` that ties it closer
-  to the game.
+  options. It does not import game state, and lower modules (nav, tracks,
+  terrain) do not import content. `main.ts` is the only place that wires
+  everything together. The physics is a package of its own, artshape-physics;
+  `src/physics.ts` is the game's side of it (the kinds, and `makeWorld`), and
+  nothing else imports the package directly. A change the physics needs goes
+  in that repo, with a version bump here.
 - **Match the style.** Comments are full sentences in the house voice, saying
   why and not what. Keep names plain. Prettier decides the formatting.
 - **Nothing is kept for ever.** A list, map or cache that is added to has to

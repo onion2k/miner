@@ -31,7 +31,7 @@ import { Impacts } from './impacts';
 import type { Drive } from './input';
 import { lampOn, lampsHit } from './lamps';
 import { Nav } from './nav';
-import { BARREL_KIND, BRICK_KIND, KIND_RADIUS, World, type Pusher } from './physics';
+import { BARREL_KIND, BRICK_KIND, KIND_RADIUS, makeWorld, type Pusher, type World } from './physics';
 import { atNextGate, readyToOpen } from './progress';
 import { NO_SOURCE, Stock, lootHeap } from './stock';
 import { Tally } from './tally';
@@ -117,7 +117,7 @@ export class Game {
   ) {
     const save = economy.save;
     this.cave = cave;
-    this.world = new World(BODY_CAPACITY, cave.solid(save.areas, save.secrets, save.walls));
+    this.world = makeWorld(BODY_CAPACITY, cave.solid(save.areas, save.secrets, save.walls));
     this.dozer = new Dozer(this.world.solid);
     this.nav = new Nav(this.world.solid);
     if (save.done) this.fountains.push(new Fountain(AREAS[this.last]));

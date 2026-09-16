@@ -29,6 +29,7 @@
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
+    "artshape-physics": "github:onion2k/artshape-physics#v0.1.0",
     "artshape-render": "github:onion2k/artshape-render#v0.16.0"
   },
   "devDependencies": {
