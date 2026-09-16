@@ -594,7 +594,10 @@ async function main() {
 
   // ---- the test API, and the frame loop ----
 
-  let paused = false;
+  // ?paused=1 starts the game stopped where it was built, so a test sees the
+  // same cave every run: no frame of its own has run, and every one after is
+  // the test's, of a length it chose
+  let paused = new URLSearchParams(location.search).has('paused');
   let ready = false;
   window.pushminer = createApi({
     game,
