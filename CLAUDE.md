@@ -43,6 +43,22 @@ the game to whatever it happened to draw that day.
 - Content (rooms, heaps, walls, barrels, lamps) lives in `cave.ts`. Prices
   and the save live in `economy.ts`.
 
+## Model features
+
+What to copy the shape of, when building something new:
+
+- **In the cave:** barrels, walls, hidden chambers and lamps. Each has its
+  unit tests in `test/`, a step in `smoke/progress.spec.ts`, a fuzzer action
+  and a picture.
+- **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the drone gate
+  (`scripts/sim-check.ts`). Each has unit tests of its own working parts.
+- **Test helpers:** `withSeed` in `test/helpers.ts` for chance from a seed,
+  and `memoryStore` in `src/economy.ts` for a save that is not the player's.
+- **Gate tolerances:** the drone gate allows a quarter of the figure, or a
+  slack of one or two; the balance gate a fifth on minutes and purchases and
+  15% on the bank; the bench a fifth and 0.05 ms. A swing on 8 seeds is
+  checked on another 8 with `npm run sim -- --room N --seeds 9-16`.
+
 ## Rules for the code
 
 - **No tight coupling.** A module takes what it needs as arguments or
