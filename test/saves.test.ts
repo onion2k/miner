@@ -33,11 +33,12 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '07-walls-and-lamps.json': { room: 2, magnet: 5 },
   '08-barrels.json': { room: 4, drones: 3 },
   '09-current.json': { room: 1, engine: 2 },
+  '10-spider.json': { room: 1, body: 'spider' },
 };
 
 describe('saves from every shape the game has written', () => {
   it('has a file for every shape, oldest first', () => {
-    expect(files.length).toBeGreaterThanOrEqual(9);
+    expect(files.length).toBeGreaterThanOrEqual(10);
     expect(files).toEqual(Object.keys(KEPT).sort());
   });
 

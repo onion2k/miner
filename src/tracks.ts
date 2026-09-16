@@ -121,6 +121,11 @@ export class TrackMarks {
     return this.counts.reduce((a, b) => a + b, 0);
   }
 
+  /** One mark, laid by hand: a footprint, say, where a foot came down. `scale` is against a mark's own size. */
+  mark(x: number, y: number, yaw: number, scale: number) {
+    this.lay(x, y, yaw, scale);
+  }
+
   private lay(x: number, y: number, yaw: number, scale: number) {
     const { pageSize, pages, length, width, ground } = this.options;
     const half = (Math.max(length, width) * scale) / 2;

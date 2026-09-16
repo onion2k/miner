@@ -118,6 +118,55 @@ export function placePart(
   out[o + 15] = 1;
 }
 
+/**
+ * A placement lying from one point to another: what stood up Z from the
+ * origin, a unit tall and a unit across, now runs from `from` to `to`, `r`
+ * across. For a leg's bone, drawn from a unit cylinder.
+ */
+export function placeAlong(out: Float32Array, i: number, from: readonly number[], to: readonly number[], r: number) {
+  const dx = to[0] - from[0],
+    dy = to[1] - from[1],
+    dz = to[2] - from[2];
+  const len = Math.hypot(dx, dy, dz) || 1e-6;
+  const zx = dx / len,
+    zy = dy / len,
+    zz = dz / len;
+  // an X axis square to the line: off Z's cross with it, or off Y's when the line is straight up
+  let xx = -zy,
+    xy = zx,
+    xz = 0;
+  let l = Math.hypot(xx, xy);
+  if (l < 1e-6) {
+    xx = 1;
+    xy = 0;
+    xz = 0;
+    l = 1;
+  }
+  xx /= l;
+  xy /= l;
+  xz /= l;
+  const yx = zy * xz - zz * xy,
+    yy = zz * xx - zx * xz,
+    yz = zx * xy - zy * xx;
+  const o = i * 16;
+  out[o] = xx * r;
+  out[o + 1] = xy * r;
+  out[o + 2] = xz * r;
+  out[o + 3] = 0;
+  out[o + 4] = yx * r;
+  out[o + 5] = yy * r;
+  out[o + 6] = yz * r;
+  out[o + 7] = 0;
+  out[o + 8] = zx * len;
+  out[o + 9] = zy * len;
+  out[o + 10] = zz * len;
+  out[o + 11] = 0;
+  out[o + 12] = from[0];
+  out[o + 13] = from[1];
+  out[o + 14] = from[2];
+  out[o + 15] = 1;
+}
+
 /** Park a placement where nothing can see it. */
 export function hide(out: Float32Array, i: number) {
   place(out, i, 0, 0, -1e5, 0, 0);

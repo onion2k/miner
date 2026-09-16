@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AREAS, ORDER, SECRETS, STASHES, WALLS } from '../src/cave';
 import {
   Economy,
+  memoryStore,
   SOURCES,
   WALL_STRENGTH,
   areaOfSource,
@@ -116,6 +117,35 @@ describe('the economy', () => {
     expect(e.bank).toBe(0);
     expect(e.spec().maxSpeed).toBeGreaterThan(before);
     expect(e.buy('nonsense')).toBe(false);
+  });
+
+  it('sells the Spiderdozer body once, and swaps it for the tracks and back for nothing', () => {
+    const e = new Economy(memoryStore());
+    expect(e.save.body).toBe('dozer');
+    expect(e.save.bodies).toEqual(['dozer']);
+    const spider = e.cosmetics().find((o) => o.id === 'body:spider')!;
+    expect(spider.owned).toBe(false);
+    expect(spider.cost).toBeGreaterThan(0);
+    expect(e.buy('body:spider')).toBe(false);
+    e.deposit(spider.cost);
+    expect(e.buy('body:spider')).toBe(true);
+    expect(e.save.body).toBe('spider');
+    expect(e.save.bodies).toEqual(['dozer', 'spider']);
+    expect(e.bank).toBe(0);
+    expect(e.buy('body:dozer')).toBe(true);
+    expect(e.save.body).toBe('dozer');
+    expect(e.buy('body:spider')).toBe(true);
+    expect(e.save.body).toBe('spider');
+    expect(e.bank).toBe(0);
+    // the row says which is worn
+    expect(e.cosmetics().find((o) => o.id === 'body:spider')!.active).toBe(true);
+    expect(e.cosmetics().find((o) => o.id === 'body:dozer')!.active).toBe(false);
+  });
+
+  it('loads a save from before there were bodies on its tracks', () => {
+    const e = new Economy(memoryStore(JSON.stringify({ bank: 5, paint: 'red', paints: ['yellow', 'red'] })));
+    expect(e.save.body).toBe('dozer');
+    expect(e.save.bodies).toEqual(['dozer']);
   });
 
   it('puts on a paint already owned for nothing', () => {

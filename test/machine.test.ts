@@ -29,7 +29,7 @@ const near = (m: Mesh, [x, y, z]: readonly number[], within: number) =>
 
 describe('the machine as drawn', () => {
   it('stays inside the footprint the physics keeps clear, and the blade inside its pieces', () => {
-    for (const [name, mesh] of Object.entries(machine)) {
+    for (const [name, mesh] of [...Object.entries(machine), ...Object.entries(machineMeshes('spider'))]) {
       for (const [x, y, z] of vertices(mesh)) {
         expect(x, `${name} ahead`).toBeLessThanOrEqual(ENVELOPE.front);
         expect(x, `${name} behind`).toBeGreaterThanOrEqual(-ENVELOPE.back);
@@ -179,6 +179,52 @@ describe('the dynamic scene’s machines', () => {
       const shared = meshes.some((m) => m === parts[part] || m.indices.length >= parts[part].indices.length);
       expect(shared, `drones carry the ${part}`).toBe(true);
     }
+  });
+});
+
+describe('the Spiderdozer as drawn', () => {
+  it('is the same hull on legs: no tracks, no tread bars, and the legs drawn only when it is worn', () => {
+    const tints: number[] = [];
+    const moves = new Map<number, number>();
+    const target = {
+      setDynamic: () => undefined,
+      move: (group: number, _m: Float32Array, count?: number) => moves.set(group, count ?? -1),
+      tint: (group: number) => tints.push(group),
+    };
+    const scene = new DynamicScene(target, {
+      bodyCapacity: BODY_CAPACITY,
+      kindCapacity: KIND_CAPACITY,
+      bots: 3,
+      botScale: BOT_SCALE,
+      botBladeWidth: BOT_SPEC.bladeWidth,
+      bladeWidth: 6.5,
+      paint: PAINTS[0],
+      trackPages: [],
+    });
+    const tracked = scene.machineParts;
+    scene.setBody('spider');
+    const spider = scene.machineParts;
+    // a body of its own, in two parts, and eyes of its own; the cab's glass and the headlamps kept
+    expect(spider.paint.positions).not.toEqual(tracked.paint.positions);
+    expect(spider.glass.indices.length).toBeGreaterThan(tracked.glass.indices.length);
+    for (const lamp of ANCHORS.headlamps) expect(near(spider.glass, lamp, 0.5), `lens at ${lamp.join(',')}`).toBe(true);
+    // nothing of it touches the floor: the tracks are gone, and the wheels with them
+    for (const mesh of [spider.dark, spider.metal, spider.paint])
+      for (let i = 2; i < mesh.positions.length; i += 3) expect(mesh.positions[i]).toBeGreaterThan(0.3);
+    expect(spider.metal.indices.length).toBeLessThan(tracked.metal.indices.length);
+    expect(scene.groups[scene.legsGroup].count).toBe(0);
+    // and it is the legged parts the player's groups now draw, not the tracked ones
+    const drawn = () => scene.groups.map((g) => g.mesh);
+    // the tracked parts stay drawn only by the drones, which keep their tracks
+    const drones = (mesh: Mesh) =>
+      scene.groups.filter((g) => g.mesh === mesh).every((g) => g.matrices.length === 3 * 16);
+    for (const part of ['paint', 'dark', 'metal', 'glass'] as const) {
+      expect(drawn(), `the spider's ${part} drawn`).toContain(spider[part]);
+      expect(drones(tracked[part]), `the tracked ${part} left to the drones`).toBe(true);
+    }
+    scene.setBody('dozer');
+    expect(scene.machineParts.dark.positions).toEqual(tracked.dark.positions);
+    expect(drawn()).not.toContain(spider.dark);
   });
 });
 

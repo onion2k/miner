@@ -24,6 +24,7 @@ import { Sound } from './audio';
 import { COIN_LADDER } from './meshes';
 import { floorHeight } from './terrain';
 import { TrackMarks } from './tracks';
+import { SpiderGait } from './spider';
 import { FUSE } from './barrels';
 import { progressText, the } from './progress';
 import { lampOn } from './lamps';
@@ -223,11 +224,13 @@ async function main() {
       sound.chime();
       if (id === 'blade') scene.setBlade(economy.spec().bladeWidth);
       else if (id.startsWith('paint:')) scene.setPaint(economy.paint());
+      else if (id.startsWith('body:')) standOn();
       else if (id === 'horn') pad?.showHorn(true);
     },
     staticChanged: () => buildStatic(),
     machinesMoved() {
-      tracks.update(game.dozer, game.dozer);
+      // the Spiderdozer leaves footprints where its feet land, not the tracks' marks
+      if (save.body !== 'spider') tracks.update(game.dozer, game.dozer);
       for (const b of game.bots) tracks.update(b, b.dozer);
     },
   };
@@ -272,6 +275,16 @@ async function main() {
     paint: economy.paint(),
     trackPages: tracks.matrices,
   });
+  // the Spiderdozer's legs, walked from where the dozer is; a foot landing prints the floor
+  const gait = new SpiderGait();
+  gait.onStep = (_, x, y) => tracks.mark(x, y, dozer.yaw + Math.PI / 4, 0.55);
+  /** The body the save says the machine stands on, drawn: the feet set down afresh, the tracks' run forgotten. */
+  function standOn() {
+    scene.setBody(save.body);
+    gait.reset();
+    tracks.forget(dozer);
+  }
+  standOn();
   let coinDetail = 0;
   const setCoinDetail = (level: number) => {
     coinDetail = Math.max(0, Math.min(COIN_LADDER.length - 1, level));
@@ -378,6 +391,7 @@ async function main() {
       bots,
       belts: game.running(),
       flag: save.flag,
+      legs: save.body === 'spider' ? gait.poses() : null,
       tracks,
       barrel: (i) => (barrels.flashing(i) ? 'flash' : barrels.fuseLeft(i) !== null ? 'lit' : 'idle'),
       t: game.t,
@@ -529,6 +543,7 @@ async function main() {
 
     const drive = input.read();
     game.step(dt, drive, { horn });
+    if (save.body === 'spider') gait.update(dt, dozer);
 
     // what goes with it: the fuses beeping, the cracking floors' dust, the air, the rumble and the engine
     fuses(dt);

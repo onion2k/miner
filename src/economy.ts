@@ -41,6 +41,9 @@ export interface Save {
   /** Which paint the dozer wears, and which it owns. */
   paint: string;
   paints: string[];
+  /** Which body the machine stands on — tracks, or the Spiderdozer's legs — and which it owns. */
+  body: Body;
+  bodies: Body[];
   horn: boolean;
   flag: boolean;
   /** The room being cleared. */
@@ -79,6 +82,10 @@ export function roomStock(area: number): { value: number; kinds: number[] } {
   }
   return { value: kinds.reduce((sum, n, k) => sum + n * KIND_VALUE[k], 0), kinds };
 }
+
+/** The bodies the machine can stand on: the bulldozer's tracks, or the Spiderdozer's eight legs. */
+export type Body = 'dozer' | 'spider';
+export const SPIDER_COST = 800;
 
 export interface Paint {
   id: string;
@@ -223,6 +230,8 @@ export class Economy {
       magnet: 0,
       paint: 'yellow',
       paints: ['yellow'],
+      body: 'dozer',
+      bodies: ['dozer'],
       horn: false,
       flag: false,
       room: ORDER[0],
@@ -464,6 +473,30 @@ export class Economy {
       available: true,
       active: s.paint === p.id,
     }));
+    // the bodies: the tracks it came with, and the Spiderdozer, bought once and swapped to and from like a paint
+    out.push({
+      id: 'body:dozer',
+      title: 'Tracks',
+      sub: s.body === 'dozer' ? 'standing on them now' : 'in the shed: click to stand on them',
+      cost: 0,
+      owned: true,
+      available: true,
+      active: s.body === 'dozer',
+    });
+    out.push({
+      id: 'body:spider',
+      title: 'Spiderdozer',
+      sub:
+        s.body === 'spider'
+          ? 'walking on them now'
+          : s.bodies.includes('spider')
+            ? 'in the shed: click to walk'
+            : 'the same machine on eight legs, walking like a spider',
+      cost: SPIDER_COST,
+      owned: s.bodies.includes('spider'),
+      available: true,
+      active: s.body === 'spider',
+    });
     out.push({
       id: 'horn',
       title: 'Air horn',
@@ -487,9 +520,15 @@ export class Economy {
     const offer = [...this.offers(), ...this.cosmetics()].find((o) => o.id === id);
     if (!offer || !offer.available) return false;
     if (offer.owned) {
-      // a paint already owned is put on, not bought again
+      // a paint or a body already owned is put on, not bought again
       if (id.startsWith('paint:') && !offer.active) {
         this.save.paint = id.slice(6);
+        this.persist();
+        for (const fn of this.listeners) fn(id);
+        return true;
+      }
+      if (id.startsWith('body:') && !offer.active) {
+        this.save.body = id.slice(5) as Body;
         this.persist();
         for (const fn of this.listeners) fn(id);
         return true;
@@ -508,6 +547,9 @@ export class Economy {
     else if (id.startsWith('paint:')) {
       s.paints.push(id.slice(6));
       s.paint = id.slice(6);
+    } else if (id === 'body:spider') {
+      s.bodies.push('spider');
+      s.body = 'spider';
     } else if (id.startsWith('belt')) s.belts[+id.slice(4)] = true;
     this.persist();
     for (const fn of this.listeners) fn(id);

@@ -46,6 +46,8 @@ export interface GameState {
   lampsBroken: number[];
   drones: number;
   horn: boolean;
+  /** The body the machine stands on: 'dozer' on its tracks, or 'spider'. */
+  body: string;
   /** How many bodies are in the cave, and how many of each kind, by name. */
   live: number;
   kinds: Record<string, number>;
@@ -205,6 +207,7 @@ export function createApi(host: DebugHost): PushminerApi {
         lampsBroken: [...save.lampsBroken],
         drones: save.drones,
         horn: save.horn,
+        body: save.body,
         live: world.live,
         kinds,
         dozer: { x: game.dozer.x, y: game.dozer.y, yaw: game.dozer.yaw, speed: game.dozer.speed },

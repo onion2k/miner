@@ -119,6 +119,39 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the Spiderdozer, standing and mid-stride', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, save: inRoom(1, { bank: 1000 }) });
+    await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.buy('body:spider');
+      api.step(120);
+      const d = api.state().dozer;
+      api.look(d.x, d.y, { azimuth: 0.7, polar: 1.0, radius: 22 });
+      api.step(1);
+    });
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('spider.png', TOLERANCE);
+    // walking: set down on open floor, driven across it, and the picture taken while a set of legs is in the air
+    const [x, y] = await heart(page, 1);
+    await page.evaluate(
+      ([x, y]) => {
+        const api = window.pushminer!;
+        api.teleport(x - 16, y + 12, 0);
+        api.step(30);
+        api.drive(1, 0);
+        api.step(75);
+        api.release();
+        const d = api.state().dozer;
+        api.look(d.x, d.y, { azimuth: 2.3, polar: 1.05, radius: 20 });
+        api.step(1);
+      },
+      [x, y],
+    );
+    await expect(cave(page)).toHaveScreenshot('spider-stride.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('a drone, up close', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true, save: inRoom(1, { drones: 1 }) });

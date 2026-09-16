@@ -80,6 +80,19 @@ test('the whole cave: rooms, chambers, walls, lamps, barrels, a drone, the horn,
   });
   expect(await page.evaluate(() => window.pushminer!.state().bank), 'nothing banked for a barrel').toBe(bankBefore);
 
+  // the Spiderdozer, bought and stood on: it walks, the game is none the wiser, and it can be swapped back
+  await page.evaluate(() => {
+    window.pushminer!.deposit(1000);
+    window.pushminer!.buy('body:spider');
+  });
+  expect(await page.evaluate(() => window.pushminer!.state().body), 'standing on legs').toBe('spider');
+  await page.evaluate(() => window.pushminer!.drive(1, 0.2));
+  await play(page, 120, 'the Spiderdozer walking');
+  await page.evaluate(() => window.pushminer!.release());
+  expect(await page.evaluate(() => window.pushminer!.buy('body:dozer')), 'back on tracks').toBe(true);
+  expect(await page.evaluate(() => window.pushminer!.state().body)).toBe('dozer');
+  await play(page, 30, 'back on tracks');
+
   // a drone, bought and working
   await page.evaluate(() => {
     window.pushminer!.deposit(5000);

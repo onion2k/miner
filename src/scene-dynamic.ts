@@ -12,9 +12,10 @@ import { mergeMeshes, type Mesh } from 'artshape-render/mesh/types';
 import type { GameGroup } from 'artshape-render/game/renderer';
 import { AREAS } from './cave';
 import { TRACK_GAUGE, type Dozer } from './dozer';
-import { ANCHORS, bladeMesh, machineMeshes, type MachineMeshes } from './machine';
+import { ANCHORS, bladeMesh, machineMeshes, type MachineBody, type MachineMeshes } from './machine';
 import { bar, box, coin, cylinder, gem, moved, square } from './meshes';
-import { place, placePart, placeQuat } from './matrix';
+import { hide, place, placeAlong, placePart, placeQuat } from './matrix';
+import type { LegPose } from './spider';
 import { BARREL_COLOUR, BAR_COLOUR, COIN_COLOUR, GEM_ALBEDO, TRACK_MARK, WALL_COLOUR, type Rgb } from './palette';
 import { BAR, BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, type World } from './physics';
 import { MATERIAL_STRIDE } from 'artshape-render/game/renderer';
@@ -55,6 +56,8 @@ export interface DynamicFrame {
   flag: boolean;
   /** The track marks: each page's count, and which pages have changed. */
   tracks: { counts: readonly number[]; dirty: ReadonlySet<number> };
+  /** The Spiderdozer's legs, where they are; null on tracks. */
+  legs: readonly LegPose[] | null;
   /** How a barrel is, by slot: standing, its fuse lit, or lit and in the bright half of a flash. */
   barrel: (i: number) => 'idle' | 'lit' | 'flash';
   t: number;
@@ -88,7 +91,11 @@ const COINS = 0,
   RUBBLE = 20,
   BARRELS = 23,
   HOOPS = 24,
-  TRACKS = 25;
+  LEGS_GROUP = 25,
+  TRACKS = 26;
+/** A leg is two bones, each a placement; eight legs. */
+const LEG_PARTS = 2,
+  LEG_COUNT = 8;
 /** The bright steel and the glass, the same on every machine. */
 const METAL_ALBEDO: Rgb = [0.6, 0.62, 0.66],
   METAL_ROUGHNESS = 0.3,
@@ -112,8 +119,12 @@ export class DynamicScene {
   private readonly machineM = new Float32Array(16);
   private readonly botM: Float32Array;
   private readonly treadM: Float32Array;
-  /** The machine's parts, as built once, for whoever asks what is painted and what is not. */
-  readonly machineParts: MachineMeshes;
+  /** The machine's parts as it stands now, for whoever asks what is painted and what is not. */
+  machineParts: MachineMeshes;
+  /** The group the Spiderdozer's legs are drawn in. */
+  readonly legsGroup = LEGS_GROUP;
+  private readonly legM = new Float32Array(LEG_COUNT * LEG_PARTS * 16);
+  private body: MachineBody = 'dozer';
   private readonly stripeM = new Float32Array(STRIPE_CAPACITY * 16);
   private readonly poleM = new Float32Array(16);
   private readonly flagM = new Float32Array(FLAG_SLATS * 16);
@@ -224,6 +235,8 @@ export class DynamicScene {
         albedo: [0.85, 0.65, 0.08] as Rgb,
         roughness: 0.45,
       },
+      // the Spiderdozer's legs, a bone a placement, from a unit cylinder stood along each
+      { mesh: cylinder(1, 1, 7), matrices: this.legM, count: 0, albedo: METAL_ALBEDO, roughness: METAL_ROUGHNESS },
       // the marks the tracks have left, a page a group, so a new mark writes one page and not all of them
       ...options.trackPages.map((matrices) => ({
         mesh: square(),
@@ -239,6 +252,18 @@ export class DynamicScene {
   /** The coins drawn at a level of detail, from the ladder in `meshes.ts`. */
   setCoinDetail(level: number) {
     this.groups[COINS].mesh = coin(0.52, 0.26, level);
+    this.target.setDynamic(this.groups);
+  }
+
+  /** The body the machine stands on: its tracks, or the Spiderdozer's legs. */
+  setBody(body: MachineBody) {
+    if (body === this.body) return;
+    this.body = body;
+    this.machineParts = machineMeshes(body);
+    this.groups[HULL].mesh = this.machineParts.paint;
+    this.groups[DARK].mesh = this.machineParts.dark;
+    this.groups[METAL].mesh = this.machineParts.metal;
+    this.groups[GLASS].mesh = this.machineParts.glass;
     this.target.setDynamic(this.groups);
   }
 
@@ -312,7 +337,8 @@ export class DynamicScene {
     if (n) this.target.tint(BARRELS, barrelMat);
   }
 
-  private machines({ dozer, bots }: DynamicFrame) {
+  private machines(f: DynamicFrame) {
+    const { dozer, bots } = f;
     const { target, treadM } = this;
     place(this.machineM, 0, dozer.x, dozer.y, 0, dozer.yaw);
     for (const g of [HULL, DARK, METAL, GLASS, BLADE]) target.move(g, this.machineM);
@@ -320,6 +346,11 @@ export class DynamicScene {
     // measured in the player's lengths so a bar laps a smaller track as often
     [dozer, ...bots.map((b) => b.dozer)].forEach((d, j) => {
       const k = d.scale;
+      // the Spiderdozer has no tracks to run bars round
+      if (j === 0 && this.body === 'spider') {
+        for (let i = 0; i < TREAD_BARS * 2; i++) hide(treadM, i);
+        return;
+      }
       for (let i = 0; i < TREAD_BARS; i++) {
         const along = (run: number) =>
           (((((i * TREAD_PITCH + run / k) % TREAD_LOOP) + TREAD_LOOP) % TREAD_LOOP) - TREAD_LOOP / 2) * k;
@@ -329,6 +360,15 @@ export class DynamicScene {
       }
     });
     target.move(TREADS, treadM, (1 + bots.length) * TREAD_BARS * 2);
+    // the legs: a femur from each hip to its knee, a tibia on to the foot
+    const legs = this.body === 'spider' ? f.legs : null;
+    const bones = legs ? Math.min(legs.length, LEG_COUNT) * LEG_PARTS : 0;
+    legs?.slice(0, LEG_COUNT).forEach((l, k) => {
+      placeAlong(this.legM, k * LEG_PARTS, l.hip, l.knee, 0.32);
+      placeAlong(this.legM, k * LEG_PARTS + 1, l.knee, l.foot, 0.21);
+    });
+    this.groups[LEGS_GROUP].count = bones;
+    target.move(LEGS_GROUP, this.legM, bones);
     const s = this.options.botScale;
     bots.forEach(({ dozer: b }, i) => placePart(this.botM, i, b.x, b.y, 0, b.yaw, 0, 0, 0, 0, 0, s, s, s));
     for (const g of [BOT_HULL, BOT_DARK, BOT_METAL, BOT_GLASS, BOT_BLADE]) target.move(g, this.botM, bots.length);

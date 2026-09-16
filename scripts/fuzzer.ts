@@ -272,7 +272,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           store = memoryStore(json);
           game = new Game(new Economy(store), events, cave);
           const after = game.economy.save;
-          const same = (['bank', 'room', 'done', 'drones'] as const).filter((k) => before[k] !== after[k]);
+          const same = (['bank', 'room', 'done', 'drones', 'body'] as const).filter((k) => before[k] !== after[k]);
           const sameLists = (['areas', 'secrets', 'walls', 'lampsBroken', 'belts'] as const).filter(
             (k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]),
           );

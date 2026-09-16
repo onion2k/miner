@@ -14,7 +14,7 @@
  */
 import { mergeMeshes, type Mesh } from 'artshape-render/mesh/types';
 import { BLADE_HEIGHT, TRACK_GAUGE, bladePieces } from './dozer';
-import { ball, box, cone, cylinder, moved, pointed, turned } from './meshes';
+import { ball, box, cone, cylinder, moved, pointed, scaled, turned } from './meshes';
 
 type V3 = [number, number, number];
 
@@ -64,6 +64,9 @@ export type MachineMeshes = {
   drone: Mesh;
 };
 
+/** Where the Spiderdozer's legs hang from the hull, along it: the hips' x, as the gait has them. */
+const HIP_X = [2.25, 0.825, -0.75, -2.175];
+
 /** A cylinder lying from one point to another, `r` across. */
 const strut = (r: number, from: V3, to: V3, segments = 8) =>
   pointed(cylinder(r, Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]), segments), from, to);
@@ -75,39 +78,62 @@ const wheel = (r: number, w: number, x: number, y: number, z: number, segments =
 /** Both sides of the machine: a part at y, and its mirror at -y. */
 const mirrored = (make: (side: 1 | -1) => Mesh) => mergeMeshes([make(1), make(-1)]);
 
-export function machineMeshes(): MachineMeshes {
+/** The bodies the machine is drawn on: its tracks, or the Spiderdozer's legs, which are drawn apart. */
+export type MachineBody = 'dozer' | 'spider';
+
+export function machineMeshes(body: MachineBody = 'dozer'): MachineMeshes {
+  const tracked = body === 'dozer';
   const paint = mergeMeshes([
-    moved(box(5.4, 3.4, 1.7), 0, 0, 0.8), // the body
-    moved(box(2.9, 2.8, 1.1), 1.1, 0, 2.5), // the hood
+    // The body. On tracks, a slab with a hood on it. The Spiderdozer's is in two parts, as a
+    // spider's is: a domed head-and-thorax under the hood, and a swollen abdomen behind the cab,
+    // slung low between the legs.
+    ...(tracked
+      ? [moved(box(5.4, 3.4, 1.7), 0, 0, 0.8), moved(box(2.9, 2.8, 1.1), 1.1, 0, 2.5)]
+      : [
+          moved(box(4.6, 3.0, 1.5), -0.2, 0, 0.9), // the thorax, narrower than the slab
+          moved(scaled(ball(1, 5, 10), 1.6, 1.5, 0.95), 1.1, 0, 2.55), // the domed head, where the hood was
+          moved(box(1.6, 2.2, 0.6), 1.2, 0, 2.5), // and a saddle under it, for the filter and the stack
+          moved(scaled(ball(1, 6, 12), 1.1, 1.55, 1.1), -2.7, 0, 1.55), // the abdomen, behind the cab, to the step's reach
+          moved(box(0.8, 1.6, 0.9), -1.9, 0, 1.1), // the pedicel, the waist the abdomen hangs off
+        ]),
     moved(box(0.4, 2.4, 0.25), 2.35, 0, 3.6), // the hood's nose, a lip over the grille
     moved(box(2.3, 3.0, 0.9), -1.5, 0, 2.5), // the cab's lower body
     // the cab's four pillars and its roof
     ...[-2.56, -0.44].flatMap((x) => [1.41, -1.41].map((y) => moved(box(0.18, 0.18, 1.55), x, y, 3.4))),
     moved(box(2.6, 3.3, 0.2), -1.5, 0, 4.95), // the roof
     moved(box(0.4, 0.4, 0.12), ANCHORS.pole[0], ANCHORS.pole[1], 5.03), // the pennant's mount
-    // a fender over each track
-    mirrored((s) => moved(box(4.4, 1.8, 0.16), -0.4, s * TRACK_GAUGE, 2.32)),
+    // a fender over each track; the spider has no tracks to fend
+    ...(tracked ? [mirrored((s) => moved(box(4.4, 1.8, 0.16), -0.4, s * TRACK_GAUGE, 2.32))] : []),
     // the headlamps' housings
     mirrored((s) => moved(box(0.5, 0.7, 0.62), 2.45, s * 0.95, 2.69)),
   ]);
 
   const dark = mergeMeshes([
-    // each track: the belt's top and bottom runs, and the frame between them the wheels hang from
-    mirrored((s) =>
-      mergeMeshes([
-        moved(box(6.4, 1.7, 0.26), 0, s * TRACK_GAUGE, 1.64),
-        moved(box(6.4, 1.7, 0.26), 0, s * TRACK_GAUGE, 0),
-        moved(box(5.6, 1.1, 1.4), 0, s * TRACK_GAUGE, 0.25),
-        // the sprocket's and the idler's rims, black
-        wheel(0.86, 1.72, -2.55, s * TRACK_GAUGE, 0.95, 10),
-        wheel(0.86, 1.72, 2.55, s * TRACK_GAUGE, 0.95, 12),
-      ]),
-    ),
+    // each track: the belt's top and bottom runs, and the frame between them the wheels hang from;
+    // the Spiderdozer has none, and instead a mount at each hip for its legs to hang from
+    tracked
+      ? mirrored((s) =>
+          mergeMeshes([
+            moved(box(6.4, 1.7, 0.26), 0, s * TRACK_GAUGE, 1.64),
+            moved(box(6.4, 1.7, 0.26), 0, s * TRACK_GAUGE, 0),
+            moved(box(5.6, 1.1, 1.4), 0, s * TRACK_GAUGE, 0.25),
+            // the sprocket's and the idler's rims, black
+            wheel(0.86, 1.72, -2.55, s * TRACK_GAUGE, 0.95, 10),
+            wheel(0.86, 1.72, 2.55, s * TRACK_GAUGE, 0.95, 12),
+          ]),
+        )
+      : mergeMeshes([
+          // a coxa at each hip: a joint the leg turns in, standing proud of the flank
+          mirrored((s) => mergeMeshes(HIP_X.map((x) => strut(0.36, [x, s * 1.5, 1.7], [x, s * 2.05, 1.7], 8)))),
+          // the fangs: a pair of chelicerae hanging either side of the grille
+          mirrored((s) => strut(0.16, [2.55, s * 0.55, 2.45], [2.9, s * 0.4, 1.55], 6)),
+          mirrored((s) => moved(cone(0.14, 0.5, 6), 2.9, s * 0.4, 1.05)),
+        ]),
     moved(box(0.16, 2.3, 0.85), 2.52, 0, 2.62), // the grille
     // the louvres down each side of the hood
     mirrored((s) => mergeMeshes([0.2, 0.8, 1.4, 2.0].map((x) => moved(box(0.42, 0.1, 0.5), x, s * 1.44, 2.8)))),
     moved(box(0.3, 3.0, 1.3), -2.72, 0, 1.0), // the engine bay's back
-    moved(box(0.9, 3.6, 0.4), -3.2, 0, 1.9), // the rear step
+    ...(tracked ? [moved(box(0.9, 3.6, 0.4), -3.2, 0, 1.9)] : []), // the rear step
     moved(box(0.8, 0.9, 0.5), -1.6, 0, 3.4), // the seat
     moved(box(0.2, 0.9, 0.85), -2.05, 0, 3.9), // and its back
     moved(box(0.35, 0.35, 0.16), -0.9, 0, 3.9), // the wheel on its column
@@ -132,15 +158,19 @@ export function machineMeshes(): MachineMeshes {
     // the blade's frame: an arm each side from the track to the blade, and a cross-brace
     mirrored((s) => moved(box(3.4, 0.45, 0.45), 2.6, s * 2.4, 1.7)),
     moved(box(0.4, 4.4, 0.3), 3.9, 0, 1.75),
-    // the wheels: sprocket and idler hubs, and the rollers under each track
-    mirrored((s) =>
-      mergeMeshes([
-        wheel(0.42, 1.8, -2.55, s * TRACK_GAUGE, 0.95, 8),
-        wheel(0.42, 1.8, 2.55, s * TRACK_GAUGE, 0.95, 8),
-        ...[-1.4, -0.45, 0.5, 1.45].map((x) => wheel(0.36, 1.78, x, s * TRACK_GAUGE, 0.38, 8)),
-        wheel(0.3, 1.78, 0, s * TRACK_GAUGE, 1.4, 8), // the carrier roller, up under the top run
-      ]),
-    ),
+    // the wheels: sprocket and idler hubs, and the rollers under each track; none on legs
+    ...(tracked
+      ? [
+          mirrored((s) =>
+            mergeMeshes([
+              wheel(0.42, 1.8, -2.55, s * TRACK_GAUGE, 0.95, 8),
+              wheel(0.42, 1.8, 2.55, s * TRACK_GAUGE, 0.95, 8),
+              ...[-1.4, -0.45, 0.5, 1.45].map((x) => wheel(0.36, 1.78, x, s * TRACK_GAUGE, 0.38, 8)),
+              wheel(0.3, 1.78, 0, s * TRACK_GAUGE, 1.4, 8), // the carrier roller, up under the top run
+            ]),
+          ),
+        ]
+      : []),
     // the handrails along the hood, and the mirrors' arms out from the cab's front pillars
     mirrored((s) =>
       mergeMeshes([
@@ -150,7 +180,7 @@ export function machineMeshes(): MachineMeshes {
         strut(0.05, [-0.5, s * 1.45, 4.3], [-0.6, s * 2.5, 4.3], 6),
       ]),
     ),
-    moved(box(0.5, 0.5, 0.45), -3.35, 0, 1.3), // the hitch
+    ...(tracked ? [moved(box(0.5, 0.5, 0.45), -3.35, 0, 1.3)] : []), // the hitch
     // a light bar along the roof's front edge
     moved(box(0.24, 2.6, 0.22), -0.4, 0, 5.15),
   ]);
@@ -161,6 +191,13 @@ export function machineMeshes(): MachineMeshes {
     mirrored((s) => moved(box(1.9, 0.06, 1.42), -1.5, s * 1.41, 3.47)), // the side windows
     // the headlamps' lenses, just proud of their housings
     ...ANCHORS.headlamps.map((a) => moved(box(0.1, 0.56, 0.46), a[0] + 0.06, a[1], a[2] - 0.23)),
+    // and on the spider six more eyes, small ones, in two rows across the head above the lamps
+    ...(tracked
+      ? []
+      : [
+          mirrored((s) => mergeMeshes([0.3, 0.7, 1.1].map((y) => moved(ball(0.13, 4, 6), 2.55, s * y, 3.45)))),
+          mirrored((s) => mergeMeshes([0.5, 0.95].map((y) => moved(ball(0.1, 4, 6), 2.45, s * y, 3.8)))),
+        ]),
   ]);
 
   const drone = mergeMeshes([
