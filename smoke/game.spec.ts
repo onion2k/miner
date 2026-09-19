@@ -8,7 +8,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
-import { start, watch } from './pushminer';
+import { ready, start, watch } from './pushminer';
 
 /** How many frames the page draws in a second. */
 function framesInASecond(page: Page) {
@@ -67,6 +67,22 @@ test('boots with no errors and draws the cave', async ({ page }, info) => {
   expect(c.lit, 'share of the screen lit').toBeGreaterThan(0.2);
   expect(c.spread, 'variety in the picture').toBeGreaterThan(25);
   expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+test('boots with stages of the renderer turned off from the address, and the cave lit from the sky', async ({
+  page,
+}, info) => {
+  // the switches for finding a fault from the machine that has it: every stage off at once, and daylight
+  const problems = watch(page);
+  await page.goto('/?coins=3&off=shadows,occlusion,post,effects,particles,points&day');
+  await ready(page);
+  // the boot screen is still fading over the frame when the game says it is ready: put away, so the cave is what is measured
+  await page.locator('#boot').evaluate((el: HTMLElement) => (el.style.display = 'none'));
+  const shot = await page.screenshot();
+  await info.attach('daylight, stages off', { body: shot, contentType: 'image/png' });
+  // lit by the sky alone, with every lamp off: a cave with the switches ignored would be black
+  expect(content(shot).lit, 'share of the screen lit').toBeGreaterThan(0.2);
   expect(problems).toEqual([]);
 });
 

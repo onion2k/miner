@@ -103,6 +103,22 @@ async function main() {
   // bloom on what is past white, so lamps, the hole and coin glints spill light; any
   // lower and a run of coins into the hole, each throwing gold sparkles, is a white blob
   renderer.post = { bloom: 0.45, threshold: 1.25, knee: 0.5, vignette: 0.32, grain: 0.02 };
+  // For finding which stage a fault seen on one machine is in, from that machine:
+  // ?off=shadows,occlusion,post,effects,particles,points turns stages of the renderer
+  // off, and ?day lights the cave from the sky, so it can be seen with the lamps off.
+  const asked = new URLSearchParams(location.search);
+  const off = new Set((asked.get('off') ?? '').split(',').filter(Boolean));
+  if (off.size)
+    renderer.economy = {
+      ...renderer.economy,
+      shadows: !off.has('shadows'),
+      occlusion: !off.has('occlusion'),
+      post: !off.has('post'),
+      particles: !off.has('particles'),
+      points: !off.has('points'),
+      effects: off.has('effects') ? 0 : 1,
+    };
+  if (asked.has('day')) renderer.look = { ...renderer.look, ambient: 1, sunColour: [1, 0.97, 0.92] };
   const env = bakeEnvironment(ctx, 'studio', { size: 128, mips: 6 });
   renderer.setEnvironment(env.specular, env.brdf, env.mips);
   renderer.camera.fov = 42;
