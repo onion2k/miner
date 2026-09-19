@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "artshape-physics": "github:onion2k/artshape-physics#v0.1.0",
-    "artshape-render": "github:onion2k/artshape-render#v0.16.0"
+    "artshape-render": "github:onion2k/artshape-render#v0.16.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
