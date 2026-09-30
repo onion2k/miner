@@ -72,9 +72,9 @@ Taken on judgement, as asked; each can be put back to the user.
 | ----- | ----------------------------------------------- | ------------- | ------- |
 | 1     | The cave as a value, holes as a list (refactor) | no            | landed  |
 | 2     | One cave after another                          | yes           | landed  |
-| 3     | Several holes and belts in a cave, in content   | yes           | planned |
-| 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | planned |
-| 5     | Bigger caves, measured first                    | yes           | planned |
+| 3     | Several holes and belts in a cave, in content   | yes           | agreed  |
+| 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | agreed  |
+| 5     | Bigger caves, measured first                    | yes           | agreed  |
 | 6     | New biomes, one feature each                    | yes           | planned |
 
 Phase 1 is the foundation, built now. Phases 2 to 6 are each put through
@@ -921,35 +921,204 @@ test/slow/balance.test.ts`, which moved a slow test out of the quick
 
 ---
 
-## Phase 3: several holes and belts in content
+## Phase 3: several holes and belts in a cave
 
-With the machinery in from Phases 1 and 2, a cave with two holes and two
-belts is content. The feature is the first such cave, and what the player
-needs to use it: the arrow to the nearest hole, the workshop listing several
-belts by where they run, each belt's drop-off drawn where it ends, and the
-drones spreading their work across holes rather than queuing at one. The sim
-gains a two-hole cave, and a figure for how evenly the holes are used.
+Agreed with the user on 2026-09-30, with Phases 4 and 5, from sketch maps.
+Built on Sonnet 5.5 after `5e55b13`, checked on Opus, then committed and
+pushed on `linear-caves` before Phase 4 starts.
+
+### What
+
+- **The North Vault gets a second hole** in its far cavern, among its heaps.
+- **The East Gallery gets a second belt,** along the bottom of the ring,
+  from the bottom heap toward the hole, with a price of its own (about the
+  first belt's).
+- **The workshop names each belt by where it runs,** from a `label` on the
+  belt in the content: "Conveyor, top of the ring" and "Conveyor, bottom of
+  the ring". The old single-belt names read as they do.
+- **Each belt's drop-off is drawn where it ends**, a small mark on the
+  floor at its end, so it can be seen where a belt delivers.
+- **The drones spread their work across holes.** The foreman takes the hole
+  a coin is nearest along the floor as that coin's hole, and does not send
+  two drones to the same hole at once when another hole is as near, within a
+  margin. A drone keeps aiming at the nearest hole to where it is, as
+  now.
+- **The arrow**, as Phase 2 made it, points at the nearest hole. That
+  already holds.
+
+### Acceptance criteria
+
+1. The North Vault has two holes. Something pushed down either is banked,
+   in the game and in the page (smoke).
+2. The East Gallery has two belts, each bought on its own in the workshop,
+   each listed by its label. Both run once bought, and a save keeps which
+   are bought.
+3. Each running belt draws a drop-off mark at its end. It is gone when the
+   belt is not bought.
+4. With two drones in the North Vault, over a sim run, both holes take a
+   share. The new sim figure `hole share`, the smaller hole's share of what
+   was banked, is above 0.2. With the spread switched off in a test, it
+   falls, showing the spread is what does it.
+5. The pictures show two holes and two belts, each looked at.
+
+### Edge cases
+
+- **The hole:** two holes, each with its lamps, rim, pulse and collar;
+  something falling between them goes to one or the other.
+- **Save:** a save with the East Gallery's first belt bought (the Phase 2
+  shape) loads with the second not bought. A save of the new shape joins
+  `test/saves/`.
+- **Drones:** covered by criterion 4, and a drone sent home goes to the
+  first hole.
+- **Scale:** two belts running at once, both carrying.
+- **Phone:** the workshop's longer belt names fit at phone width.
+- **The end:** not reachable; neither cave is last.
+
+### Tests and gates
+
+- Unit tests for criteria 1 to 4, seen failing first.
+- A smoke step that banks down the second hole, and buys and runs both
+  belts.
+- A fuzzer action to buy each belt (the fuzzer already buys; check it
+  reaches the second).
+- A sim scenario, `north, two holes, two drones`, with the new figure.
+- A look scene with the North Vault's two holes, and one with the East
+  Gallery's two belts running.
+- The pacing and drone baselines are written again, since hauls get
+  shorter: balance on 12 seeds, sim on 16 seeds. The commit says so.
+- `measureFrame` in the North Vault and the East Gallery, against Phase 2's
+  figures (2.7 to 2.8 ms).
 
 ## Phase 4: cave shapes
 
-Carving beyond wobbly ellipses and boxes: winding tunnels (a path with a
-width), caverns shaped by noise from a seed, pillars and islands of rock,
-ledges. With it, a checker run over every cave in the run as a unit test:
-every heap, chamber, side room and the way out can be reached from the
-entry by the dozer; every heap can be pushed to a hole; no belt runs through
-rock; no lamp, barrel or heap stands in rock. A cave that fails it is named
-with what is cut off.
+Built after Phase 3 is pushed, on the same terms.
+
+### What
+
+- **Two new shapes for carving,** in `Shape` in `src/cave.ts`:
+  - `{ kind: 'tunnel', points: [x, y][], width, seed }`, a winding path of
+    floor through the points (tiles from the grid's corner), its width
+    wobbling a little along it, from the seed;
+  - `{ kind: 'cavern', box: [x0, y0, x1, y1], seed, fill }`, floor shaped
+    by noise from the seed inside the box. `fill` (0 to 1) is how much of
+    the box is open, and it is carved as one connected piece: any pocket not
+    joined to the biggest is left as rock.
+  - Both take `rock: true` as the others do.
+- **Every shape carves only its own box** (an ellipse its bounding box, a
+  tunnel the box round its points and width). The carved cells of every
+  existing cave are unchanged, which a test holds by comparing each cave's
+  cells before and after, hashed. Building the 4× cave from the measurements
+  should drop from about 124 ms, and the figure is reported.
+- **Noise comes from the seed alone,** from `noise.ts` or `hash`, never
+  from `Math.random`, so a cave is the same every build.
+- **The Warrens** is a new cave, in `RUN` between the North Vault and the
+  West Gallery, id `'warrens'`:
+  - jungle, about 1× the East Gallery's area;
+  - five noise caverns joined by winding tunnels, as the sketch shows;
+  - two holes, in two of the caverns;
+  - no belt;
+  - a side room behind a brick wall off one cavern, and a hidden chamber;
+  - richer gems, emeralds and sapphires, with the prices as they are.
+- **Haul limit:** 120 along the floor. The cave checker holds it, with all
+  of the checker's other rules.
+- **Old saves:** a save in the West Gallery (the Phase 2 shape) still
+  loads into the West Gallery. The run's order changes, but ids are kept, so
+  it lands by id.
+
+### Acceptance criteria
+
+1. A tunnel through given points carves a connected path of about the given
+   width, the same every build from the same seed, and a different one from
+   another seed.
+2. A cavern carves one connected piece of about `fill` of its box, the same
+   every build, with nothing carved outside the box.
+3. Every existing cave's cells are the same as before the change, hashed.
+4. The Warrens passes the cave checker. Its map is written and looked at
+   against the sketch.
+5. The run plays through the Warrens in the fuzzer and the balance run, and
+   the smoke test can reach it by a save.
+6. Building the 4× test cave takes less time than before, with the figure
+   reported.
+
+### Tests and gates
+
+- Unit tests for criteria 1 to 3 and 6. The checker covers 4.
+- The balance baseline is written again only if its first two caves move.
+  They should not; the full run's figures, with the Warrens, are reported.
+- A look scene for the Warrens, and the phone.
+- `measureFrame` in the Warrens.
 
 ## Phase 5: bigger caves
 
-Measured before it is agreed. For caves of 1, 2 and 4 times today's area:
-the time to build the cave (carving is now every shape over the whole grid,
-which grows as shapes times tiles; it will want each shape to touch only its
-own box), the terrain's vertex count and build time, the nav's rebuild time
-(on every gate or wall), the physics' step with the bodies spread wider, the
-static scene's draw, and the camera's reach and fog. Each gets a budget and a
-gate before a bigger cave lands. `BODY_CAPACITY` and `KIND_CAPACITY` become
-the cave's.
+Built after Phase 4 is pushed, on the same terms. Measured before it was
+agreed, on made-up caves (one big oval, heaps spread along it), three runs
+each, in Node on this machine. These are estimates:
+
+| Size (× East)   | Tiles  | Bodies | Carve  | Terrain | Nav    | New game | Step at rest |
+| --------------- | ------ | ------ | ------ | ------- | ------ | -------- | ------------ |
+| 1× (112 by 60)  | 6,720  | ~1,500 | 13 ms  | 74 ms   | 4.7 ms | 246 ms   | 0.95 ms      |
+| 2× (158 by 85)  | 13,430 | ~3,000 | 16 ms  | 242 ms  | 5.6 ms | 491 ms   | 1.9 ms       |
+| 4× (224 by 120) | 26,880 | ~5,900 | 124 ms | 209 ms  | 12 ms  | 964 ms   | 3.9 ms       |
+
+Most of the swap is the new game, mostly its heaps settling, which grows
+with the coins, not the area.
+
+### What
+
+- **Budgets, each held by a gate** in `npm run check`, with a baseline and a
+  tolerance measured as the house rules say:
+  - the swap, in the page, under 1 s in the biggest cave;
+  - a frame, `measureFrame`, no slower than the old game's worst (4.4 ms) in
+    any cave, and held to a baseline per cave;
+  - the terrain's vertex count per cave, held exactly, and its build time;
+  - the nav's rebuild time in the biggest cave.
+- **If the swap is over budget:** settle big heaps in fewer steps, or place
+  them already settled, whichever is measured to do it without changing
+  what the heaps look like at rest beyond the look tolerance. A worker
+  building ahead is left for later, and said so.
+- **`BODY_CAPACITY` and `KIND_CAPACITY` become the cave's**, in its spec
+  and worked out from its heaps with room for the vein and rubble. The
+  renderer's capacities are sized to the largest cave in the run.
+- **The camera at full zoom-out:** look at the biggest cave there. If the
+  shadows run out inside the picture, limit the zoom, or widen the shadows'
+  reach, whichever keeps the frame in budget, and say which.
+- **The Deep** is a new cave, id `'deep'`, the new last cave, after the
+  West Gallery:
+  - future biome, about 2× the East Gallery's area;
+  - a great hall with pillars and rock islands, and winding side passages
+    carved with Phase 4's shapes;
+  - three holes and two belts;
+  - a side room and a hidden chamber;
+  - the richest loot, diamonds and gold bars, with the prices as they are;
+  - the vein and cracks at the end.
+- **The West Gallery** gains a way out, and gives up the vein and the
+  end to the Deep.
+- **Haul limit for the Deep:** 160 along the floor, checked by the cave
+  checker.
+- **Old saves:** a done save (`done: true`) in the West Gallery stays done
+  where it is: finished players are not sent on. A save in the West Gallery
+  not done goes on to the Deep through the new way out, as anyone would.
+
+### Acceptance criteria
+
+1. Each budget above has a gate that fails when the thing is made slower or
+   bigger on purpose (seen failing) and passes as built.
+2. The swap into the Deep is under 1 s in the page, measured.
+3. Every cave's frame is under 4.4 ms, measured, and the Deep's frame and
+   swap are reported beside the others.
+4. The capacities are each cave's. The Deep at capacity does not drop what
+   its heaps need.
+5. The camera at full zoom-out in the Deep: picture taken, looked at, and
+   what was done about it said.
+6. The run plays through to the Deep's end in the fuzzer and the balance
+   run, and the old done save stays done.
+
+### Tests and gates
+
+- The pacing baseline's first two caves should not move, and are checked.
+  The whole run's figures are reported.
+- Pictures of the Deep, its hall at full zoom-out, and the phone.
+- Leaks through the whole run, with the Deep's bodies inside their ceilings.
 
 ## Phase 6: new biomes
 
