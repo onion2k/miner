@@ -1,5 +1,5 @@
 /**
- * The run the game is, as content: five caves one after another, each its own
+ * The run the game is, as content: six caves one after another, each its own
  * grid, hole, heaps, vein, belt, hidden chamber, brick wall and side room, a
  * way in and (but for the last) a way out. Each is one `CaveSpec`, handed to
  * the game by whoever wires it up; nothing below the page imports this, so
@@ -43,6 +43,20 @@ function plan(cols: number, rows: number, hx: number, hy: number) {
       rock
         ? { kind: 'ellipse', cx: hx + a, cy: hy + b, rx, ry, seed, rock: true }
         : { kind: 'ellipse', cx: hx + a, cy: hy + b, rx, ry, seed },
+    /** A winding tunnel through points `a`, `b` tiles east and north of the hole, `width` tiles across. */
+    tunnel: (points: [number, number][], width: number, seed: number): Shape => ({
+      kind: 'tunnel',
+      points: points.map(([a, b]): [number, number] => [hx + a, hy + b]),
+      width,
+      seed,
+    }),
+    /** A cavern of noise, `fill` of the box from the tile `a0`, `b0` to `a1`, `b1`, counted from the hole. */
+    cavern: (a0: number, b0: number, a1: number, b1: number, seed: number, fill: number): Shape => ({
+      kind: 'cavern',
+      box: [hx + a0, hy + b0, hx + a1, hy + b1],
+      seed,
+      fill,
+    }),
     /** A box of floor, or of rock put back, from the tile `a0`, `b0` to `a1`, `b1`, inclusive. */
     rect: (a0: number, b0: number, a1: number, b1: number, rock = false): Shape =>
       rock
@@ -393,7 +407,147 @@ const northVault = (() => {
   } satisfies CaveSpec;
 })();
 
-// ---- 5. The West Gallery: a long hall with two rows of pillars, the hole at its near end ----
+// ---- 5. The Warrens: five caverns in a chain, joined by winding tunnels, a hole in the second and the fourth ----
+
+const warrens = (() => {
+  // everything below is counted in tiles from the second cavern's middle, and its hole stands a little west of that, clear of the
+  // cavern's eastern rim where the drones wait
+  const p = plan(120, 60, 38, 42);
+  const room = sideRoom(
+    'Warren Store',
+    2,
+    p.tiles(-2, -26, 1, -8),
+    p.tiles(-2, -20, 1, -20),
+    { cx: p.mid(0, -30)[0], cy: p.mid(0, -30)[1], rx: 8, ry: 5, seed: 2.6 },
+    {
+      coins: 450,
+      gems: [
+        [2, 16],
+        [3, 14],
+        [5, 2],
+      ],
+    },
+    [[3, 3]],
+  );
+  return {
+    id: 'warrens',
+    name: 'The Warrens',
+    blurb: 'emeralds and sapphires, in caverns joined by tunnels',
+    biome: 'jungle',
+    cols: p.cols,
+    rows: p.rows,
+    shapes: [
+      p.cavern(-29, -26, -15, -2, 1.3, 0.62),
+      p.cavern(-7, -12, 7, 12, 2.4, 0.62),
+      p.cavern(15, -34, 29, -10, 3.5, 0.62),
+      p.cavern(37, -14, 51, 10, 4.6, 0.62),
+      p.cavern(59, -30, 73, -6, 5.7, 0.62),
+      p.tunnel(
+        [
+          [-22, -14],
+          [-13, -12],
+          [-9, -4],
+          [0, 0],
+        ],
+        4,
+        1.1,
+      ),
+      p.tunnel(
+        [
+          [0, 0],
+          [8, 0],
+          [12, -12],
+          [19, -16],
+          [22, -22],
+        ],
+        4,
+        2.2,
+      ),
+      p.tunnel(
+        [
+          [22, -22],
+          [30, -24],
+          [34, -12],
+          [41, -6],
+          [44, -2],
+        ],
+        4,
+        3.3,
+      ),
+      p.tunnel(
+        [
+          [44, -2],
+          [53, 0],
+          [57, -12],
+          [62, -16],
+          [66, -18],
+        ],
+        4,
+        4.4,
+      ),
+    ],
+    holes: [p.holeAt(-2, 0), p.holeAt(44, -2)],
+    heaps: [
+      {
+        ...p.pt(-72, -48),
+        coins: 440,
+        gems: [
+          [2, 22],
+          [3, 14],
+        ],
+      },
+      {
+        ...p.pt(20, -8),
+        coins: 440,
+        gems: [
+          [2, 22],
+          [3, 14],
+        ],
+      },
+      {
+        ...p.pt(196, -8),
+        coins: 440,
+        gems: [
+          [2, 22],
+          [3, 14],
+        ],
+      },
+    ],
+    vein: {
+      ...p.pt(272, -64),
+      every: 0.75,
+      coins: 1,
+      gems: [
+        [2, 0.07],
+        [3, 0.05],
+      ],
+    },
+    cracks: [p.spot(-88, -56), p.spot(88, -88), p.spot(196, 8)],
+    belts: [],
+    lampSpacing: 18,
+    dressing: 0.6,
+    entry: p.cutting(-36, -16, -26, -13, [-1, 0]),
+    exit: p.cutting(64, -24, 78, -21, [1, 0]),
+    secrets: [
+      {
+        wall: p.tiles(-10, 5, -8, 6),
+        chamber: { cx: p.mid(-13.5, 5.5)[0], cy: p.mid(-13.5, 5.5)[1], rx: 3.8, ry: 3, seed: 5.1 },
+        loot: {
+          coins: 80,
+          gems: [
+            [3, 5],
+            [5, 5],
+          ],
+        },
+      },
+    ],
+    walls: [room.wall],
+    stashes: [room.stash],
+    barrels: 5,
+  } satisfies CaveSpec;
+})();
+
+// ---- 6. The West Gallery: a long hall with two rows of pillars, the hole at its near end ----
 
 const westGallery = (() => {
   const p = plan(54, 56, 11, 27);
@@ -487,4 +641,4 @@ const westGallery = (() => {
 })();
 
 /** The caves in order, from the first to the last: the run. */
-export const RUN: CaveSpec[] = [hollow, southGallery, eastGallery, northVault, westGallery];
+export const RUN: CaveSpec[] = [hollow, southGallery, eastGallery, northVault, warrens, westGallery];

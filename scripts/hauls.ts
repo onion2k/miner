@@ -16,6 +16,7 @@ export const HAUL_LIMIT: Record<string, number> = {
   'south-gallery': 80,
   'east-gallery': 160,
   'north-vault': 80,
+  warrens: 120,
   'west-gallery': 160,
 };
 

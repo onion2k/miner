@@ -18,6 +18,10 @@
  * floor is z = 0.
  */
 
+import { hash, noise } from './noise';
+
+export { hash };
+
 /** Every cave's tiles are the same size. */
 export const TILE = 4;
 
@@ -85,12 +89,20 @@ export interface BeltOffer {
 }
 
 /**
- * One piece of what is carved, in tiles from the grid's corner: a wobbly ellipse, or a box. Carved
- * in order, and a shape with `rock` set puts rock back, for a pillar or an island.
+ * One piece of what is carved, in tiles from the grid's corner: a wobbly ellipse, a box, a winding
+ * tunnel, or a cavern shaped by noise. Carved in order, and a shape with `rock` set puts rock back, for
+ * a pillar or an island.
+ *
+ * A tunnel runs through `points`, in order, its width wobbling a little along it and its path
+ * wandering a little off the straight between them, from `seed`; it passes through every point. A
+ * cavern is noise from `seed` inside `box` (inclusive tiles), `fill` of it open, from 0 to 1; it is
+ * carved as one connected piece, and any pocket not joined to the biggest is left as rock.
  */
 export type Shape =
   | { kind: 'ellipse'; cx: number; cy: number; rx: number; ry: number; seed: number; rock?: true }
-  | { kind: 'rect'; tiles: [number, number, number, number]; rock?: true };
+  | { kind: 'rect'; tiles: [number, number, number, number]; rock?: true }
+  | { kind: 'tunnel'; points: [number, number][]; width: number; seed: number; rock?: true }
+  | { kind: 'cavern'; box: [number, number, number, number]; seed: number; fill: number; rock?: true };
 
 /** A cutting through the rock at the cave's edge: the way out, or the way in. */
 export interface Cutting {
@@ -205,6 +217,15 @@ export interface CaveSpec {
   stashes: Stash[];
   /** How many barrels it has. */
   barrels: number;
+  /**
+   * How far apart lamps stand along the rock, in world units; left out, `LAMP_SPACING`. A cave with a
+   * great length of rock face for its floor, a chain of caverns and tunnels, asks for more: every
+   * lamp is a light the page draws, and a cave of many short walls would otherwise hold twice the
+   * lamps of a cave of one ring.
+   */
+  lampSpacing?: number;
+  /** What share of the usual stones, plants and crystals the biome stands on its rock, 0 to 1; left out, all of it. */
+  dressing?: number;
 }
 
 export interface Cave {
@@ -277,16 +298,54 @@ export function chamberCentre(cave: Cave, k: number): [number, number] {
 /** The most bodies the cave can hold: every heap plus what the veins add. */
 export const BODY_CAPACITY = 10000;
 
-/** A small deterministic hash in 0..1, for the jitter on rocks. */
-export function hash(a: number, b: number, c = 0): number {
-  let h = (a * 374761393 + b * 668265263 + c * 1274126177) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
 /** Whether a cell is rock to look at: rock, the way out before it opens, or a chamber not yet broken into. A brick wall is drawn as bricks, on floor. */
 export function rockish(cell: number, revealed: boolean[], open = false): boolean {
   return cell === ROCK || (cell === EXIT && !open) || (cell >= SECRET && cell < BRICK && !revealed[cell - SECRET]);
+}
+
+/** How far past its radius an ellipse's wobble can take its edge: the two sines' amplitudes, added. */
+const ELLIPSE_WOBBLE = 0.09 + 0.06;
+
+/**
+ * The tiles a shape can carve, [x0, y0, x1, y1] inclusive, inside the rim of rock every grid keeps: a
+ * carving visits only these, so a small shape in a big grid costs what it is, and never the grid.
+ */
+export function shapeBox(shape: Shape, grid: Pick<Grid, 'cols' | 'rows'>): [number, number, number, number] {
+  const clamp = (x0: number, y0: number, x1: number, y1: number): [number, number, number, number] => [
+    Math.max(1, x0),
+    Math.max(1, y0),
+    Math.min(grid.cols - 2, x1),
+    Math.min(grid.rows - 2, y1),
+  ];
+  switch (shape.kind) {
+    case 'rect':
+      return shape.tiles;
+    case 'cavern':
+      return clamp(...shape.box);
+    case 'ellipse':
+      return ellipseBox(grid, shape.cx, shape.cy, shape.rx, shape.ry);
+    case 'tunnel': {
+      const xs = shape.points.map((p) => p[0]),
+        ys = shape.points.map((p) => p[1]);
+      const pad = tunnelReach(shape.width);
+      return clamp(
+        Math.floor(Math.min(...xs) - pad),
+        Math.floor(Math.min(...ys) - pad),
+        Math.ceil(Math.max(...xs) + pad),
+        Math.ceil(Math.max(...ys) + pad),
+      );
+    }
+  }
+}
+
+function ellipseBox(grid: Pick<Grid, 'cols' | 'rows'>, cx: number, cy: number, rx: number, ry: number) {
+  const reach = 1 + ELLIPSE_WOBBLE;
+  return [
+    Math.max(1, Math.floor(cx - rx * reach)),
+    Math.max(1, Math.floor(cy - ry * reach)),
+    Math.min(grid.cols - 2, Math.ceil(cx + rx * reach)),
+    Math.min(grid.rows - 2, Math.ceil(cy + ry * reach)),
+  ] as [number, number, number, number];
 }
 
 /** The ellipse's tiles set to `value`; with `onlyRock`, only those that were rock. */
@@ -301,9 +360,10 @@ function carveEllipse(
   value = OPEN,
   onlyRock = false,
 ) {
-  const { cols, rows } = grid;
-  for (let ty = 1; ty < rows - 1; ty++) {
-    for (let tx = 1; tx < cols - 1; tx++) {
+  const { cols } = grid;
+  const [x0, y0, x1, y1] = ellipseBox(grid, cx, cy, rx, ry);
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
       const dx = (tx - cx) / rx,
         dy = (ty - cy) / ry;
       const th = Math.atan2(dy, dx);
@@ -330,16 +390,169 @@ function carveRect(
   }
 }
 
+/** How far a tunnel of `width` can reach from the line through its points: half its widest, and its wander. */
+function tunnelReach(width: number): number {
+  return (width / 2) * TUNNEL_WIDEST + width * TUNNEL_WANDER + 1;
+}
+
+/** A tunnel's width is its `width` times between these, along its length, and it wanders off the straight by up to its width times `TUNNEL_WANDER`. */
+const TUNNEL_NARROWEST = 0.82,
+  TUNNEL_WIDEST = 1.18,
+  TUNNEL_WANDER = 0.35;
+/** Tiles between one disc of a tunnel and the next: close enough that the discs overlap and the path has no gaps. */
+const TUNNEL_STEP = 0.5;
+
+/** A tunnel's tiles set to `value`: a run of discs along the path, each as wide as the tunnel is there. */
+function carveTunnel(
+  cells: Uint8Array,
+  grid: Grid,
+  points: [number, number][],
+  width: number,
+  seed: number,
+  value: number,
+) {
+  const { cols } = grid;
+  const [bx0, by0, bx1, by1] = shapeBox({ kind: 'tunnel', points, width, seed }, grid);
+  const salt = Math.round(seed * 1000);
+  let along = 0;
+  const disc = (x: number, y: number) => {
+    const r = (width / 2) * (TUNNEL_NARROWEST + (TUNNEL_WIDEST - TUNNEL_NARROWEST) * noise(along * 0.12, 3.7, salt));
+    for (let ty = Math.max(by0, Math.floor(y - r)); ty <= Math.min(by1, Math.ceil(y + r)); ty++)
+      for (let tx = Math.max(bx0, Math.floor(x - r)); tx <= Math.min(bx1, Math.ceil(x + r)); tx++)
+        if ((tx - x) ** 2 + (ty - y) ** 2 < r * r) cells[ty * cols + tx] = value;
+  };
+  const [sx, sy] = points[0];
+  disc(sx, sy);
+  for (let k = 1; k < points.length; k++) {
+    const [ax, ay] = points[k - 1],
+      [bx, by] = points[k];
+    const len = Math.hypot(bx - ax, by - ay);
+    if (!len) continue;
+    // the wander is across the path and dies away at each point, so the path still goes through every one
+    const nx = -(by - ay) / len,
+      ny = (bx - ax) / len;
+    const steps = Math.max(1, Math.ceil(len / TUNNEL_STEP));
+    for (let s = 1; s <= steps; s++) {
+      const u = s / steps;
+      along += len / steps;
+      const off = width * TUNNEL_WANDER * Math.sin(Math.PI * u) * (noise(along * 0.09, 0.5, salt + 1) * 2 - 1);
+      disc(ax + (bx - ax) * u + nx * off, ay + (by - ay) * u + ny * off);
+    }
+  }
+}
+
+/** How much of the pull toward the middle of its box a cavern's noise is bent by: what keeps it a cavern and not a scatter. */
+const CAVERN_ROUNDING = 0.6;
+
+/**
+ * A cavern's tiles set to `value`: noise from the seed, bent toward the middle of the box, with the
+ * highest `fill` of the box taken as floor, and only the biggest piece of that kept. Taking a share of
+ * the box by rank, and not everything over one fixed height, is what makes `fill` a promise. The pockets
+ * dropped take some of it with them, so the share taken is raised until what is kept is `fill` of the box.
+ */
+function carveCavern(
+  cells: Uint8Array,
+  grid: Grid,
+  box: [number, number, number, number],
+  seed: number,
+  fill: number,
+  value: number,
+) {
+  const { cols } = grid;
+  const [x0, y0, x1, y1] = shapeBox({ kind: 'cavern', box, seed, fill }, grid);
+  const w = x1 - x0 + 1,
+    h = y1 - y0 + 1;
+  if (w < 1 || h < 1) return;
+  const salt = Math.round(seed * 1000);
+  const height = new Float64Array(w * h);
+  for (let j = 0; j < h; j++)
+    for (let i = 0; i < w; i++) {
+      // the box as given, so clamping it to the grid does not move the middle
+      const u = (x0 + i - (box[0] + box[2]) / 2) / ((box[2] - box[0] + 1) / 2),
+        v = (y0 + j - (box[1] + box[3]) / 2) / ((box[3] - box[1] + 1) / 2);
+      const n =
+        noise((x0 + i) * 0.13, (y0 + j) * 0.13, salt) * 0.65 + noise((x0 + i) * 0.31, (y0 + j) * 0.31, salt + 1) * 0.35;
+      height[j * w + i] = n - CAVERN_ROUNDING * (u * u + v * v);
+    }
+  const order = Float64Array.from(height).sort();
+  const keep = new Uint8Array(w * h);
+  /** The biggest piece of the floor above `level`, as tiles kept in `keep`; how many. */
+  const biggest = (level: number): number => {
+    const seen = new Uint8Array(w * h);
+    let best = 0,
+      bestStart = -1;
+    for (let start = 0; start < w * h; start++) {
+      if (seen[start] || height[start] < level) continue;
+      let size = 0;
+      const stack = [start];
+      while (stack.length) {
+        const t = stack.pop()!;
+        if (seen[t] || height[t] < level) continue;
+        seen[t] = 1;
+        size++;
+        const i = t % w;
+        if (i > 0) stack.push(t - 1);
+        if (i < w - 1) stack.push(t + 1);
+        if (t >= w) stack.push(t - w);
+        if (t + w < w * h) stack.push(t + w);
+      }
+      if (size > best) {
+        best = size;
+        bestStart = start;
+      }
+    }
+    keep.fill(0);
+    if (bestStart < 0) return 0;
+    const stack = [bestStart];
+    while (stack.length) {
+      const t = stack.pop()!;
+      if (keep[t] || height[t] < level) continue;
+      keep[t] = 1;
+      const i = t % w;
+      if (i > 0) stack.push(t - 1);
+      if (i < w - 1) stack.push(t + 1);
+      if (t >= w) stack.push(t - w);
+      if (t + w < w * h) stack.push(t + w);
+    }
+    return best;
+  };
+  // the level that gives `fill` after the pockets are dropped: the lowest, the fewest pockets, that does
+  const want = Math.min(1, Math.max(0, fill)) * w * h;
+  const levelFor = (share: number) => order[Math.min(w * h - 1, Math.max(0, Math.floor((1 - share) * w * h)))];
+  if (want >= w * h) keep.fill(1);
+  else {
+    let lo = Math.min(1, fill),
+      hi = 1;
+    let best = levelFor(hi);
+    for (let k = 0; k < 14; k++) {
+      const mid = (lo + hi) / 2;
+      if (biggest(levelFor(mid)) >= want) {
+        best = levelFor(mid);
+        hi = mid;
+      } else lo = mid;
+    }
+    biggest(best);
+  }
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (keep[j * w + i]) cells[(y0 + j) * cols + x0 + i] = value;
+}
+
+/** A grid's cells carved from `shapes`, in order: a pillar put back in rock comes after the floor it stands in. */
+export function carveShapes(grid: Grid, shapes: readonly Shape[]): Uint8Array {
+  const cells = new Uint8Array(grid.cols * grid.rows).fill(ROCK);
+  for (const shape of shapes) {
+    const value = shape.rock ? ROCK : OPEN;
+    if (shape.kind === 'ellipse') carveEllipse(cells, grid, shape.cx, shape.cy, shape.rx, shape.ry, shape.seed, value);
+    else if (shape.kind === 'rect') carveRect(cells, grid, ...shape.tiles, value);
+    else if (shape.kind === 'tunnel') carveTunnel(cells, grid, shape.points, shape.width, shape.seed, value);
+    else carveCavern(cells, grid, shape.box, shape.seed, shape.fill, value);
+  }
+  return cells;
+}
+
 export function buildCave(spec: CaveSpec): Cave {
   const grid = gridOf(spec),
     { cols, rows } = grid;
-  const cells = new Uint8Array(cols * rows).fill(ROCK);
-  // what the cave is carved of, in order: a pillar put back in rock comes after the floor it stands in
-  for (const shape of spec.shapes) {
-    const value = shape.rock ? ROCK : OPEN;
-    if (shape.kind === 'ellipse') carveEllipse(cells, grid, shape.cx, shape.cy, shape.rx, shape.ry, shape.seed, value);
-    else carveRect(cells, grid, ...shape.tiles, value);
-  }
+  const cells = carveShapes(grid, spec.shapes);
   // the way in is open floor, through whatever stands in it; the way out is rock, until it is opened
   carveRect(cells, grid, ...spec.entry.tiles);
   if (spec.exit) carveRect(cells, grid, ...spec.exit.tiles, EXIT, true);
@@ -393,7 +606,7 @@ export function buildCave(spec: CaveSpec): Cave {
 /** How high a lamp on a post stands. */
 export const LAMP_HEIGHT = 5.6;
 /** How far apart lamps stand along the rock, in world units, and how far off its face; and how far apart across the open floor. */
-const LAMP_SPACING = 10,
+export const LAMP_SPACING = 10,
   LAMP_OFF_ROCK = 1.4,
   FLOOR_LAMP_SPACING = 20;
 
@@ -530,7 +743,7 @@ function placeLamps(cells: Uint8Array, spec: CaveSpec, grid: Grid): Lamp[] {
         y = cy - (ny / len) * (TILE / 2 - LAMP_OFF_ROCK);
       if (nearHole(spec.holes, x, y, 8) || nearHeap(spec, x, y) || nearBelt(spec, x, y)) continue;
       if (nearCutting(grid, spec, x, y, 1)) continue;
-      if (out.some((l) => Math.hypot(l.x - x, l.y - y) < LAMP_SPACING)) continue;
+      if (out.some((l) => Math.hypot(l.x - x, l.y - y) < (spec.lampSpacing ?? LAMP_SPACING))) continue;
       out.push({ x, y, height: LAMP_HEIGHT });
     }
   }

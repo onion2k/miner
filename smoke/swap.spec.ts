@@ -94,7 +94,13 @@ test('every way out swaps in under a second, and twenty swaps leave no more behi
       .map(([cave, ms]) => `${cave} ${ms.toFixed(0)}`)
       .join(', '),
   });
-  expect(Object.keys(swaps), 'every cave after the first swapped into').toHaveLength(4);
+  expect(Object.keys(swaps), 'every cave after the first swapped into, in the order of the run').toEqual([
+    'south-gallery',
+    'east-gallery',
+    'north-vault',
+    'warrens',
+    'west-gallery',
+  ]);
 
   // the last cave, swapped into again and again
   const first = { buffers: await held(page), marks: (await page.evaluate(() => window.pushminer!.state())).trackMarks };

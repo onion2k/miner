@@ -22,6 +22,7 @@ const BIOME: Record<string, BiomeName | null> = {
   'south-gallery': 'jungle',
   'east-gallery': 'lava',
   'north-vault': 'ice',
+  warrens: 'jungle',
   'west-gallery': 'future',
 };
 

@@ -73,7 +73,7 @@ Taken on judgement, as asked; each can be put back to the user.
 | 1     | The cave as a value, holes as a list (refactor) | no            | landed  |
 | 2     | One cave after another                          | yes           | landed  |
 | 3     | Several holes and belts in a cave, in content   | yes           | landed  |
-| 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | agreed  |
+| 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | landed  |
 | 5     | Bigger caves, measured first                    | yes           | agreed  |
 | 6     | New biomes, one feature each                    | yes           | planned |
 
@@ -1040,8 +1040,28 @@ Built after Phase 3 is pushed, on the same terms.
    against the sketch.
 5. The run plays through the Warrens in the fuzzer and the balance run, and
    the smoke test can reach it by a save.
-6. Building the 4× test cave takes less time than before, with the figure
-   reported.
+6. Every shape carves only its own box, measured on the 4× test cave.
+
+**What the build showed, and the user's decision (2026-09-30).**
+
+- **Carving was not the slow part.** On the 4× test cave, carving went from
+  6.5 ms to 0.67 ms with the cells identical. The whole build stayed at about
+  100 ms, because about 95% of it is `placeBarrels`, which checks every tile
+  against every lamp and heap. The "124 ms carve" in Phase 5's table was the
+  whole build. Criterion 6 is restated as above, and `placeBarrels` moves
+  into Phase 5's swap budget.
+- **The Warrens was the heaviest cave to draw:** 5.8 ms a frame at its hole,
+  against 2.7 to 4.1 ms elsewhere. It had 3,924 props (the next most was
+  1,892), 149 lamps (next 116) and 360,702 terrain vertices. The noise
+  caverns' ragged edges carry dressing and lamps all along them. They are
+  thinned until the Warrens draws no heavier than the heaviest existing cave
+  from the same views.
+- **The Warrens was slow to clear:** 16.3 min for a thorough player and 10.2
+  for a rusher, on seeds 1 to 12. The user chose to bring it to the East
+  Gallery's pace, about 12 to 13 min thorough and 5 to 6 min rushed, with
+  lighter heaps: fewer coins, the same gems, the same layout, no belt.
+- **Phase 5's frame budget is set per camera view.** The South and East
+  Galleries already pass 4.4 ms from the highest camera.
 
 ### Tests and gates
 
@@ -1050,6 +1070,43 @@ Built after Phase 3 is pushed, on the same terms.
   They should not; the full run's figures, with the Warrens, are reported.
 - A look scene for the Warrens, and the phone.
 - `measureFrame` in the Warrens.
+
+### How the fixes landed
+
+The work paused part way through the fixes and was picked up again. What
+came of them, from the fixes' builder, checked on Opus:
+
+- **The Warrens' heaps are 440 coins each,** with the gems as they were.
+  On seeds 1 to 12, a thorough player takes 12.4 min in the Warrens and a
+  rusher 6.2 min. The response to heap size is jumpy, because the cave is
+  gem-heavy and the way out needs 90%. The tries were:
+
+  | Coins a heap | Thorough (min) | Rusher (min) |
+  | ------------ | -------------- | ------------ |
+  | 160          | 13.2           | 9.6          |
+  | 320          | 11.8           | 8.5          |
+  | 400          | 12.4           | 4.8          |
+  | 420          | 12.8           | 6.8          |
+  | 440          | 12.4           | 6.2          |
+  | 480          | 12.1           | 6.3          |
+  | 800          | 14.3           | 6.1          |
+
+- **The Warrens is dressed less densely.** It has `lampSpacing: 18` and
+  `dressing: 0.6`, options on `CaveSpec` whose defaults leave every other
+  cave's lamps and props identical, which hashes hold. The counts:
+  - lamps from 149 to 84;
+  - props from 3,924 to 2,463;
+  - feature lights from 81 to 50.
+
+  Smoother cavern edges were tried and put back: they cut vertices by 1%,
+  and moved a crack and a chamber face into rock.
+
+- **Frame times now match East and South in every view:** 4.5/4.7/5.3 ms,
+  against East's 4.5/4.8/5.2, at the hole, at the heaps and from high,
+  interleaved. The earlier 5.8 against 3.5 at the hole did not come back
+  when measured again. The thinning rests on the counts, not a measured
+  gain, and Phase 5's frame gate needs a finer instrument than
+  `measureFrame`'s 0.1 ms.
 
 ## Phase 5: bigger caves
 

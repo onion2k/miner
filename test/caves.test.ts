@@ -284,7 +284,7 @@ describe('the structure', () => {
   });
 });
 
-// ---- the five caves of the run, held to their sketches ----
+// ---- the caves of the run, each held to its sketch ----
 
 /** The heap's own size, for whether it stands clear of rock: how far its coins spread. */
 const heapReach = (coins: number) => Math.sqrt(coins) * 0.36 + 1.5;

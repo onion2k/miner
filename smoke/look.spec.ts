@@ -127,6 +127,26 @@ test.describe('what it looks like', () => {
     });
   }
 
+  // the Warrens: a cavern of noise and the hole in it, and then a winding tunnel and the next cavern from as high as the camera goes
+  test('the warrens, a cavern and its hole', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('warrens'));
+    const [hole] = await page.evaluate(() => window.pushminer!.content().holes);
+    await scene(page, { x: hole.x, y: hole.y, radius: 80 }, 180, [hole.x, hole.y - 14, Math.PI / 2]);
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('warrens.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the warrens, a tunnel and a cavern from as high as the camera goes', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('warrens'));
+    await scene(page, { x: 0, y: 0, radius: 170, polar: 0.5 }, 120);
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('warrens-tunnels.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   // several holes and belts in a cave: the North Vault's second hole among its heaps, and the East Gallery's two belts
   // running, each with the bar across where it ends
   test('the north vault, both its holes', async ({ page }) => {
@@ -392,6 +412,17 @@ test.describe('what it looks like on a phone', () => {
     await expect(page.locator('#pad')).toBeVisible();
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the warrens on a phone, a cavern and its hole', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('warrens', { bank: 500 }));
+    const [hole] = await page.evaluate(() => window.pushminer!.content().holes);
+    await scene(page, { x: hole.x, y: hole.y, radius: 84 }, 120, [hole.x, hole.y - 14, Math.PI / 2]);
+    await expect(page.locator('#pad')).toBeVisible();
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('phone-warrens.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 

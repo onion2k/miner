@@ -279,6 +279,56 @@ test('the North Vault’s two holes each bank what goes down them', async ({ pag
   expect(problems).toEqual([]);
 });
 
+test('the Warrens, reached by a save, has two holes that each bank, no belt, and a West Gallery after it', async ({
+  page,
+}) => {
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true, save: { cave: 'warrens' } });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(1);
+  });
+  const content = await page.evaluate(() => window.pushminer!.content());
+  expect(content.id).toBe('warrens');
+  expect(content.holes, 'two holes in the Warrens').toHaveLength(2);
+  expect(content.belts, 'no belt to buy in the Warrens').toEqual([]);
+  expect(content.exit, 'a way out, to the West Gallery').not.toBeNull();
+  for (const [k, hole] of content.holes.entries()) {
+    const before = await page.evaluate(() => window.pushminer!.state().bank);
+    const slot = await page.evaluate(
+      ([x, y]) => {
+        const api = window.pushminer!;
+        const coin = api.bodies('coin').find((b) => Math.hypot(b.x - x, b.y - y) > 30)!;
+        api.place(coin.slot, x, y, 1.5);
+        return coin.slot;
+      },
+      [hole.x, hole.y],
+    );
+    await play(page, 120, `a coin down hole ${k}`);
+    expect(await page.evaluate(() => window.pushminer!.state().bank), `banked down hole ${k}`).toBe(before + 1);
+    expect(slot).toBeGreaterThanOrEqual(0);
+  }
+  // out through the way out, and into the West Gallery
+  await page.evaluate(() => window.pushminer!.openExit());
+  const { beyond, out } = content.exit!;
+  await page.evaluate(
+    ([x, y, yaw]) => window.pushminer!.teleport(x, y, yaw),
+    [beyond.x, beyond.y, Math.atan2(out[1], out[0])],
+  );
+  await play(page, 3, 'out of the Warrens');
+  expect((await page.evaluate(() => window.pushminer!.state())).cave).toBe('west-gallery');
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+test('a save in the West Gallery lands in the West Gallery', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true, save: { cave: 'west-gallery' } });
+  expect((await page.evaluate(() => window.pushminer!.state())).cave).toBe('west-gallery');
+  expect((await page.evaluate(() => window.pushminer!.content())).exit, 'the last cave, with no way out').toBeNull();
+  expect(problems).toEqual([]);
+});
+
 test('the East Gallery’s two belts are bought one at a time, by name, and both run', async ({ page }) => {
   const problems = watch(page);
   await start(page, { seed: 1, paused: true, save: { cave: 'east-gallery', bank: 5000 } });

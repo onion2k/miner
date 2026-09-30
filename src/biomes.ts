@@ -282,7 +282,7 @@ export function decorate(spec: CaveSpec, s: Samples): Decor {
         y = s.y[k];
       // nothing stands on or beside a cutting: the machine's own lights are all that lights it
       if (!biome || nearCutting(grid, spec, x, y, 2)) continue;
-      const w = 1;
+      const w = spec.dressing ?? 1;
       const h = (salt: number) => hash(i, j, 300 + salt);
       const r = h(0);
       // the way into the rock here, and along the wall square to it
