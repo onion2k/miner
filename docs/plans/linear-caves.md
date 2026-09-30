@@ -1123,13 +1123,29 @@ each, in Node on this machine. These are estimates:
 Most of the swap is the new game, mostly its heaps settling, which grows
 with the coins, not the area.
 
+### Changed by what Phase 4 found (2026-09-30)
+
+- **Building a cave is mostly `placeBarrels`** (about 95% of about 100 ms
+  on the 4× test cave), not carving. It is part of the swap, so it is in the
+  swap budget, and the first lever if the swap is over.
+- **The frame budget is relative, per camera view,** not the old game's 4.4
+  ms. `measureFrame` resolves 0.1 ms, and the machine's state moves every
+  cave together by more than the caves differ; the South and East Galleries
+  already pass 4.4 ms from high. So the gate measures every cave interleaved
+  in one run, in three views (at the hole, at the heaps, from high), and
+  holds each cave's median to the worst of the caves as they stood before
+  this phase, the Warrens included, in that view. The allowance is set from
+  the wobble measured on the unchanged caves, many rounds, and written
+  beside it. The gate is seen to fail against a cave made heavier on
+  purpose. A finer instrument (GPU timestamps, or more samples) is used if
+  the wobble is too wide to catch a real difference.
+
 ### What
 
 - **Budgets, each held by a gate** in `npm run check`, with a baseline and a
   tolerance measured as the house rules say:
   - the swap, in the page, under 1 s in the biggest cave;
-  - a frame, `measureFrame`, no slower than the old game's worst (4.4 ms) in
-    any cave, and held to a baseline per cave;
+  - a frame, relative and per view, as above;
   - the terrain's vertex count per cave, held exactly, and its build time;
   - the nav's rebuild time in the biggest cave.
 - **If the swap is over budget:** settle big heaps in fewer steps, or place
@@ -1164,8 +1180,8 @@ with the coins, not the area.
 1. Each budget above has a gate that fails when the thing is made slower or
    bigger on purpose (seen failing) and passes as built.
 2. The swap into the Deep is under 1 s in the page, measured.
-3. Every cave's frame is under 4.4 ms, measured, and the Deep's frame and
-   swap are reported beside the others.
+3. Every cave's frame passes the relative gate in each view, the Deep
+   included, and the Deep's frame and swap are reported beside the others.
 4. The capacities are each cave's. The Deep at capacity does not drop what
    its heaps need.
 5. The camera at full zoom-out in the Deep: picture taken, looked at, and
