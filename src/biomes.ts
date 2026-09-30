@@ -1,28 +1,24 @@
 /**
- * Each gallery is a world of its own: the South Gallery a jungle, the North
+ * Each cave is a world of its own: the South Gallery a jungle, the North
  * Vault ice, the East Gallery lava, and the West Gallery the future. The
- * hollow in the middle is the cave as it always was.
+ * Hollow is the cave as it always was.
  *
- * A biome is how a room looks, and nothing of how it plays: its rock and
+ * A biome is how a cave looks, and nothing of how it plays: its rock and
  * floor colours and the shape of its rock, the light its lamps give, what
  * grows or stands on its rock, a feature that glows, and what drifts in its
  * air. The rock the dozer runs into, the floor it drives on, and everything
  * the coins do are the same everywhere.
  *
- * A biome does not start at a line. How much of one there is at a point is
- * its weight, from nothing at the hollow's rim to all of it by the room's
- * near edge, down the corridor between. Stones, plants and lamps take their
- * colour by the weight, smoothly. The rock and floor are drawn a colour a
- * group, not a colour a vertex, so each patch of them takes the biome's
- * palette or the cave's own by the weight as a chance, through a patchy
- * noise: the biome creeps in, in patches that grow and join, rather than
- * fading.
+ * A biome fills the whole of its cave, the way in and the way out included,
+ * and no cave has two. Stones, plants and lamps take its colour, and the rock
+ * and floor are drawn in its palette; only what stands on the rock is left off
+ * the cuttings, which is what keeps them dark but for the machine's own lights.
  */
 import type { Emit } from 'artshape-render/game/particles';
 import type { Mesh } from 'artshape-render/mesh/types';
-import { TILE, gridOf, hash, type CaveSpec } from './cave';
+import { TILE, gridOf, hash, nearCutting, type CaveSpec } from './cave';
 import { ball, box, cone, cylinder, frond, gem, lump, moved, scaled, tuft } from './meshes';
-import { noise, smoothstep } from './noise';
+import { noise } from './noise';
 import { FLOOR_TONES, ROCK_TONES, type Rgb } from './palette';
 import { FOOT_TONE, PLAIN_ROCK, type RockShape, type Samples, type TerrainStyle } from './terrain';
 
@@ -130,52 +126,24 @@ const FUTURE: Biome = {
   shape: { rough: 0.15, ledge: 0.25, beds: 1, top: 1 },
 };
 
-const listed = new WeakMap<CaveSpec, (Biome | null)[]>();
-let lastSpec: CaveSpec | null = null,
-  lastBiomes: (Biome | null)[] | null = null;
+const BIOMES: Record<BiomeName, Biome> = { jungle: JUNGLE, ice: ICE, lava: LAVA, future: FUTURE };
 
-/** Each room's biome, by its index: none for the hollow. */
-export function biomesOf(spec: CaveSpec): (Biome | null)[] {
-  // the terrain asks once a vertex, always of the same cave, so the last answer is kept to hand
-  if (spec === lastSpec) return lastBiomes!;
-  let biomes = listed.get(spec);
-  if (!biomes) listed.set(spec, (biomes = spec.areas.map((_, a) => [null, JUNGLE, ICE, LAVA, FUTURE][a] ?? null)));
-  lastSpec = spec;
-  lastBiomes = biomes;
-  return biomes;
+/** The biome of a cave, or null for the plain one. */
+export function biomeOf(spec: CaveSpec): Biome | null {
+  return spec.biome ? BIOMES[spec.biome] : null;
 }
 
 // ---- how much of a biome there is where ----
 
-/** Along a wing and across it, in world units. */
-function onWing(spec: CaveSpec, area: number, x: number, y: number): [number, number] {
-  const [dx, dy] = spec.wings[area].dir;
-  return dx ? [dx * x, y] : [dy * y, x];
-}
-
-/** The room whose biome is strongest at a point, and how strong, 0 to 1. The hollow and its walls are 0. */
-export function biomeAt(spec: CaveSpec, x: number, y: number): { area: number; weight: number } {
-  const biomes = biomesOf(spec);
-  let best = { area: 0, weight: 0 };
-  for (let a = 1; a < spec.wings.length; a++) {
-    if (!biomes[a]) continue;
-    const { mouth, room } = spec.wings[a];
-    const [along, across] = onWing(spec, a, x, y);
-    // from a little past the hollow's rim, which stays as it was, to a little into the room
-    const start = mouth * TILE + 5,
-      whole = (room.along - room.half) * TILE + 8;
-    const edge = (room.halfAcross + 3) * TILE;
-    const weight =
-      smoothstep(start, whole, along) * (1 - smoothstep(edge - 8, edge + 4, Math.abs(across - room.across * TILE)));
-    if (weight > best.weight) best = { area: a, weight };
-  }
-  return best;
+/** The cave's biome at a point, and how strong, 0 to 1: the whole of it everywhere in the cave, and nothing in a plain one. */
+export function biomeAt(spec: CaveSpec, _x: number, _y: number): { biome: Biome | null; weight: number } {
+  const biome = biomeOf(spec);
+  return { biome, weight: biome ? 1 : 0 };
 }
 
 /** A colour of the cave's own, taken as far toward a biome's as the biome is strong at a point. */
 export function tint(spec: CaveSpec, base: Rgb, x: number, y: number, pick: (b: Biome) => Rgb): Rgb {
-  const { area, weight } = biomeAt(spec, x, y);
-  const biome = biomesOf(spec)[area];
+  const { biome, weight } = biomeAt(spec, x, y);
   if (!biome || weight <= 0) return base;
   const to = pick(biome);
   return [0, 1, 2].map((i) => base[i] + (to[i] - base[i]) * weight) as Rgb;
@@ -186,27 +154,21 @@ export function lampColour(spec: CaveSpec, x: number, y: number): Rgb {
   return tint(spec, LAMP_COLOUR, x, y, (b) => b.lamp.map((c) => c * b.lampBright) as Rgb);
 }
 
-/** The shade of a group of rock or floor, by the palette it was drawn from: 0 the cave's own, else a room's biome. */
+/** The shade of a group of rock or floor, by the palette it was drawn from: 0 the cave's own, 1 the cave's biome. */
 export function groundTone(spec: CaveSpec, palette: number, rock: boolean, tone: number): Tone {
-  const biome = biomesOf(spec)[palette];
+  const biome = palette ? biomeOf(spec) : null;
   if (!biome) return (rock ? ROCK_TONES : FLOOR_TONES)[tone] as Tone;
   return (rock ? biome.rock : biome.floor)[tone];
 }
 
-/** How the terrain takes the biomes: which palette each patch is drawn from, its shades, and the rock's shape. */
+/** How the terrain takes the biome: which palette each patch is drawn from, its shades, and the rock's shape. */
 export function biomeStyle(spec: CaveSpec): TerrainStyle {
-  const biomes = biomesOf(spec),
+  const biome = biomeOf(spec),
     { originX, originY } = gridOf(spec);
   return {
-    palette(x, y) {
-      const { area, weight } = biomeAt(spec, x, y);
-      if (weight <= 0) return 0;
-      // patches that grow as the weight does, ragged at the triangle's own size
-      const threshold = 0.6 * noise(x * 0.16, y * 0.16, 91) + 0.4 * hash(Math.round(x * 3), Math.round(y * 3), 93);
-      return weight >= 0.999 || weight > threshold ? area : 0;
-    },
-    tone(palette, x, y, rock, tone) {
-      if (biomes[palette]?.name !== 'future' || rock || tone === FOOT_TONE) return tone;
+    palette: () => (biome ? 1 : 0),
+    tone(_palette, x, y, rock, tone) {
+      if (biome?.name !== 'future' || rock || tone === FOOT_TONE) return tone;
       // the future's floor is panels, a tile each, alternating, with a dark seam round each
       const fx = (x - originX) / TILE,
         fy = (y - originY) / TILE;
@@ -215,18 +177,9 @@ export function biomeStyle(spec: CaveSpec): TerrainStyle {
       if (Math.min(ex, 1 - ex, ey, 1 - ey) < 0.07) return SEAM_TONE;
       return (Math.floor(fx) + Math.floor(fy)) & 1;
     },
-    scree(x, y) {
-      // the future's rock is cut and does not shed; the rest sheds as the cave's own does
-      const { area, weight } = biomeAt(spec, x, y);
-      return biomes[area]?.name === 'future' ? 1 - weight : 1;
-    },
-    shape(x, y) {
-      const { area, weight } = biomeAt(spec, x, y);
-      const to = biomes[area]?.shape;
-      if (!to || weight <= 0) return PLAIN_ROCK;
-      const mix = (k: keyof RockShape) => PLAIN_ROCK[k] + (to[k] - PLAIN_ROCK[k]) * weight;
-      return { rough: mix('rough'), ledge: mix('ledge'), beds: mix('beds'), top: mix('top') };
-    },
+    // the future's rock is cut and does not shed; the rest sheds as the cave's own does
+    scree: () => (biome?.name === 'future' ? 0 : 1),
+    shape: () => biome?.shape ?? PLAIN_ROCK,
   };
 }
 
@@ -284,7 +237,6 @@ export interface Prop {
   colour: Rgb;
   roughness: number;
   /** The room it is drawn with, dark until it is open. */
-  area: number;
 }
 
 /** A light that is part of a biome: how it beats, and the glow laid over it. */
@@ -300,7 +252,6 @@ export interface FeatureLight {
   glow: number;
   /** A phase for its beat, so no two beat together. */
   phase: number;
-  area: number;
   biome: BiomeName;
 }
 
@@ -316,7 +267,8 @@ export interface Decor {
  * that it would drive through. The same every time for the same terrain.
  */
 export function decorate(spec: CaveSpec, s: Samples): Decor {
-  const biomes = biomesOf(spec);
+  const biome = biomeOf(spec);
+  const grid = gridOf(spec);
   const props: Prop[] = [],
     lights: FeatureLight[] = [];
   const { gx, gy, depth } = s;
@@ -325,12 +277,12 @@ export function decorate(spec: CaveSpec, s: Samples): Decor {
     for (let i = 1; i < gx - 1; i++) {
       const k = j * gx + i,
         d = depth[k];
-      if (!Number.isFinite(d) || s.area[k] === 255) continue;
+      if (!Number.isFinite(d) || !s.near[k]) continue;
       const x = s.x[k],
         y = s.y[k];
-      const { area: b, weight: w } = biomeAt(spec, x, y);
-      const biome = biomes[b];
-      if (!biome || w < 0.05) continue;
+      // nothing stands on or beside a cutting: the machine's own lights are all that lights it
+      if (!biome || nearCutting(grid, spec, x, y, 2)) continue;
+      const w = 1;
       const h = (salt: number) => hash(i, j, 300 + salt);
       const r = h(0);
       // the way into the rock here, and along the wall square to it
@@ -338,7 +290,7 @@ export function decorate(spec: CaveSpec, s: Samples): Decor {
         gyd = finite(k + gx) - finite(k - gx);
       const gl = Math.hypot(gxd, gyd) || 1;
       const along = Math.atan2(gyd, gxd) + Math.PI / 2;
-      const at: Place = { x, y, z: s.z[k], d, area: s.area[k], w, h, along, nx: gxd / gl, ny: gyd / gl, i, j };
+      const at: Place = { x, y, z: s.z[k], d, w, h, along, nx: gxd / gl, ny: gyd / gl, i, j };
       if (biome.name === 'ice') ice(at, r, props, lights);
       else if (biome.name === 'jungle') jungle(at, r, props, lights, s);
       else if (biome.name === 'lava') lava(at, r, props, lights, s);
@@ -355,7 +307,6 @@ interface Place {
   z: number;
   /** How far into the rock. */
   d: number;
-  area: number;
   /** The biome's weight here. */
   w: number;
   h: (salt: number) => number;
@@ -381,7 +332,7 @@ function highest(s: Samples, i: number, j: number, reach: number): number {
 
 /** Ice: clusters of crystals at the foot of the rock, some glowing from inside; drifts of snow; spires of ice on the tops. */
 function ice(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
-  const { x, y, z, d, area, w, h } = p;
+  const { x, y, z, d, w, h } = p;
   if (d >= 1.2 && d < 2.6 && r < 0.06 * w) {
     const glowing = h(1) < 0.45;
     const n = 3 + Math.floor(h(2) * 4);
@@ -400,7 +351,6 @@ function ice(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
         size: [radius, radius, height / 2],
         colour: glowing ? [0.8, 1.6, 2.0] : [0.45, 0.65, 0.85],
         roughness: 0.08,
-        area,
       });
     }
     if (glowing)
@@ -414,7 +364,6 @@ function ice(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
         beat: 'pulse',
         glow: 6,
         phase: h(3) * 6,
-        area,
         biome: 'ice',
       });
   } else if (d > 0.1 && d < 1.1 && r < 0.22 * w) {
@@ -429,7 +378,6 @@ function ice(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
       size: [size, size * (0.6 + h(3) * 0.4), 0.3 + h(4) * 0.2],
       colour: [0.6, 0.66, 0.74],
       roughness: 0.85,
-      area,
     });
   } else if (d > 3 && r < 0.05 * w) {
     const radius = 0.3 + h(1) * 0.4;
@@ -443,14 +391,13 @@ function ice(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
       size: [radius, radius, 2 + h(3) * 3],
       colour: [0.5, 0.65, 0.82],
       roughness: 0.15,
-      area,
     });
   }
 }
 
 /** Jungle: ferns at the foot of the rock, grass at the foot of that, vines down its faces, trees on its tops, and glowing mushrooms. */
 function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: Samples) {
-  const { x, y, z, d, area, w, h, i, j } = p;
+  const { x, y, z, d, w, h, i, j } = p;
   const green = (t: number): Rgb => [lerp(0.06, 0.2, t), lerp(0.25, 0.5, t), lerp(0.04, 0.08, t)];
   if (d >= 0.8 && d < 1.8 && r < 0.04 * w) {
     const n = 3 + Math.floor(h(1) * 3);
@@ -472,7 +419,6 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
         size: [stem, stem, height],
         colour: [0.8, 0.8, 0.7],
         roughness: 0.7,
-        area,
       });
       props.push({
         kind: 'cap',
@@ -484,7 +430,6 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
         size: [cap, cap, cap],
         colour: [0.35, 1.3, 0.75],
         roughness: 0.4,
-        area,
       });
     }
     lights.push({
@@ -497,7 +442,6 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
       beat: 'pulse',
       glow: 3.5,
       phase: h(2) * 6,
-      area,
       biome: 'jungle',
     });
   } else if (d >= 0.9 && d < 2.4 && r < 0.35 * w) {
@@ -512,7 +456,6 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
       size: [size, size, size * (0.8 + h(3) * 0.4)],
       colour: green(h(4)),
       roughness: 0.8,
-      area,
     });
   } else if (d === 0 && r < 0.6 * w && [-1, 1, -s.gx, s.gx].some((o) => s.depth[j * s.gx + i + o] > 0)) {
     const size = 0.8 + h(1) * 0.8;
@@ -526,7 +469,6 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
       size: [size, size, size],
       colour: green(0.5 + h(3) * 0.5),
       roughness: 0.9,
-      area,
     });
   } else if (d >= 0.5 && d < 1.3 && r < 0.12 * w) {
     const top = highest(s, i, j, 3) - 0.3;
@@ -541,7 +483,6 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
         size: [0.15, 0.15, top],
         colour: [0.04, 0.16, 0.035],
         roughness: 0.9,
-        area,
       });
   } else if (d > 3.5 && r < 0.02 * w) {
     const height = 2.5 + h(1) * 2,
@@ -556,7 +497,6 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
       size: [radius, radius, height],
       colour: [0.18, 0.11, 0.06],
       roughness: 0.9,
-      area,
     });
     for (let m = 0; m < 3; m++) {
       const a = (m / 3) * Math.PI * 2 + h(4),
@@ -571,7 +511,6 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
         size: [size, size, size * 0.7],
         colour: green(h(30 + m) * 0.6),
         roughness: 0.85,
-        area,
       });
     }
   }
@@ -579,7 +518,7 @@ function jungle(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: S
 
 /** Lava: pools of it on the tops, glowing and lighting the rock round them; lava seeping at the foot of the rock; basalt columns and obsidian. */
 function lava(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: Samples) {
-  const { x, y, z, d, area, w, h, i, j } = p;
+  const { x, y, z, d, w, h, i, j } = p;
   if (d > 3 && r < 0.012 * w) {
     const radius = 1.2 + h(1) * 1.2;
     const surface = highest(s, i, j, 1) - 0.15;
@@ -593,7 +532,6 @@ function lava(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: Sam
       size: [radius, radius, 0.1],
       colour: [4, 0.7, 0.05],
       roughness: 1,
-      area,
     });
     lights.push({
       x,
@@ -605,7 +543,6 @@ function lava(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: Sam
       beat: 'flicker',
       glow: 5,
       phase: h(2) * 6,
-      area,
       biome: 'lava',
     });
   } else if (d > 0.5 && d < 1.5 && r < 0.3 * w) {
@@ -621,7 +558,6 @@ function lava(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: Sam
       size: [0.8 + h(1) * 0.8, 0.12 + h(2) * 0.1, 0.03],
       colour: [2.6, 0.6, 0.08],
       roughness: 1,
-      area,
     });
   } else if (d >= 1.5 && d < 3 && r < 0.12 * w) {
     const n = 1 + Math.floor(h(1) * 3);
@@ -639,7 +575,6 @@ function lava(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: Sam
         size: [radius, radius, 1.5 + h(40 + m) * 3],
         colour: [0.035, 0.032, 0.034],
         roughness: 0.75,
-        area,
       });
     }
   } else if (d > 2 && r < 0.03 * w) {
@@ -654,14 +589,13 @@ function lava(p: Place, r: number, props: Prop[], lights: FeatureLight[], s: Sam
       size: [radius, radius, 0.5 + h(4) * 0.75],
       colour: [0.02, 0.02, 0.025],
       roughness: 0.05,
-      area,
     });
   }
 }
 
 /** The future: neon strips along the foot of the walls, in cyan and magenta; crates; pylons on the tops with beacons blinking. */
 function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
-  const { x, y, z, d, area, w, h } = p;
+  const { x, y, z, d, w, h } = p;
   const cyan = noise(x * 0.03, y * 0.03, 97) < 0.5;
   if (d > 0.5 && d < 1.5 && w > 0.35) {
     // a strip along the foot of the wall, halfway up the slope from the floor to here
@@ -678,7 +612,6 @@ function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
       size: [1.4, 0.18, 0.25],
       colour: cyan ? [0.4, 2.8, 3.4] : [3.2, 0.4, 2.6],
       roughness: 0.3,
-      area,
     });
     if (r < 0.08 * w)
       lights.push({
@@ -691,7 +624,6 @@ function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
         beat: 'steady',
         glow: 0,
         phase: 0,
-        area,
         biome: 'future',
       });
   } else if (d > 3 && r < 0.005 * w) {
@@ -706,7 +638,6 @@ function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
       size: [0.6, 0.6, height],
       colour: [0.14, 0.15, 0.17],
       roughness: 0.35,
-      area,
     });
     lights.push({
       x,
@@ -718,7 +649,6 @@ function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
       beat: 'blink',
       glow: 3,
       phase: h(2) * 6,
-      area,
       biome: 'future',
     });
   } else if (d >= 1.8 && d < 2.6 && r < 0.12 * w) {
@@ -734,7 +664,6 @@ function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
       size: [size, size, size],
       colour,
       roughness: 0.6,
-      area,
     });
     if (h(3) < 0.3)
       props.push({
@@ -747,7 +676,6 @@ function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
         size: [size * 0.8, size * 0.8, size * 0.8],
         colour,
         roughness: 0.6,
-        area,
       });
   }
 }
@@ -756,10 +684,10 @@ function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
 
 /**
  * Something drifting in a biome's air at a point: snow falling, a firefly,
- * an ember, a mote of light. Null for the hollow.
+ * an ember, a mote of light. Null for the Hollow.
  */
-export function airParticle(spec: CaveSpec, area: number, x: number, y: number, random: () => number): Emit | null {
-  switch (biomesOf(spec)[area]?.name) {
+export function airParticle(spec: CaveSpec, x: number, y: number, random: () => number): Emit | null {
+  switch (biomeOf(spec)?.name) {
     case 'ice':
       return {
         position: [x, y, 9 + random() * 6],

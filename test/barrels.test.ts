@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BODY_CAPACITY, buildCave } from '../src/cave';
+import { BODY_CAPACITY } from '../src/cave';
 import { BLAST_RADIUS, Barrels, FUSE } from '../src/barrels';
 import { BARREL_KIND, KIND_RADIUS, makeWorld, type Pusher, type World } from '../src/physics';
-import { AREAS, GRID, SPEC } from './helpers';
+import { caveOf } from './helpers';
 
-const cave = buildCave(SPEC);
+/** The Hollow, where the hole is at the origin and the floor is open all round it. */
+const cave = caveOf('hollow');
 const DT = 1 / 60;
-const world = () => makeWorld(BODY_CAPACITY, cave.solid(AREAS.map(() => true)), GRID, SPEC.holes);
+const world = () => makeWorld(BODY_CAPACITY, cave.solid(true), cave.grid, cave.holes);
 /** A box of a machine's, at (x, y) facing +x, `owner`'s. */
 const box = (x: number, y: number, owner: number): Pusher => ({
   x,

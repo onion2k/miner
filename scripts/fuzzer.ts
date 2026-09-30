@@ -2,25 +2,26 @@
  * The game played by a monkey: the real game, without the picture, driven
  * at random and made to do at random everything a player can make happen —
  * charging walls, chambers, lamps and barrels; pushing anything at all down
- * the hole; setting barrels off; buying things; opening rooms and going on
- * into them; honking; saving and loading — and checked after every few
- * frames for anything that must always hold and does not (`invariants.ts`),
- * and for anything thrown.
+ * the hole; setting barrels off; buying things; opening the way out and
+ * driving out through it, on into the next cave; honking; saving and
+ * loading — and checked after every few frames for anything that must always
+ * hold and does not (`invariants.ts`), and for anything thrown.
  *
- * Only what a player could do: a chamber is broken into, or a wall hit, only
- * in a room the player can reach. A monkey that did what no player can would
+ * Only what a player could do. A monkey that did what no player can would
  * find bugs no player will.
  *
  * From a seed, so a failure can be played again exactly: `npm run fuzz --
  * --seed N` does, and prints what was done before it went wrong.
  */
-import { buildCave, sealPoint, tileCentre } from '../src/cave';
-import { FIVE_ROOMS } from '../src/caves';
+import { Autopilot } from '../src/autopilot';
+import { buildCave, tileCentre } from '../src/cave';
+import { RUN } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
 import { Game, KIND_CAPACITY, type GameEvents } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { BARREL_KIND, KIND_NAME, KIND_RADIUS } from '../src/physics';
 import { wallTiles } from '../src/walls';
+import { onward } from './run';
 
 const DT = 1 / 60;
 /** How many frames between checks, when nothing has just been done. */
@@ -79,28 +80,22 @@ export function fuzz(seed: number, frames: number): FuzzResult {
 
   try {
     let store = memoryStore();
-    const cave = buildCave(FIVE_ROOMS);
-    const { areas, wings, secrets, walls } = cave.spec;
-    let game = new Game(new Economy(store, FIVE_ROOMS), cave, events);
+    const first = new Economy(store, RUN);
+    let game = new Game(first, buildCave(first.cave()), events);
+    /** The autopilot, while the monkey has handed it the controls to drive out through the way out. */
+    const hand: { pilot: Autopilot | null } = { pilot: null };
     let drive = { throttle: 0, steer: 0 };
     let busy = 0;
     const pick = <T>(xs: readonly T[]): T | undefined => (xs.length ? xs[Math.floor(random() * xs.length)] : undefined);
     const between = (a: number, b: number) => a + random() * (b - a);
-    /** The rooms the player can reach: the one being cleared, and the next if it is open. */
-    const reachable = () => {
-      const e = game.economy;
-      const next = e.next();
-      return [e.current(), ...(next !== null && e.nextOpen() ? [next] : [])];
-    };
-    const inReach = (area: number) => reachable().includes(area);
-    /** Somewhere to be: by a heap, a barrel, a lamp, a wall, a chamber or a coin, in reach. */
+    /** Somewhere to be: by a heap, a barrel, a lamp, a wall, a chamber or a coin. */
     const somewhere = (): [number, number] | undefined => {
-      const { world } = game;
+      const { world, cave } = game;
       const places: [number, number][] = [];
-      for (const a of reachable()) for (const h of areas[a].heaps) places.push([h.x, h.y]);
-      for (const b of cave.barrels) if (inReach(b.area)) places.push([b.x, b.y]);
-      cave.lamps.forEach((l) => inReach(l.area) && places.push([l.x, l.y]));
-      walls.forEach((w, k) => inReach(w.area) && places.push(...wallTiles(cave, k)));
+      for (const h of cave.spec.heaps) places.push([h.x, h.y]);
+      for (const b of cave.barrels) places.push([b.x, b.y]);
+      cave.lamps.forEach((l) => places.push([l.x, l.y]));
+      cave.spec.walls.forEach((_, k) => places.push(...wallTiles(cave, k)));
       for (let n = 0; n < 8 && world.live; n++) {
         const i = Math.floor(random() * world.count);
         if (world.alive[i]) places.push([world.x[i], world.y[i]]);
@@ -119,7 +114,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           if (t >= 0 && !solid[t]) return [px, py];
         }
       }
-      return tileCentre(cave.grid, cave.grid.cols / 2, cave.grid.rows / 2);
+      return [game.cave.holes[0].x + 12, game.cave.holes[0].y];
     };
     const act = (name: string, detail: string) => {
       count(done, name);
@@ -193,7 +188,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const at = somewhere();
           if (!at) return;
           const [x, y] = openNear(at[0], at[1]);
-          const i = game.stock.spawnBarrel(game.economy.current(), x, y, KIND_RADIUS[BARREL_KIND] + 0.05);
+          const i = game.stock.spawnBarrel(x, y, KIND_RADIUS[BARREL_KIND] + 0.05);
           if (i >= 0) game.barrels.light(i, between(0.1, 1.5));
           act('barrel', `at ${x.toFixed(1)},${y.toFixed(1)}: slot ${i}`);
         },
@@ -212,25 +207,35 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         3,
         () => {
           game.economy.open();
-          act('open', `the next room: ${game.economy.save.areas.map(Number).join('')}`);
+          act('open', `the way out of ${game.economy.save.cave}: ${game.economy.save.open}`);
         },
       ],
       [
-        3,
+        4,
         () => {
-          const e = game.economy;
-          const next = e.next();
-          if (next === null || !e.nextOpen()) return;
-          const [sx, sy] = sealPoint(cave, next);
-          const [dx, dy] = wings[next].dir;
-          Object.assign(game.dozer, { x: sx + dx * 4, y: sy + dy * 4, speed: 0 });
-          act('go on', `into ${areas[next].name}`);
+          // with the way out open, to it, and out through it by the autopilot's route: from where the
+          // dozer is, or from its mouth
+          const { economy, cave } = game;
+          if (!economy.save.open || !cave.spec.exit) return;
+          if (random() < 0.5) {
+            const [x0, y0, x1, y1] = cave.spec.exit.tiles;
+            const [ox, oy] = cave.spec.exit.out;
+            const [x, y] = tileCentre(
+              cave.grid,
+              ox ? (ox > 0 ? x0 : x1) : (x0 + x1) / 2,
+              oy ? (oy > 0 ? y0 : y1) : (y0 + y1) / 2,
+            );
+            Object.assign(game.dozer, { x: x - ox * 12, y: y - oy * 12, yaw: Math.atan2(oy, ox), speed: 0 });
+          }
+          hand.pilot = new Autopilot(game, 'rusher', { shop: false });
+          busy = 900;
+          act('drive out', `of ${economy.save.cave} from ${game.dozer.x.toFixed(1)},${game.dozer.y.toFixed(1)}`);
         },
       ],
       [
         2,
         () => {
-          const k = pick(secrets.map((s, k) => (inReach(s.area) ? k : -1)).filter((k) => k >= 0));
+          const k = pick(game.cave.spec.secrets.map((_, k) => k));
           if (k === undefined) return;
           game.economy.reveal(k);
           act('reveal', `chamber ${k}`);
@@ -239,7 +244,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
       [
         3,
         () => {
-          const w = pick(walls.map((wall, w) => (inReach(wall.area) ? w : -1)).filter((w) => w >= 0));
+          const w = pick(game.cave.spec.walls.map((_, w) => w));
           if (w === undefined) return;
           const damage = Math.floor(between(1, 300));
           game.economy.hitWall(w, damage);
@@ -272,10 +277,13 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const live = game.world.live;
           const barrels = game.stock.kinds[BARREL_KIND];
           store = memoryStore(json);
-          game = new Game(new Economy(store, FIVE_ROOMS), cave, events);
+          const economy = new Economy(store, RUN);
+          game = new Game(economy, buildCave(economy.cave()), events);
           const after = game.economy.save;
-          const same = (['bank', 'room', 'done', 'drones', 'body'] as const).filter((k) => before[k] !== after[k]);
-          const sameLists = (['areas', 'secrets', 'walls', 'lampsBroken', 'belts'] as const).filter(
+          const same = (['bank', 'cave', 'open', 'done', 'drones', 'body'] as const).filter(
+            (k) => before[k] !== after[k],
+          );
+          const sameLists = (['secrets', 'walls', 'lampsBroken', 'belts'] as const).filter(
             (k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]),
           );
           const problems = [...same, ...sameLists].map(
@@ -283,7 +291,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           );
           if (game.stock.kinds[BARREL_KIND] !== barrels)
             problems.push(`reload: ${barrels} barrels came back ${game.stock.kinds[BARREL_KIND]}`);
-          // what was left of every room, chamber, side room and wall comes back exactly, bar what there is no room to draw
+          // what was left of the cave, every chamber, side room and wall comes back exactly, bar what there is no room to draw
           const was = JSON.parse(json) as { left: number[][] };
           game.stock.left.forEach((kinds, source) =>
             kinds.forEach((n, kind) => {
@@ -294,6 +302,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
             }),
           );
           if (problems.length) throw new Reload(problems);
+          hand.pilot = null;
           act('reload', `${live} bodies, ${game.world.live} back`);
         },
       ],
@@ -314,7 +323,18 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         }
       }
       busy--;
-      game.step(DT, drive);
+      if (hand.pilot && busy > 0) hand.pilot.step(DT);
+      else {
+        hand.pilot = null;
+        game.step(DT, drive);
+      }
+      // out through the way out: on into the next cave, as whoever owns the game does
+      if (game.left) {
+        const was = game.economy.save.cave;
+        game = onward(game, game.economy, RUN, events);
+        hand.pilot = null;
+        log.push(`frame ${frame}: left ${was} for ${game.economy.save.cave}`);
+      }
       if (acted || frame % CHECK_EVERY === 0) {
         const problems = checkInvariants(game);
         if (problems.length) return fail(problems);

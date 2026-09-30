@@ -81,6 +81,18 @@ export class CameraRig {
     orbit.setSpherical(CAMERA_HOME);
   }
 
+  /**
+   * Straight to a place, with nothing of where it was left over: for a machine that has come into a new cave, whose
+   * coordinates have nothing to do with the last one's, so that easing after it would sweep the camera across the
+   * void between them.
+   */
+  snapTo(x: number, y: number) {
+    this.aim[0] = this.follow[0] = x;
+    this.aim[1] = this.follow[1] = y;
+    this.lead[0] = this.lead[1] = 0;
+    this.camera.target = [x, y, 1.5];
+  }
+
   /** The player has taken the camera, at `now` seconds. */
   grab(now: number) {
     this.manualUntil = now + MANUAL_FOR;

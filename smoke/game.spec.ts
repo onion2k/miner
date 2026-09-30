@@ -44,6 +44,24 @@ function content(png: Buffer) {
   return { spread: Math.sqrt(sq / n - mean * mean), lit: lit / n };
 }
 
+/**
+ * The machine put on the cave's floor by its hole and the game stopped there. A new game starts at the dark
+ * outer end of the way in, where the page is nearly black by design, so a picture of the cave is taken from
+ * the floor.
+ */
+async function onTheFloor(page: Page) {
+  await page.evaluate(() => {
+    const api = window.pushminer!;
+    api.pause();
+    const hole = api.content().hole;
+    api.teleport(hole.x, hole.y - 14, Math.PI / 2);
+    api.step(60);
+    // the camera eases after the machine, so it is put there too, at the distance it starts from
+    api.look(hole.x, hole.y - 14, { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 });
+    api.step(1);
+  });
+}
+
 test('boots with no errors and draws the cave', async ({ page }, info) => {
   const problems = watch(page);
   // measured, as a player's boot is
@@ -59,10 +77,11 @@ test('boots with no errors and draws the cave', async ({ page }, info) => {
     type: 'frame cost per coin detail, ms',
     description: calibration.map((c) => c.toFixed(1)).join(', '),
   });
+  await onTheFloor(page);
   const shot = await page.screenshot();
   await info.attach('cave', { body: shot, contentType: 'image/png' });
   const c = content(shot);
-  // the hollow's lamps light most of what the camera starts on (about 0.64 lit, a spread of about 60);
+  // the lamps light most of what the camera starts on (about 0.6 lit, a spread of about 60);
   // a picture gone black is about 0.02, from the HUD alone
   expect(c.lit, 'share of the screen lit').toBeGreaterThan(0.2);
   expect(c.spread, 'variety in the picture').toBeGreaterThan(25);
@@ -79,6 +98,7 @@ test('boots with stages of the renderer turned off from the address, and the cav
   await ready(page);
   // the boot screen is still fading over the frame when the game says it is ready: put away, so the cave is what is measured
   await page.locator('#boot').evaluate((el: HTMLElement) => (el.style.display = 'none'));
+  await onTheFloor(page);
   const shot = await page.screenshot();
   await info.attach('daylight, stages off', { body: shot, contentType: 'image/png' });
   // lit by the sky alone, with every lamp off: a cave with the switches ignored would be black
@@ -92,8 +112,18 @@ test('drives the dozer by the keyboard, and it leaves tracks', async ({ page }, 
   const before = await page.evaluate(() => window.pushminer!.state().dozer);
   await page.keyboard.down('w');
   await expect
-    .poll(() => page.evaluate(() => window.pushminer!.state().dozer.y), { timeout: 5000 })
-    .toBeGreaterThan(before.y + 5);
+    .poll(
+      () =>
+        page.evaluate(
+          ([x, y]) => {
+            const d = window.pushminer!.state().dozer;
+            return Math.hypot(d.x - x, d.y - y);
+          },
+          [before.x, before.y],
+        ),
+      { timeout: 5000 },
+    )
+    .toBeGreaterThan(5);
   await page.keyboard.down('a');
   await page.waitForTimeout(600);
   await page.keyboard.up('a');
@@ -153,7 +183,7 @@ test('keeps the game where it was across a reload', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.pushminer?.ready ?? false), { timeout: 60_000 }).toBe(true);
   const after = await page.evaluate(() => window.pushminer!.state());
   expect(after.bank).toBe(before.bank);
-  expect(after.room).toBe(before.room);
+  expect(after.cave).toBe(before.cave);
   // the same coins, give or take any that were on their way down the hole
   expect(Math.abs(after.live - before.live)).toBeLessThan(20);
   expect(after.barrels.count).toBe(before.barrels.count);

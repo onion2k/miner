@@ -1,5 +1,5 @@
 /**
- * Barrels that go off. One stands about in each room like anything else on
+ * Barrels that go off. A few stand about in each cave like anything else on
  * the floor, and can be pushed about like anything else. Hit one with the
  * dozer and its fuse is lit: it flashes, faster and faster, and a few seconds
  * later it goes off, and everything lying near it is thrown outward and up.
@@ -67,7 +67,7 @@ export class Barrels {
 
   /**
    * A barrel gone from the world some other way than going off — down the
-   * hole, or sealed in with its room — has its fuse put out at once, so a
+   * hole, or left behind with its cave — has its fuse put out at once, so a
    * barrel put in its slot after it does not go off in its place.
    */
   forget(i: number) {
@@ -128,7 +128,7 @@ export class Barrels {
     const { world } = this;
     const blasts: Blast[] = [];
     for (const [i, fuse] of [...this.fuses]) {
-      // gone down the hole, or sealed in with its room, and its slot perhaps something else by now
+      // gone down the hole, and its slot perhaps something else by now
       if (!world.alive[i] || world.kind[i] !== BARREL_KIND) {
         this.fuses.delete(i);
         continue;

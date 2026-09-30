@@ -2,7 +2,7 @@
  * The lamps: which are lit, which a machine knocks over, which are worth
  * lighting this frame, and how one lies once it has gone over.
  *
- * The lamps themselves, where they stand and which room each lights, are the
+ * The lamps themselves, where they stand, are the
  * cave's (`cave.ts`); what has become of them is the save's. This is only the
  * rules, handed both.
  */
@@ -32,15 +32,14 @@ export function holeLamps(holes: readonly HoleSpec[]): [number, number][][] {
   );
 }
 
-/** What has become of the lamps, and which rooms are open: the parts of the save a lamp's state hangs on. */
+/** What has become of the lamps: the part of the save a lamp's state hangs on. */
 export interface LampState {
   lampsBroken: readonly number[];
-  areas: readonly boolean[];
 }
 
-/** Whether a lamp is lit: standing, and in a room open and not sealed. */
-export function lampOn(lamps: readonly Lamp[], k: number, state: LampState): boolean {
-  return !state.lampsBroken.includes(k) && state.areas[lamps[k].area];
+/** Whether a lamp is lit: every one standing is, in the cave the player is in. */
+export function lampOn(_lamps: readonly Lamp[], k: number, state: LampState): boolean {
+  return !state.lampsBroken.includes(k);
 }
 
 /** The way a lamp fell, which is always the same way for the same lamp. */

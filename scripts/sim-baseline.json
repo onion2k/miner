@@ -1,50 +1,50 @@
 {
   "south": {
-    "banked": 275.5,
-    "lost": 1,
-    "touching": 5.25,
-    "held": 2.381,
+    "banked": 482.625,
+    "lost": 0.125,
+    "touching": 7.375,
+    "held": 0.226,
     "blocked": 0,
     "barsOut": 0
   },
   "north": {
-    "banked": 371.375,
-    "lost": 2.125,
-    "touching": 9.625,
-    "held": 1.942,
+    "banked": 589.875,
+    "lost": 1.5,
+    "touching": 6.375,
+    "held": 1.726,
     "blocked": 0,
     "barsOut": 0
   },
   "east with belt": {
-    "banked": 666.875,
-    "lost": 4.125,
-    "touching": 9.5,
-    "held": 1.895,
+    "banked": 878,
+    "lost": 0.875,
+    "touching": 3.25,
+    "held": 0.747,
     "blocked": 0,
     "barsOut": 0
   },
   "west with belt": {
-    "banked": 1134.375,
-    "lost": 4.125,
-    "touching": 9.625,
-    "held": 2.122,
+    "banked": 2969.625,
+    "lost": 3.5,
+    "touching": 6.75,
+    "held": 1.091,
     "blocked": 0,
     "barsOut": 0
   },
   "south, player patrolling": {
-    "banked": 195.125,
-    "lost": 1.125,
-    "touching": 6.625,
-    "held": 7.22,
-    "blocked": 313,
+    "banked": 391.25,
+    "lost": 0.625,
+    "touching": 9.125,
+    "held": 0.74,
+    "blocked": 135.625,
     "barsOut": 0
   },
   "north, chamber open": {
-    "banked": 415,
-    "lost": 1.375,
-    "touching": 7.5,
-    "held": 1.962,
+    "banked": 733.375,
+    "lost": 1.875,
+    "touching": 7,
+    "held": 0.98,
     "blocked": 0,
-    "barsOut": 0.125
+    "barsOut": 0.875
   }
 }

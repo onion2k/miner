@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { lookAt, multiply, perspective } from 'artshape-render/gpu/camera';
-import { LAMP_HEIGHT, buildCave } from '../src/cave';
+import { LAMP_HEIGHT } from '../src/cave';
 import { LAMP_KNOCK, LAMP_REACH, fallYaw, lampOn, lampPose, lampsHit, lampsInView, type View } from '../src/lamps';
 import { project } from '../src/matrix';
-import { AREAS, SPEC } from './helpers';
+import { caveOf } from './helpers';
 
-const { lamps } = buildCave(SPEC);
+const { lamps } = caveOf('south-gallery');
 
 /** A camera over a point, from where the game starts it, at a screen shape. */
 function view(x: number, y: number, aspect: number): View {
@@ -23,13 +23,11 @@ function view(x: number, y: number, aspect: number): View {
 }
 
 describe('the lamps', () => {
-  it('are lit standing in an open room, and not otherwise', () => {
-    const k = lamps.findIndex((l) => l.area === 1);
-    const areas = AREAS.map((_, a) => a === 0);
-    expect(lampOn(lamps, k, { lampsBroken: [], areas })).toBe(false);
-    areas[1] = true;
-    expect(lampOn(lamps, k, { lampsBroken: [], areas })).toBe(true);
-    expect(lampOn(lamps, k, { lampsBroken: [k], areas })).toBe(false);
+  it('are lit standing, and not once knocked over', () => {
+    const k = 3;
+    expect(lampOn(lamps, k, { lampsBroken: [] })).toBe(true);
+    expect(lampOn(lamps, k, { lampsBroken: [k] })).toBe(false);
+    expect(lampOn(lamps, k + 1, { lampsBroken: [k] })).toBe(true);
   });
 
   it('are knocked over by the hull or the blade coming near, and only those standing', () => {

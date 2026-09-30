@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { BODY_CAPACITY, buildCave } from '../src/cave';
+import { BODY_CAPACITY } from '../src/cave';
 import { KIND_RADIUS, KIND_VALUE, makeWorld, type Pusher, type World } from '../src/physics';
 import { beltOf } from '../src/tools';
 import { Dozer } from '../src/dozer';
 import { TILE } from '../src/cave';
-import { AREAS, COLS, GRID, HOLE, ORIGIN_X, SPEC, grid, tileAt, withSeed } from './helpers';
+import { COLS, ORIGIN_X, TEST_GRID, caveOf, grid, tileAt, tileIn, withSeed } from './helpers';
 
 const DT = 1 / 60;
-const cave = buildCave(SPEC);
-const openSolid = () => cave.solid(AREAS.map(() => true));
+/** The Hollow, where the hole is at the origin and the floor is open all round it. */
+const cave = caveOf('hollow');
+const { grid: GRID, holes } = cave;
+const HOLE = holes[0];
+const openSolid = () => cave.solid(true);
 
 /** The private parts of the world the invariants are about. */
 interface Innards {
@@ -85,7 +88,7 @@ function sweeper(cx: number, cy: number, radius: number, t: number, prev: Pusher
 
 describe('the physics', () => {
   it('lets a dropped coin come to rest on the floor, and sleep', () => {
-    const world = makeWorld(16, openSolid(), GRID, SPEC.holes);
+    const world = makeWorld(16, openSolid(), GRID, holes);
     const i = world.spawn(0, -30, 10, 5);
     for (let f = 0; f < 180; f++) world.step(DT, () => {});
     expect(world.z[i]).toBeCloseTo(KIND_RADIUS[0], 2);
@@ -93,7 +96,7 @@ describe('the physics', () => {
   });
 
   it('banks what goes down the hole, once, and frees its slot', () => {
-    const world = makeWorld(16, openSolid(), GRID, SPEC.holes);
+    const world = makeWorld(16, openSolid(), GRID, holes);
     const kinds = [0, 1, 4, 5];
     for (const k of kinds) world.spawn(k, HOLE.x + (Math.random() - 0.5), HOLE.y + (Math.random() - 0.5), 2);
     const banked: number[] = [];
@@ -107,7 +110,7 @@ describe('the physics', () => {
   });
 
   it('refuses a body when full', () => {
-    const world = makeWorld(2, openSolid(), GRID, SPEC.holes);
+    const world = makeWorld(2, openSolid(), GRID, holes);
     expect(world.spawn(0, -30, 10, 1)).toBe(0);
     expect(world.spawn(0, -31, 10, 1)).toBe(1);
     expect(world.spawn(0, -32, 10, 1)).toBe(-1);
@@ -115,8 +118,8 @@ describe('the physics', () => {
 
   it('keeps its sleep bookkeeping straight, and every body out of the rock, while blades churn a heap', () => {
     withSeed(7, () => {
-      const world = makeWorld(BODY_CAPACITY, openSolid(), GRID, SPEC.holes);
-      const heap = AREAS[0].heaps[0];
+      const world = makeWorld(BODY_CAPACITY, openSolid(), GRID, holes);
+      const heap = cave.spec.heaps[0];
       for (let k = 0; k < 900; k++) {
         const r = Math.sqrt(Math.random()) * 9,
           a = Math.random() * Math.PI * 2;
@@ -141,7 +144,7 @@ describe('the physics', () => {
       }
       for (let i = 0; i < world.count; i++) {
         if (!world.alive[i]) continue;
-        const t = tileAt(world.x[i], world.y[i]);
+        const t = tileIn(cave, world.x[i], world.y[i]);
         expect(t, `body ${i} off the grid`).toBeGreaterThanOrEqual(0);
         expect(world.solid[t], `body ${i} in rock at ${world.x[i]},${world.y[i]}`).toBe(0);
         expect(world.z[i]).toBeGreaterThan(-HOLE.depth);
@@ -156,12 +159,12 @@ describe('the physics', () => {
       const face = ORIGIN_X + 40 * TILE;
       for (const angle of [0, 0.3, -0.5]) {
         withSeed(7 + thick, () => {
-          const world = makeWorld(2000, solid, GRID, SPEC.holes);
+          const world = makeWorld(2000, solid, TEST_GRID, holes);
           // a band of coins against the wall, and a big blade driven at them, backed off, and driven at them again
           for (let k = 0; k < 500; k++)
             world.spawn(0, face - 0.5 - Math.random() * 4, -10 + Math.random() * 20, 0.5 + Math.random() * 2);
           for (let f = 0; f < 60; f++) world.step(DT, () => {});
-          const dozer = new Dozer(solid, GRID);
+          const dozer = new Dozer(solid, TEST_GRID);
           dozer.x = face - 16;
           dozer.y = 0;
           dozer.yaw = angle;
@@ -186,8 +189,9 @@ describe('the physics', () => {
   });
 
   it('carries a coin along a running belt', () => {
-    const belt = AREAS.find((a) => a.belt)!.belt!.spec;
-    const world = makeWorld(16, openSolid(), GRID, SPEC.holes);
+    const south = caveOf('south-gallery');
+    const belt = south.spec.belts[0].spec;
+    const world = makeWorld(16, south.solid(true), south.grid, south.holes);
     world.belts = [beltOf(belt)];
     const b = world.belts[0];
     const start = { x: b.cx - b.dx * b.half * 0.5, y: b.cy - b.dy * b.half * 0.5 };

@@ -95,9 +95,7 @@ export function wallTiles(cave: Cave, w: number): [number, number][] {
 export function stashBehind(cave: Cave, w: number): Stash | undefined {
   const { walls, stashes } = cave.spec;
   const [x0, y0, x1, y1] = walls[w].tiles;
-  return stashes.find(
-    (st) => st.area === walls[w].area && Math.hypot((x0 + x1) / 2 - st.at[0], (y0 + y1) / 2 - st.at[1]) < 12,
-  );
+  return stashes.find((st) => Math.hypot((x0 + x1) / 2 - st.at[0], (y0 + y1) / 2 - st.at[1]) < 12);
 }
 
 /** A brick of a wall still standing, as it is to be drawn. */

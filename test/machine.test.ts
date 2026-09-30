@@ -16,9 +16,9 @@ import { ANCHORS, ENVELOPE, TRIANGLE_BUDGET, bladeMesh, machineMeshes } from '..
 import { DynamicScene } from '../src/scene-dynamic';
 import { PAINTS } from '../src/economy';
 import { KIND_CAPACITY } from '../src/game';
-import { BODY_CAPACITY, buildCave } from '../src/cave';
+import { BODY_CAPACITY } from '../src/cave';
 import { holeLamps } from '../src/lamps';
-import { AREAS, SPEC } from './helpers';
+import { caveOf, gameIn } from './helpers';
 
 const machine = machineMeshes();
 const tris = (m: Mesh) => m.indices.length / 3;
@@ -85,7 +85,7 @@ describe('the machine as drawn', () => {
 
   it('is lit from its own headlamps and cab light, where the mesh puts them', () => {
     const dozer = { x: 5, y: -14, yaw: 1.1 };
-    const cave = buildCave(SPEC);
+    const cave = caveOf('hollow');
     const eye: [number, number, number] = [5, -14 - 78 * Math.sin(0.62), 78 * Math.cos(0.62)];
     const v = new Float32Array(16),
       p = new Float32Array(16),
@@ -109,8 +109,8 @@ describe('the machine as drawn', () => {
       vein: null,
       sealing: null,
       magnet: null,
-      holes: SPEC.holes,
-      holeLamps: holeLamps(SPEC.holes),
+      holes: cave.holes,
+      holeLamps: holeLamps(cave.holes),
       holePulse: [0],
     });
     const c = Math.cos(dozer.yaw),
@@ -153,7 +153,7 @@ describe('the dynamic scene’s machines', () => {
     const scene = new DynamicScene(target, {
       bodyCapacity: BODY_CAPACITY,
       kindCapacity: KIND_CAPACITY,
-      belts: AREAS.map((a) => a.belt?.spec ?? null),
+      belts: caveOf('south-gallery').spec.belts.map((b) => b.spec),
       bots: 3,
       botScale: BOT_SCALE,
       botBladeWidth: BOT_SPEC.bladeWidth,
@@ -199,7 +199,7 @@ describe('the Spiderdozer as drawn', () => {
     const scene = new DynamicScene(target, {
       bodyCapacity: BODY_CAPACITY,
       kindCapacity: KIND_CAPACITY,
-      belts: AREAS.map((a) => a.belt?.spec ?? null),
+      belts: caveOf('south-gallery').spec.belts.map((b) => b.spec),
       bots: 3,
       botScale: BOT_SCALE,
       botBladeWidth: BOT_SPEC.bladeWidth,
@@ -231,6 +231,58 @@ describe('the Spiderdozer as drawn', () => {
     scene.setBody('dozer');
     expect(scene.machineParts.dark.positions).toEqual(tracked.dark.positions);
     expect(drawn()).not.toContain(spider.dark);
+  });
+});
+
+describe('the belts of the cave being played', () => {
+  it('are drawn from the cave the page has swapped to, and the old cave’s are let go', () => {
+    const moves = new Map<number, number>();
+    const target = {
+      setDynamic: () => undefined,
+      move: (group: number, _m: Float32Array, count?: number) => moves.set(group, count ?? -1),
+      tint: () => undefined,
+    };
+    const scene = new DynamicScene(target, {
+      bodyCapacity: BODY_CAPACITY,
+      kindCapacity: KIND_CAPACITY,
+      belts: caveOf('south-gallery').spec.belts.map((b) => b.spec),
+      bots: 3,
+      botScale: BOT_SCALE,
+      botBladeWidth: BOT_SPEC.bladeWidth,
+      bladeWidth: 6.5,
+      paint: PAINTS[0],
+      trackPages: [],
+    });
+    const cave = caveOf('south-gallery');
+    const game = gameIn('south-gallery');
+    const length = (b: { spec: { x0: number; y0: number; x1: number; y1: number } }) =>
+      Math.hypot(b.spec.x1 - b.spec.x0, b.spec.y1 - b.spec.y0);
+    const frame = (belts: number[]) =>
+      scene.write({
+        world: game.world,
+        brickGrade: game.stock.brickGrade,
+        dozer: game.dozer,
+        bots: [],
+        belts,
+        flag: false,
+        legs: null,
+        tracks: { counts: [], dirty: new Set() },
+        barrel: () => 'idle',
+        t: 0,
+      });
+    // the group the bars on the running belts are drawn in
+    const STRIPES = 16;
+    frame([0]);
+    const south = moves.get(STRIPES)!;
+    expect(south, 'the south gallery’s belt running, with its bars').toBe(Math.floor(length(cave.spec.belts[0]) / 2.6));
+    // the east gallery's belt is longer, so it carries more bars: they are its bars that are drawn after the swap
+    const east = caveOf('east-gallery');
+    expect(length(east.spec.belts[0])).not.toBeCloseTo(length(cave.spec.belts[0]), 0);
+    scene.setBelts(east.spec.belts.map((b) => b.spec));
+    frame([0]);
+    const after = moves.get(STRIPES)!;
+    expect(after).toBe(Math.min(160, Math.floor(length(east.spec.belts[0]) / 2.6)));
+    expect(after).not.toBe(south);
   });
 });
 

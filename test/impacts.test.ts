@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { BRICK, SECRET } from '../src/cave';
+import { BRICK, EXIT, SECRET } from '../src/cave';
 import { Impacts, SMASH_SPEED, type ImpactState } from '../src/impacts';
-import { COLS, GRID, ROWS, SECRETS, SPEC, WALLS } from './helpers';
+import { caveOf } from './helpers';
 
-/** A grid with a wall tile at (10, 10) and a chamber's rock at (20, 20). */
+/** The South Gallery has one chamber and one wall, which is all the tiles below stand for. */
+const { spec: SPEC, grid: GRID } = caveOf('south-gallery');
+const { secrets: SECRETS, walls: WALLS } = SPEC;
+const { cols: COLS, rows: ROWS } = GRID;
+
+/** A grid with a wall tile at (10, 10), a chamber's rock at (20, 20) and a way out's at (40, 40). */
 const cells = new Uint8Array(COLS * ROWS);
 cells[10 * COLS + 10] = BRICK;
 cells[20 * COLS + 20] = SECRET;
+cells[40 * COLS + 40] = EXIT;
 const state = (over: Partial<ImpactState> = {}): ImpactState => ({
   wallsDown: WALLS.map(() => false),
   secretsOpen: SECRETS.map(() => false),
@@ -40,5 +46,10 @@ describe('driving into the rock', () => {
     const impacts = new Impacts(cells, GRID, SPEC);
     expect(impacts.hit(30, 30, 1, 20, 0, state())).toBeNull();
     expect(impacts.hit(20, 20, 1, -SMASH_SPEED, 0, state())).toEqual({ type: 'reveal', chamber: 0 });
+  });
+
+  it('takes the way out for rock: driven into square and flat out, it does nothing, open or not', () => {
+    const impacts = new Impacts(cells, GRID, SPEC);
+    for (let t = 0; t < 4; t++) expect(impacts.hit(40, 40, 1, 14, t, state())).toBeNull();
   });
 });

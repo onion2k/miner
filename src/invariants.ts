@@ -3,14 +3,16 @@
  * rules that, broken, are a bug whatever the feature was.
  *
  * Nothing solid is in the rock and nothing is not a number. The counts the
- * game keeps of what is in the cave agree with what is in it. Nothing from a
- * sealed room is still about. The bank is a number and the rooms are in an
- * order that makes sense. The save is plain data that comes back as it went.
+ * game keeps of what is in the cave agree with what is in it. The bank is a
+ * number, the save's cave is in the run and every list of it is the cave's
+ * size, and the way out is open only when enough is banked. The save is plain
+ * data that comes back as it went.
  *
  * Checked by the fuzzer after everything it does, by the test API on asking,
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
-import { TILE } from './cave';
+import { EXIT, TILE } from './cave';
+import { CLEAR_SHARE } from './economy';
 import type { Game } from './game';
 import { BARREL_KIND, KINDS, KIND_NAME } from './physics';
 import { NO_SOURCE } from './stock';
@@ -20,9 +22,11 @@ const EACH = 3;
 
 export function checkInvariants(game: Game): string[] {
   const out: string[] = [];
+  // a game that has been left is of a cave the save is no longer in: there is nothing of it to hold to the save
+  if (game.left) return out;
   const { world, stock, economy, barrels, cave } = game;
   const save = economy.save;
-  const { areas, order } = cave.spec;
+  const { spec } = cave;
   const { sources } = economy;
   const { cols, rows, originX, originY } = cave.grid;
   const report = (sort: string, found: string[]) => {
@@ -43,7 +47,6 @@ export function checkInvariants(game: Game): string[] {
     buried: string[] = [];
   const kinds = new Array<number>(KINDS).fill(0);
   const bySource = Array.from({ length: sources.count }, () => new Array<number>(KINDS).fill(0));
-  const sealedIn: string[] = [];
   let live = 0;
   for (let i = 0; i < world.count; i++) {
     if (!world.alive[i]) continue;
@@ -60,18 +63,11 @@ export function checkInvariants(game: Game): string[] {
     const from = stock.origin[i];
     if (from !== NO_SOURCE) {
       if (from >= sources.count) notNumbers.push(`${at(i)} from no source (${from})`);
-      else {
-        bySource[from][k]++;
-        if (economy.sealed(sources.area(from)))
-          sealedIn.push(`${at(i)}, from sealed ${areas[sources.area(from)].name}`);
-      }
-    } else if (k === BARREL_KIND && economy.sealed(stock.home[i])) {
-      sealedIn.push(`${at(i)}, of sealed ${areas[stock.home[i]].name}`);
+      else bySource[from][k]++;
     }
   }
   report('not a number', notNumbers);
   report('in the rock', buried);
-  report('left behind in a sealed room', sealedIn);
   if (live !== world.live) out.push(`counts: the world says ${world.live} bodies and holds ${live}`);
   const miscounted: string[] = [];
   for (let k = 0; k < KINDS; k++)
@@ -94,17 +90,38 @@ export function checkInvariants(game: Game): string[] {
     .map(({ m, j }) => `${j ? `drone ${j}` : 'the dozer'} at ${m.x.toFixed(1)},${m.y.toFixed(1)}`);
   report('a machine in the rock', stuck);
 
-  // the bank and the rooms
+  // the bank, and where the player has got to
   if (!Number.isFinite(save.bank) || save.bank < 0) out.push(`the bank: ${save.bank}`);
-  if (!order.includes(save.room)) out.push(`the room being cleared is no room: ${save.room}`);
-  else if (!save.areas[save.room]) out.push(`the room being cleared, ${areas[save.room].name}, is not open`);
-  if (!save.areas[0]) out.push('the hollow is shut');
-  // no room past the next is open, and no room behind the one being cleared but the hollow
-  const here = order.indexOf(save.room);
-  order.forEach((a, n) => {
-    if (n > here + 1 && save.areas[a]) out.push(`${areas[a].name} is open, past the next room`);
-    if (n > 0 && n < here && save.areas[a]) out.push(`${areas[a].name} is open, behind the room being cleared`);
-  });
+  if (!economy.run.some((c) => c.id === save.cave)) out.push(`the save's cave is not in the run: ${save.cave}`);
+  else if (save.cave !== spec.id) out.push(`the game is in ${spec.id} and the save in ${save.cave}`);
+  // every list of the cave is the cave's size, and nothing in it is out of the grid
+  const sized = (name: string, list: readonly unknown[], want: number) => {
+    if (list.length !== want) out.push(`the save's ${name} is ${list.length} long, and the cave has ${want}`);
+  };
+  sized('secrets', save.secrets, spec.secrets.length);
+  sized('walls', save.walls, spec.walls.length);
+  sized('wallDamage', save.wallDamage, spec.walls.length);
+  sized('left', save.left, sources.count);
+  if (save.rubble.length % 4) out.push(`the rubble is ${save.rubble.length} numbers, not a multiple of four`);
+  if (save.barrels && save.barrels.length % 3)
+    out.push(`the barrels are ${save.barrels.length} numbers, not a multiple of three`);
+  for (const k of save.lampsBroken)
+    if (!(k >= 0 && k < cave.lamps.length)) out.push(`a lamp knocked over that the cave has not: ${k}`);
+  for (const id of save.belts)
+    if (!spec.belts.some((b) => b.id === id)) out.push(`a belt bought that the cave has not: ${id}`);
+  // the way out is open only when enough is banked, and never in the last cave, which ends instead
+  if (save.open && economy.isLast()) out.push('the last cave has its way out open, and has none');
+  if (save.done && !economy.isLast()) out.push(`the game is done in ${spec.id}, which is not the last cave`);
+  // a game not yet stepped has not had the chance to notice that a save it was given has cleared the cave
+  if (game.t > 0 && stock.banked() >= CLEAR_SHARE && !save.open && !save.done)
+    out.push(`enough is banked (${Math.floor(stock.banked() * 100)}%) and the way out is shut`);
+  // the way out's rock is solid exactly when it is shut
+  for (let t = 0; t < cave.cells.length; t++) {
+    if (cave.cells[t] === EXIT && world.solid[t] !== (save.open ? 0 : 1)) {
+      out.push(`the way out is ${save.open ? 'open' : 'shut'} and its rock is not, at tile ${t}`);
+      break;
+    }
+  }
 
   // the save is plain data, and comes back as it went
   const json = JSON.stringify(save);

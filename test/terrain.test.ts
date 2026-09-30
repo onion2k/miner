@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TILE, buildCave, chamberCentre, rockish } from '../src/cave';
+import { EXIT, TILE, chamberCentre, rockish, tileCentre } from '../src/cave';
 import {
   FOOT_BAND,
   FOOT_TONE,
@@ -10,10 +10,14 @@ import {
   floorHeight,
   rockHeight,
 } from '../src/terrain';
-import { AREAS, COLS, FIVE, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, SECRETS, SPEC } from './helpers';
+import { caveOf } from './helpers';
 
-const cave = buildCave(SPEC);
-const hidden = SECRETS.map(() => false);
+/** The South Gallery, which has a chamber to break into and a way out to open. */
+const cave = caveOf('south-gallery');
+const SPEC = cave.spec;
+const HOLE = cave.holes[0];
+const { cols: COLS, rows: ROWS, originX: ORIGIN_X, originY: ORIGIN_Y } = cave.grid;
+const hidden = SPEC.secrets.map(() => false);
 const terrain = buildTerrain(cave, hidden);
 
 /** How far a point is from the nearest tile that is rock to look at. */
@@ -58,16 +62,15 @@ describe('the terrain', () => {
 
   it('keeps the floor under what rests on it', () => {
     for (let x = -60; x <= 60; x += 1.7)
-      for (let y = -40; y <= 40; y += 1.3) expect(floorHeight(SPEC.holes, x, y)).toBeLessThanOrEqual(0);
+      for (let y = -40; y <= 40; y += 1.3) expect(floorHeight(cave.holes, x, y)).toBeLessThanOrEqual(0);
     // level where it meets the collar round the hole
-    expect(floorHeight(SPEC.holes, HOLE.x + HOLE.radius + 0.4, HOLE.y)).toBeCloseTo(0, 6);
+    expect(floorHeight(cave.holes, HOLE.x + HOLE.radius + 0.4, HOLE.y)).toBeCloseTo(0, 6);
   });
 
-  it('names a real room, floor or rock, and shade for every group, with whole triangles', () => {
+  it('names a palette, floor or rock, and shade for every group, with whole triangles', () => {
     expect(terrain.groups.length).toBeGreaterThan(0);
     for (const g of terrain.groups) {
-      expect(g.area).toBeGreaterThanOrEqual(0);
-      expect(g.area).toBeLessThan(AREAS.length);
+      expect(g.palette).toBeGreaterThanOrEqual(0);
       expect(g.tone).toBeLessThan(TONES);
       expect(g.mesh.positions.length % 9).toBe(0);
       expect(g.mesh.normals.length).toBe(g.mesh.positions.length);
@@ -84,13 +87,13 @@ describe('the terrain', () => {
 
   it('takes the rock away from a chamber once it is broken into', () => {
     const k = 0;
-    const [cx, cy] = chamberCentre(FIVE, k);
+    const [cx, cy] = chamberCentre(cave, k);
     const highest = (t: typeof terrain) => {
       let top = -Infinity;
       for (const g of t.groups) {
         const p = g.mesh.positions;
         for (let v = 0; v < p.length; v += 3)
-          if (Math.hypot(p[v] - cx, p[v + 1] - cy) < 1.5) top = Math.max(top, p[v + 2]);
+          if (Math.hypot(p[v] - cx, p[v + 1] - cy) < 3.2) top = Math.max(top, p[v + 2]);
       }
       return top;
     };
@@ -99,10 +102,28 @@ describe('the terrain', () => {
       highest(
         buildTerrain(
           cave,
-          SECRETS.map((_, j) => j === k),
+          SPEC.secrets.map((_, j) => j === k),
         ),
       ),
     ).toBeLessThan(0.5);
+  });
+
+  it('takes the rock away from the way out once it is open, and keeps it while it is shut', () => {
+    const exits = [...cave.cells.keys()].filter((t) => cave.cells[t] === EXIT);
+    const tall = (t: typeof terrain, tile: number) => {
+      const [x, y] = tileCentre(cave.grid, tile % COLS, (tile / COLS) | 0);
+      let top = -Infinity;
+      for (const g of t.groups) {
+        const p = g.mesh.positions;
+        for (let v = 0; v < p.length; v += 3)
+          if (Math.hypot(p[v] - x, p[v + 1] - y) < 3.2) top = Math.max(top, p[v + 2]);
+      }
+      return top;
+    };
+    // a tile in the middle of the way out, well clear of the floor it meets
+    const inside = exits[exits.length >> 1];
+    expect(tall(terrain, inside), 'shut').toBeGreaterThan(2);
+    expect(tall(buildTerrain(cave, hidden, undefined, true), inside), 'open').toBeLessThan(0.5);
   });
 
   it('meets the floor at a slope and not a step, and climbs from there', () => {

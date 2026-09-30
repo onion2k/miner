@@ -32,7 +32,7 @@ async function hideStats(page: Page) {
   await page.locator('#stats').evaluate((el: HTMLElement) => (el.hidden = true));
 }
 
-/** Where the camera stands for a room: looking at a point, from round and above. */
+/** Where the camera stands for a cave: looking at a point, from round and above. */
 interface View {
   x: number;
   y: number;
@@ -41,9 +41,9 @@ interface View {
   radius?: number;
 }
 
-/** A save with the room open and being cleared, and the rooms before it sealed. */
-function inRoom(room: number, more: SaveSetup = {}): SaveSetup {
-  return { room, areas: [0, 1, 2, 3, 4].map((a) => a === 0 || a === room), ...more };
+/** A save standing in the cave `id`. */
+function inCave(id: string, more: SaveSetup = {}): SaveSetup {
+  return { cave: id, ...more };
 }
 
 /**
@@ -69,14 +69,32 @@ async function scene(page: Page, view: View, frames = 120, at?: [number, number,
   );
 }
 
-/** The middle of a room's heaps, so each picture is aimed at where its coins are and not at a hard-coded point. */
-async function heart(page: Page, room: number): Promise<[number, number]> {
-  return page.evaluate((a) => {
-    const heaps = window.pushminer!.content().rooms[a].heaps;
+/**
+ * The game started for a scene: seeded, paused, and the dozer put on the cave's floor by its hole. A machine
+ * comes into a cave in the dark of its way in, and the page is black by how dark it is where the machine
+ * stands, so a scene that did not move it would be a picture of the fade and not of the cave.
+ */
+async function begin(page: Page, save?: SaveSetup) {
+  await start(page, { seed: 11, paused: true, save });
+  const dark = await page.evaluate(() => {
+    const api = window.pushminer!;
+    api.pause();
+    const hole = api.content().hole;
+    api.teleport(hole.x, hole.y - 14, Math.PI / 2);
+    api.step(1);
+    return api.state().darkness;
+  });
+  expect(dark, 'the dozer on the floor, in the light').toBe(0);
+}
+
+/** The middle of the cave's heaps, so each picture is aimed at where its coins are and not at a hard-coded point. */
+async function heart(page: Page): Promise<[number, number]> {
+  return page.evaluate(() => {
+    const heaps = window.pushminer!.content().heaps;
     const x = heaps.reduce((n, h) => n + h.x, 0) / heaps.length;
     const y = heaps.reduce((n, h) => n + h.y, 0) / heaps.length;
     return [x, y] as [number, number];
-  }, room);
+  });
 }
 
 /** The cave as drawn, without the words over it. */
@@ -85,34 +103,34 @@ const cave = (page: Page) => page.locator('#view');
 test.describe('what it looks like', () => {
   test('the hollow, from the start', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true });
-    await scene(page, { x: 0, y: 0, radius: 78 }, 180);
+    await begin(page);
+    await scene(page, { x: 0, y: 0, radius: 78 }, 180, [0, -14, Math.PI / 2]);
     await hideStats(page);
     await expect(cave(page)).toHaveScreenshot('hollow.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
-  for (const [name, room] of [
-    ['south, the jungle', 1],
-    ['north, the ice', 2],
-    ['east, the lava', 3],
-    ['west, the future', 4],
+  for (const [name, id] of [
+    ['south gallery, the jungle', 'south-gallery'],
+    ['north vault, the ice', 'north-vault'],
+    ['east gallery, the lava', 'east-gallery'],
+    ['west gallery, the future', 'west-gallery'],
   ] as const) {
     test(`the ${name}`, async ({ page }) => {
       const problems = watch(page);
-      await start(page, { seed: 11, paused: true, save: inRoom(room) });
-      const [x, y] = await heart(page, room);
+      await begin(page, inCave(id));
+      const [x, y] = await heart(page);
       await scene(page, { x, y, radius: 90 }, 180, [x, y - 14, Math.PI / 2]);
       await hideStats(page);
-      await expect(cave(page)).toHaveScreenshot(`room-${room}.png`, TOLERANCE);
+      await expect(cave(page)).toHaveScreenshot(`${id}.png`, TOLERANCE);
       expect(problems).toEqual([]);
     });
   }
 
   test('the dozer, up close', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, save: inRoom(1, { flag: true }) });
-    const [x, y] = await heart(page, 1);
+    await begin(page, inCave('south-gallery', { flag: true }));
+    const [x, y] = await heart(page);
     await scene(page, { x, y, azimuth: 0.7, polar: 1.0, radius: 22 }, 120, [x, y, Math.PI / 2]);
     await hideStats(page);
     await expect(cave(page)).toHaveScreenshot('dozer.png', TOLERANCE);
@@ -121,7 +139,7 @@ test.describe('what it looks like', () => {
 
   test('the Spiderdozer, standing and mid-stride', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, save: inRoom(1, { bank: 1000 }) });
+    await begin(page, inCave('south-gallery', { bank: 1000 }));
     await page.evaluate(() => {
       const api = window.pushminer!;
       api.buy('body:spider');
@@ -133,7 +151,7 @@ test.describe('what it looks like', () => {
     await hideStats(page);
     await expect(cave(page)).toHaveScreenshot('spider.png', TOLERANCE);
     // walking: set down on open floor, driven across it, and the picture taken while a set of legs is in the air
-    const [x, y] = await heart(page, 1);
+    const [x, y] = await heart(page);
     await page.evaluate(
       ([x, y]) => {
         const api = window.pushminer!;
@@ -154,7 +172,7 @@ test.describe('what it looks like', () => {
 
   test('a drone, up close', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, save: inRoom(1, { drones: 1 }) });
+    await begin(page, inCave('south-gallery', { drones: 1 }));
     const at = await page.evaluate(() => {
       const api = window.pushminer!;
       api.pause();
@@ -170,27 +188,27 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
-  // the foot of the rock, up close, in every room: where the floor meets the wall, and what lies there
-  for (const [name, room] of [
-    ['hollow', 0],
-    ['jungle', 1],
-    ['ice', 2],
-    ['lava', 3],
-    ['future', 4],
+  // the foot of the rock, up close, in every cave: where the floor meets the wall, and what lies there
+  for (const [name, id] of [
+    ['hollow', 'hollow'],
+    ['jungle', 'south-gallery'],
+    ['ice', 'north-vault'],
+    ['lava', 'east-gallery'],
+    ['future', 'west-gallery'],
   ] as const) {
     test(`the foot of the rock in the ${name}`, async ({ page }) => {
       const problems = watch(page);
-      await start(page, { seed: 11, paused: true, save: inRoom(room) });
-      await page.evaluate((a) => {
+      await begin(page, inCave(id));
+      await page.evaluate(() => {
         const api = window.pushminer!;
         api.step(60);
-        // by the room's edge: the heap furthest from the hole, and on outward from it toward the wall
-        const heaps = api.content().rooms[a].heaps;
+        // by the cave's edge: the heap furthest from the hole, and on outward from it toward the wall
+        const heaps = api.content().heaps;
         const h = heaps.reduce((f, p) => (Math.hypot(p.x, p.y) > Math.hypot(f.x, f.y) ? p : f));
         const len = Math.hypot(h.x, h.y) || 1;
         api.look(h.x + (h.x / len) * 9, h.y + (h.y / len) * 9, { azimuth: 0.9, polar: 1.05, radius: 26 });
         api.step(1);
-      }, room);
+      });
       await hideStats(page);
       await expect(cave(page)).toHaveScreenshot(`foot-${name}.png`, TOLERANCE);
       expect(problems).toEqual([]);
@@ -199,12 +217,22 @@ test.describe('what it looks like', () => {
 
   test('a barrel going off, mid-blast', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true });
+    await begin(page);
     const barrel = await page.evaluate(() => {
       const api = window.pushminer!;
       api.pause();
       api.step(120);
       const b = api.bodies('barrel')[0];
+      // the barrels stand clear of the heaps, so a handful of coins is carried over and set round this one,
+      // for the blast to throw
+      api
+        .bodies('coin')
+        .slice(0, 60)
+        .forEach((c, n) => {
+          const a = n * 2.4;
+          api.place(c.slot, b.x + Math.cos(a) * (1.5 + (n % 5)), b.y + Math.sin(a) * (1.5 + (n % 5)), 1 + (n % 3));
+        });
+      api.step(30);
       api.lightBarrel(b.slot, 0.2);
       return b;
     });
@@ -225,18 +253,84 @@ test.describe('what it looks like', () => {
 
   test('the cave done, with the vein running', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, save: inRoom(4, { done: true, drones: 2, bank: 3000 }) });
-    const [x, y] = await heart(page, 4);
-    await scene(page, { x, y, radius: 90 }, 240, [x, y - 14, Math.PI / 2]);
+    await begin(page, inCave('west-gallery', { done: true, drones: 2, bank: 3000 }));
+    const { x, y } = (await page.evaluate(() => window.pushminer!.content())).vein;
+    await scene(page, { x, y, radius: 60 }, 240, [x - 10, y - 14, Math.PI / 2]);
     await hideStats(page);
     await expect(cave(page)).toHaveScreenshot('done.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
+  // the way out: cracking open when the cave is cleared, driven down in the dark, and come out of into the next cave
+  test('the way out opening, with its burst and the arrow', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page);
+    const mouth = await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      const { mouth, out } = api.content().exit!;
+      api.teleport(mouth.x - out[0] * 40, mouth.y - out[1] * 40, Math.atan2(out[1], out[0]));
+      api.step(60);
+      api.openExit();
+      // the rock has burst and the dust is still rising
+      api.step(14);
+      api.look(mouth.x - out[0] * 20, mouth.y - out[1] * 20, { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 });
+      api.step(1);
+      return mouth;
+    });
+    expect(mouth).toBeDefined();
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('exit-opening.png', TOLERANCE);
+    await expect(page.locator('#cameraNote')).toHaveText('the way out is open');
+    expect(problems).toEqual([]);
+  });
+
+  test('inside the cutting, with only the headlights', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, save: inCave('south-gallery', { open: true }) });
+    const dark = await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      const { mouth, beyond, out } = api.content().exit!;
+      // a quarter of the way down from the mouth to the leaving line, where it is dark and the headlights still show it
+      const at = { x: mouth.x + (beyond.x - mouth.x) * 0.25, y: mouth.y + (beyond.y - mouth.y) * 0.25 };
+      api.teleport(at.x, at.y, Math.atan2(out[1], out[0]));
+      api.step(30);
+      api.look(at.x, at.y, { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 });
+      api.step(1);
+      return api.state().darkness;
+    });
+    expect(dark, 'dark, but not yet black').toBeGreaterThan(0.25);
+    expect(dark).toBeLessThan(0.7);
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('cutting.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('arriving in the next cave, dark, with its name', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, save: inCave('hollow', { open: true }) });
+    await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      api.step(30);
+      // driven out past the leaving line, by the test API's hand on the machine; the swap is the page's own
+      const { beyond, out } = api.content().exit!;
+      api.teleport(beyond.x, beyond.y, Math.atan2(out[1], out[0]));
+      api.step(2);
+      api.step(20);
+    });
+    const now = await page.evaluate(() => window.pushminer!.state());
+    expect(now.cave).toBe('south-gallery');
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('arriving.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the workshop, with everything to buy', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, save: inRoom(1, { bank: 4000, drones: 1, horn: true }) });
-    const [x, y] = await heart(page, 1);
+    await begin(page, inCave('south-gallery', { bank: 4000, drones: 1, horn: true }));
+    const [x, y] = await heart(page);
     await scene(page, { x, y, radius: 90 }, 120);
     // the key is read in a frame of the game, so one has to be stepped for it to land
     await page.keyboard.press('b');
@@ -253,8 +347,8 @@ test.describe('what it looks like on a phone', () => {
 
   test('the touch controls over the cave', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, save: inRoom(1, { bank: 500 }) });
-    const [x, y] = await heart(page, 1);
+    await begin(page, inCave('south-gallery', { bank: 500 }));
+    const [x, y] = await heart(page);
     await scene(page, { x, y, radius: 84 }, 120);
     await expect(page.locator('#pad')).toBeVisible();
     await hideStats(page);
@@ -262,10 +356,48 @@ test.describe('what it looks like on a phone', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the way out open, on a phone', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page);
+    await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      const { mouth, out } = api.content().exit!;
+      api.teleport(mouth.x - out[0] * 40, mouth.y - out[1] * 40, Math.atan2(out[1], out[0]));
+      api.step(60);
+      api.openExit();
+      api.step(14);
+      api.look(mouth.x - out[0] * 20, mouth.y - out[1] * 20, { azimuth: -Math.PI / 2, polar: 0.62, radius: 84 });
+      api.step(1);
+    });
+    await expect(page.locator('#pad')).toBeVisible();
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('phone-exit.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('arriving in the next cave, on a phone', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, save: inCave('hollow', { open: true }) });
+    await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      api.step(30);
+      const { beyond, out } = api.content().exit!;
+      api.teleport(beyond.x, beyond.y, Math.atan2(out[1], out[0]));
+      api.step(2);
+      api.step(20);
+    });
+    expect((await page.evaluate(() => window.pushminer!.state())).cave).toBe('south-gallery');
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('phone-arriving.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the workshop on a phone', async ({ page }) => {
     const problems = watch(page);
-    await start(page, { seed: 11, paused: true, save: inRoom(1, { bank: 4000, drones: 1, horn: true }) });
-    const [x, y] = await heart(page, 1);
+    await begin(page, inCave('south-gallery', { bank: 4000, drones: 1, horn: true }));
+    const [x, y] = await heart(page);
     await scene(page, { x, y, radius: 84 }, 120);
     await page.locator('#shopButton').click();
     await page.evaluate(() => window.pushminer!.step(1));

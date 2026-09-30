@@ -6,56 +6,43 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import {
-  buildCave,
-  gridOf,
-  nearestHole,
-  tileCentre,
-  areaAt,
-  OPEN,
-  ROCK,
-  TILE,
-  type Area,
-  type CaveSpec,
-  type Wing,
-} from '../src/cave';
-import { FIVE_ROOMS } from '../src/caves';
+import { buildCave, gridOf, nearestHole, tileCentre, OPEN, ROCK, TILE, type CaveSpec } from '../src/cave';
+import { RUN } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
 import { HOLE_LAMP_HEIGHT, holeLamps } from '../src/lamps';
 import { Nav } from '../src/nav';
 import { Bot, type Traffic } from '../src/tools';
 import { floorHeight, buildTerrain } from '../src/terrain';
+import { HAUL_LIMIT, haulField } from '../scripts/hauls';
 import { withSeed } from './helpers';
 
 const DT = 1 / 60;
 const still = { throttle: 0, steer: 0 };
 
-const ROOM: Area = {
+/** One open room, 40 by 24 tiles, a hole at each end and a heap in the middle; nothing to open or break. */
+const TWO_HOLES: CaveSpec = {
+  id: 'two-holes',
   name: 'The Long Room',
   blurb: 'coins, and a hole at each end',
-  heaps: [{ x: 0, y: 10, coins: 120, gems: [] }],
-  vein: { x: 0, y: 30, every: 5, coins: 1, gems: [] },
-  cracks: [[0, 30]],
-  belt: null,
-};
-
-/** One open room, 40 by 24 tiles, a hole at each end and a heap in the middle; nothing to open, seal or break. */
-const TWO_HOLES: CaveSpec = {
+  biome: null,
   cols: 40,
   rows: 24,
+  shapes: [{ kind: 'ellipse', cx: 20, cy: 12, rx: 18, ry: 10, seed: 1.7 }],
   holes: [
     { x: -48, y: 0, radius: 5.5, depth: 14 },
     { x: 48, y: 0, radius: 4.5, depth: 12 },
   ],
-  hollow: { rx: 18, ry: 10, alcove: { along: 14, rx: 3, ry: 3 } },
-  wings: [null as unknown as Wing],
-  areas: [ROOM],
-  order: [0],
+  heaps: [{ x: 0, y: 10, coins: 120, gems: [] }],
+  vein: { x: 0, y: 30, every: 5, coins: 1, gems: [] },
+  cracks: [[0, 30]],
+  belts: [],
+  entry: { tiles: [2, 11, 8, 12], out: [-1, 0] },
+  exit: null,
   secrets: [],
   walls: [],
   stashes: [],
-  barrelsIn: [0],
+  barrels: 0,
 };
 
 const cave = buildCave(TWO_HOLES);
@@ -63,7 +50,7 @@ const cave = buildCave(TWO_HOLES);
 /** A game on the test cave, told nothing, and what it banked, where. */
 function newGame() {
   const banked: [number, number, number][] = [];
-  const game = new Game(new Economy(memoryStore(), TWO_HOLES), cave, {
+  const game = new Game(new Economy(memoryStore(), [TWO_HOLES]), cave, {
     banked: (_kind, value, x, y) => banked.push([value, x, y]),
   });
   return { game, banked };
@@ -77,7 +64,7 @@ describe('a cave handed in', () => {
     expect(cave.holes).toHaveLength(2);
     expect(cave.holes).toEqual(TWO_HOLES.holes);
     expect(cave.cells).toHaveLength(40 * 24);
-    // the border is rock, the middle of the room is open, and no cell is anything else in a cave with no gates
+    // the border is rock, the middle of the room is open, and no cell is anything else in a cave with no chambers or walls
     for (let tx = 0; tx < 40; tx++) {
       expect(cave.cells[tx]).toBe(ROCK);
       expect(cave.cells[23 * 40 + tx]).toBe(ROCK);
@@ -118,7 +105,7 @@ describe('a cave handed in', () => {
   });
 
   it('finds its way to the nearer hole from every side', () => {
-    const solid = cave.solid([true]);
+    const solid = cave.solid(false);
     const nav = new Nav(solid, cave.grid, cave.holes);
     const at = (x: number, y: number) => nav.tileOf(x, y);
     // beside each hole it is nothing to go
@@ -137,7 +124,7 @@ describe('a cave handed in', () => {
   });
 
   it('sends a loaded drone at the hole nearest it', () => {
-    const solid = cave.solid([true]);
+    const solid = cave.solid(false);
     const nav = new Nav(solid, cave.grid, cave.holes);
     const { game } = newGame();
     const traffic: Traffic = { bots: [], player: game.dozer };
@@ -191,16 +178,13 @@ describe('a cave handed in', () => {
   it('answers for the cave it is asked about and not the game', () => {
     const grid = cave.grid;
     expect(tileCentre(grid, 0, 0)).toEqual([-20 * TILE, -12 * TILE]);
-    expect(tileCentre(grid, 0, 0)).not.toEqual(tileCentre(gridOf(FIVE_ROOMS), 0, 0));
+    expect(tileCentre(grid, 0, 0)).not.toEqual(tileCentre(gridOf(RUN[0]), 0, 0));
     // the middle tile is centred on the world's origin, where the game's hole is
     expect(tileCentre(grid, 20, 12)).toEqual([0, 0]);
-    // south of the hollow is the South Gallery in the game, and nothing in a cave with no wings
-    expect(areaAt(FIVE_ROOMS, 0, -100)).toBe(1);
-    expect(areaAt(TWO_HOLES, 0, -100)).toBe(0);
     expect(nearestHole(cave.holes, 40, 3)).toBe(cave.holes[1]);
     expect(nearestHole(cave.holes, -40, 3)).toBe(cave.holes[0]);
     // not the game's hole, which is in the middle
-    expect(nearestHole(FIVE_ROOMS.holes, 40, 3)).toBe(FIVE_ROOMS.holes[0]);
+    expect(nearestHole(RUN[0].holes, 40, 3)).toBe(RUN[0].holes[0]);
   });
 });
 
@@ -218,5 +202,290 @@ describe('the structure', () => {
     for (const [file, text] of sources) {
       expect(text, file).not.toMatch(/export\s+(const|let|var)\s+(COLS|ROWS|ORIGIN_X|ORIGIN_Y|HOLE)\b/);
     }
+  });
+});
+
+// ---- the five caves of the run, held to their sketches ----
+
+/** The heap's own size, for whether it stands clear of rock: how far its coins spread. */
+const heapReach = (coins: number) => Math.sqrt(coins) * 0.36 + 1.5;
+
+/** The tiles a point is over, given the cave's grid. */
+function tileOfPoint(cave: ReturnType<typeof buildCave>, x: number, y: number): number {
+  const { cols, rows, originX, originY } = cave.grid;
+  const tx = Math.floor((x - originX) / TILE),
+    ty = Math.floor((y - originY) / TILE);
+  return tx < 0 || ty < 0 || tx >= cols || ty >= rows ? -1 : ty * cols + tx;
+}
+
+/** Whether a world point is on or within `margin` tiles of a cutting's tiles. */
+function inCutting(spec: CaveSpec, cave: ReturnType<typeof buildCave>, x: number, y: number, margin = 0): boolean {
+  const { originX, originY } = cave.grid;
+  return [spec.entry, spec.exit].some((c) => {
+    if (!c) return false;
+    const [x0, y0, x1, y1] = c.tiles;
+    return (
+      x >= originX + (x0 - margin) * TILE &&
+      x <= originX + (x1 + 1 + margin) * TILE &&
+      y >= originY + (y0 - margin) * TILE &&
+      y <= originY + (y1 + 1 + margin) * TILE
+    );
+  });
+}
+
+describe.each(RUN.map((spec) => [spec.id, spec] as const))('the cave %s, held to its sketch', (id, spec) => {
+  const cave = buildCave(spec);
+  const { cols, rows } = cave.grid;
+  const cells = cave.cells;
+  const open = cave.solid(
+    true,
+    spec.secrets.map(() => false),
+    spec.walls.map(() => true),
+  );
+  const at = (x: number, y: number) => tileOfPoint(cave, x, y);
+  const arrivalTile = () => {
+    const [x0, y0, x1, y1] = spec.entry.tiles;
+    const [ox, oy] = spec.entry.out;
+    const tx = ox < 0 ? x0 + 1 : ox > 0 ? x1 - 1 : (x0 + x1) >> 1,
+      ty = oy < 0 ? y0 + 1 : oy > 0 ? y1 - 1 : (y0 + y1) >> 1;
+    return ty * cols + tx;
+  };
+
+  it('fits its grid, with two tiles of rock round the edge', () => {
+    for (let t = 0; t < cells.length; t++) {
+      const tx = t % cols,
+        ty = (t / cols) | 0;
+      if (tx >= 2 && ty >= 2 && tx < cols - 2 && ty < rows - 2) continue;
+      expect(cells[t], `${id} has ${cells[t]} at the edge, ${tx},${ty}`).toBe(ROCK);
+    }
+    for (const c of [spec.entry, spec.exit]) {
+      if (!c) continue;
+      const [x0, y0, x1, y1] = c.tiles;
+      expect(Math.min(x0, y0), `${id} cutting starts inside the edge`).toBeGreaterThanOrEqual(2);
+      expect(x1, `${id} cutting ends inside the edge`).toBeLessThanOrEqual(cols - 3);
+      expect(y1, `${id} cutting ends inside the edge`).toBeLessThanOrEqual(rows - 3);
+    }
+  });
+
+  it('can be reached everywhere from its way in, with the walls down and its way out open', () => {
+    const reach = new Set<number>();
+    const stack = [arrivalTile()];
+    expect(open[arrivalTile()], `${id} arrival is on floor`).toBe(0);
+    while (stack.length) {
+      const t = stack.pop()!;
+      if (t < 0 || reach.has(t) || open[t]) continue;
+      reach.add(t);
+      const tx = t % cols;
+      if (tx > 0) stack.push(t - 1);
+      if (tx < cols - 1) stack.push(t + 1);
+      if (t >= cols) stack.push(t - cols);
+      if (t < cols * (rows - 1)) stack.push(t + cols);
+    }
+    const cut: string[] = [];
+    spec.heaps.forEach((h, k) => {
+      if (!reach.has(at(h.x, h.y))) cut.push(`heap ${k} at ${h.x},${h.y}`);
+    });
+    spec.secrets.forEach((s, k) => {
+      const [x0, y0, x1, y1] = s.wall;
+      let mouth = false;
+      for (let ty = y0 - 1; ty <= y1 + 1; ty++)
+        for (let tx = x0 - 1; tx <= x1 + 1; tx++) if (reach.has(ty * cols + tx)) mouth = true;
+      if (!mouth) cut.push(`chamber ${k}'s mouth`);
+    });
+    spec.stashes.forEach((st, k) => {
+      if (!reach.has(at(...tileCentre(cave.grid, st.at[0], st.at[1])))) cut.push(`side room ${k}`);
+    });
+    if (spec.exit) {
+      const [x0, y0, x1, y1] = spec.exit.tiles;
+      const [ox, oy] = spec.exit.out;
+      const tx = ox < 0 ? x0 : ox > 0 ? x1 : (x0 + x1) >> 1,
+        ty = oy < 0 ? y0 : oy > 0 ? y1 : (y0 + y1) >> 1;
+      if (!reach.has(ty * cols + tx)) cut.push('the way out');
+    }
+    spec.holes.forEach((h, k) => {
+      if (!reach.has(at(h.x, h.y))) cut.push(`hole ${k}`);
+    });
+    expect(cut, `${id}: cut off from the way in`).toEqual([]);
+  });
+
+  it('keeps every heap within its haul limit of a hole along the floor, belt or no belt', () => {
+    const field = haulField(cave);
+    const limit = HAUL_LIMIT[id];
+    expect(limit, `${id} has a haul limit`).toBeGreaterThan(0);
+    expect(spec.heaps.length).toBeGreaterThan(0);
+    spec.heaps.forEach((h, k) => {
+      const d = field[at(h.x, h.y)];
+      expect(
+        d,
+        `${id} heap ${k} at ${h.x},${h.y} is ${d.toFixed(0)} from a hole along the floor, past ${limit}`,
+      ).toSatisfy((v: number) => Number.isFinite(v) && v <= limit);
+    });
+  });
+
+  it('stands no heap, belt, lamp or barrel on rock or in a cutting', () => {
+    spec.heaps.forEach((h, k) => {
+      const r = heapReach(h.coins) * 0.6;
+      for (const [dx, dy] of [
+        [0, 0],
+        [r, 0],
+        [-r, 0],
+        [0, r],
+        [0, -r],
+        [r * 0.7, r * 0.7],
+        [-r * 0.7, -r * 0.7],
+        [r * 0.7, -r * 0.7],
+        [-r * 0.7, r * 0.7],
+      ]) {
+        const t = at(h.x + dx, h.y + dy);
+        expect(
+          cells[t],
+          `${id} heap ${k} stands on ${cells[t]} at ${(h.x + dx).toFixed(0)},${(h.y + dy).toFixed(0)}`,
+        ).toBe(OPEN);
+        expect(inCutting(spec, cave, h.x + dx, h.y + dy), `${id} heap ${k} in a cutting`).toBe(false);
+      }
+    });
+    spec.belts.forEach(({ id: beltId, spec: b }) => {
+      const len = Math.hypot(b.x1 - b.x0, b.y1 - b.y0);
+      const nx = -(b.y1 - b.y0) / len,
+        ny = (b.x1 - b.x0) / len;
+      for (let s = 0; s <= 1.0001; s += 0.01) {
+        for (const side of [-1, 0, 1]) {
+          const x = b.x0 + (b.x1 - b.x0) * s + nx * side * (b.width / 2),
+            y = b.y0 + (b.y1 - b.y0) * s + ny * side * (b.width / 2);
+          expect(cells[at(x, y)], `${id} belt ${beltId} on rock at ${x.toFixed(0)},${y.toFixed(0)}`).toBe(OPEN);
+          expect(inCutting(spec, cave, x, y), `${id} belt ${beltId} in a cutting`).toBe(false);
+        }
+      }
+    });
+    for (const l of cave.lamps) {
+      expect(cells[at(l.x, l.y)], `${id} lamp at ${l.x},${l.y}`).toBe(OPEN);
+      expect(inCutting(spec, cave, l.x, l.y, 1), `${id} lamp at ${l.x},${l.y} on or beside a cutting`).toBe(false);
+    }
+    for (const b of cave.barrels) {
+      expect(cells[at(b.x, b.y)], `${id} barrel at ${b.x},${b.y}`).toBe(OPEN);
+      expect(inCutting(spec, cave, b.x, b.y, 2), `${id} barrel at ${b.x},${b.y} on or beside a cutting`).toBe(false);
+    }
+    expect(cave.barrels.length, `${id} barrels stood`).toBe(spec.barrels);
+  });
+
+  it('has a hole on floor, a vein and cracks on floor, and a place for each drone on floor out of the way in', () => {
+    for (const h of spec.holes) {
+      for (const [dx, dy] of [
+        [0, 0],
+        [h.radius + 4, 0],
+        [-h.radius - 4, 0],
+        [0, h.radius + 4],
+        [0, -h.radius - 4],
+      ])
+        expect(cells[at(h.x + dx, h.y + dy)], `${id} floor round the hole`).toBe(OPEN);
+    }
+    expect(cells[at(spec.vein.x, spec.vein.y)], `${id} vein`).toBe(OPEN);
+    spec.cracks.forEach(([x, y]) => expect(cells[at(x, y)], `${id} crack at ${x},${y}`).toBe(OPEN));
+    for (let j = 0; j < 3; j++) {
+      const hole = spec.holes[0];
+      const x = hole.x + 14 + j * 6,
+        y = hole.y + 10;
+      expect(cells[at(x, y)], `${id} drone ${j}'s place`).toBe(OPEN);
+      expect(inCutting(spec, cave, x, y), `${id} drone ${j}'s place in a cutting`).toBe(false);
+    }
+  });
+
+  it('has its way in open and its way out rock until opened, the last cave with none', () => {
+    const [x0, y0, x1, y1] = spec.entry.tiles;
+    let openEntry = 0;
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (cells[ty * cols + tx] === OPEN) openEntry++;
+    expect(openEntry, `${id} way in is open`).toBe((x1 - x0 + 1) * (y1 - y0 + 1));
+    if (!spec.exit) return;
+    const shut = cave.solid(false);
+    let exits = 0;
+    cells.forEach((c, t) => {
+      if (c !== 64) return;
+      exits++;
+      expect(shut[t]).toBe(1);
+    });
+    expect(exits, `${id} has a way out`).toBeGreaterThan(0);
+    const [ex0, ey0, ex1, ey1] = spec.exit.tiles;
+    const [ox, oy] = spec.exit.out;
+    const tx = ox < 0 ? ex0 : ox > 0 ? ex1 : (ex0 + ex1) >> 1,
+      ty = oy < 0 ? ey0 : oy > 0 ? ey1 : (ey0 + ey1) >> 1;
+    expect(cells[ty * cols + tx], `${id} way out reaches its outer end`).toBe(64);
+  });
+
+  it('hides each chamber in rock, and puts each side room behind a wall with floor on both faces', () => {
+    const main = new Set<number>();
+    const stack = [arrivalTile()];
+    // the floor the dozer can reach with every wall standing and the way out shut
+    const standing = cave.solid(false);
+    while (stack.length) {
+      const t = stack.pop()!;
+      if (t < 0 || main.has(t) || standing[t]) continue;
+      main.add(t);
+      const tx = t % cols;
+      if (tx > 0) stack.push(t - 1);
+      if (tx < cols - 1) stack.push(t + 1);
+      if (t >= cols) stack.push(t - cols);
+      if (t < cols * (rows - 1)) stack.push(t + cols);
+    }
+    spec.stashes.forEach((st, k) => {
+      const inside = new Set<number>();
+      const s2 = [at(...tileCentre(cave.grid, st.at[0], st.at[1]))];
+      while (s2.length) {
+        const t = s2.pop()!;
+        if (t < 0 || inside.has(t) || cells[t] !== OPEN) continue;
+        inside.add(t);
+        const tx = t % cols;
+        if (tx > 0) s2.push(t - 1);
+        if (tx < cols - 1) s2.push(t + 1);
+        if (t >= cols) s2.push(t - cols);
+        if (t < cols * (rows - 1)) s2.push(t + cols);
+      }
+      expect(inside.size, `${id} side room ${k} has floor`).toBeGreaterThan(0);
+      for (const t of inside)
+        expect(main.has(t), `${id} side room ${k} is reached without its wall broken`).toBe(false);
+    });
+    spec.walls.forEach((w, k) => {
+      const [x0, y0, x1, y1] = w.tiles;
+      const alongX = x1 - x0 >= y1 - y0;
+      for (let x = x0; x <= x1; x++)
+        for (let y = y0; y <= y1; y++) {
+          const a = alongX ? cells[(y - 1) * cols + x] : cells[y * cols + x - 1],
+            b = alongX ? cells[(y + 1) * cols + x] : cells[y * cols + x + 1];
+          expect(a === OPEN || (a >= 32 && a < 64), `${id} wall ${k} at ${x},${y}`).toBe(true);
+          expect(b === OPEN || (b >= 32 && b < 64), `${id} wall ${k} at ${x},${y}`).toBe(true);
+        }
+    });
+    spec.secrets.forEach((s, k) => {
+      const [w0x, w0y, w1x, w1y] = s.wall;
+      const isWall = (x: number, y: number) => x >= w0x && x <= w1x && y >= w0y && y <= w1y;
+      let faces = 0,
+        mine = 0;
+      for (let ty = 0; ty < rows; ty++)
+        for (let tx = 0; tx < cols; tx++) {
+          if (cells[ty * cols + tx] !== 16 + k) continue;
+          mine++;
+          if (isWall(tx, ty)) {
+            if (
+              [
+                [1, 0],
+                [-1, 0],
+                [0, 1],
+                [0, -1],
+              ].some(([dx, dy]) => cells[(ty + dy) * cols + tx + dx] === OPEN)
+            )
+              faces++;
+            continue;
+          }
+          for (let dy = -2; dy <= 2; dy++)
+            for (let dx = -2; dx <= 2; dx++) {
+              const c = cells[(ty + dy) * cols + tx + dx];
+              const leak = (c === OPEN || c === 64) && !isWall(tx + dx, ty + dy);
+              expect(leak, `${id} chamber ${k} tile ${tx},${ty} beside open floor at ${tx + dx},${ty + dy}`).toBe(
+                false,
+              );
+            }
+        }
+      expect(mine, `${id} chamber ${k} has tiles`).toBeGreaterThan(0);
+      expect(faces, `${id} chamber ${k} has a face to break`).toBeGreaterThan(0);
+    });
   });
 });

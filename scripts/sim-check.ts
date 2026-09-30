@@ -26,12 +26,12 @@ interface Scenario {
 }
 
 const SCENARIOS: Scenario[] = [
-  { name: 'south', options: { room: 1 } },
-  { name: 'north', options: { room: 2 } },
-  { name: 'east with belt', options: { room: 3, belt: true } },
-  { name: 'west with belt', options: { room: 4, belt: true } },
-  { name: 'south, player patrolling', options: { room: 1, patrol: true } },
-  { name: 'north, chamber open', options: { room: 2, secret: true } },
+  { name: 'south', options: { cave: 'south-gallery' } },
+  { name: 'north', options: { cave: 'north-vault' } },
+  { name: 'east with belt', options: { cave: 'east-gallery', belt: true } },
+  { name: 'west with belt', options: { cave: 'west-gallery', belt: true } },
+  { name: 'south, player patrolling', options: { cave: 'south-gallery', patrol: true } },
+  { name: 'north, chamber open', options: { cave: 'north-vault', secret: true } },
 ];
 
 /**

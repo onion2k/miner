@@ -2,14 +2,14 @@
  * The whole game played through by the autopilot over many seeds side by
  * side, and how it paced: see `balancer.ts`.
  *
- *   npm run balance                              thorough and rusher, seeds 1-6, the whole cave
+ *   npm run balance                              thorough and rusher, seeds 1-6, the whole run
  *   npm run balance -- --profile thorough --seeds 1-12
- *   npm run balance -- --rooms 2 --cap 30        the first two rooms only, giving up at 30 game minutes
+ *   npm run balance -- --caves 2 --cap 30        the first two caves only, giving up at 30 game minutes
  *   npm run balance -- --purchases --json runs.json   and every purchase, and every run written out
- *   npm run balance:check                        the first two rooms held to balance-baseline.json
+ *   npm run balance:check                        the first two caves held to balance-baseline.json
  *   npm run balance:check -- --update            what they do now written as the new baseline
  *
- * Reports, for each way of playing, the minutes each room took, the whole
+ * Reports, for each way of playing, the minutes each cave took, the whole
  * game, when the workshop's purchases came and how far apart, and what was
  * banked, spent and left in the bank. Fails if any seed broke a rule, threw,
  * or got stuck.
@@ -60,18 +60,18 @@ export async function runAll(jobs: PlayOptions[]): Promise<PlayRun[]> {
 export function report(runs: PlayRun[]): string[] {
   const out: string[] = [];
   const f = (n: number, d = 1) => (Number.isFinite(n) ? n.toFixed(d) : '-');
-  const most = runs.reduce((m, r) => Math.max(m, r.rooms.length), 0);
-  const rooms = Array.from({ length: most }, (_, k) => {
-    const times = runs.flatMap((r) => (r.rooms[k] ? [r.rooms[k].minutes] : []));
-    const banked = runs.flatMap((r) => (r.rooms[k] ? [r.rooms[k].banked] : []));
-    return `${runs.find((r) => r.rooms[k])!.rooms[k].name} ${f(median(times))} min (${f(Math.min(...times))}-${f(Math.max(...times))}), banks ${f(mean(banked), 0)}`;
+  const most = runs.reduce((m, r) => Math.max(m, r.caves.length), 0);
+  const caves = Array.from({ length: most }, (_, k) => {
+    const times = runs.flatMap((r) => (r.caves[k] ? [r.caves[k].minutes] : []));
+    const banked = runs.flatMap((r) => (r.caves[k] ? [r.caves[k].banked] : []));
+    return `${runs.find((r) => r.caves[k])!.caves[k].name} ${f(median(times))} min (${f(Math.min(...times))}-${f(Math.max(...times))}), banks ${f(mean(banked), 0)}`;
   });
   const finished = runs.filter((r) => r.finished);
   const minutes = finished.map((r) => r.minutes);
   out.push(
     `${runs[0].profile}: ${finished.length}/${runs.length} finished, ${f(median(minutes))} min (${f(Math.min(...minutes))}-${f(Math.max(...minutes))})`,
   );
-  out.push(`  rooms: ${rooms.join('; ')}`);
+  out.push(`  caves: ${caves.join('; ')}`);
   // the gaps between purchases, over the game: steady is gaps much the same all through
   const gaps = runs.flatMap((r) => r.purchases.slice(1).map((p, k) => p.minute - r.purchases[k].minute));
   const bought = runs.map((r) => r.purchases.length);
@@ -94,18 +94,18 @@ export function report(runs: PlayRun[]): string[] {
 }
 
 const BASELINE = 'scripts/balance-baseline.json';
-const CHECK = { seeds: [1, 2, 3, 4, 5, 6], rooms: 2, capMinutes: 60 };
+const CHECK = { seeds: [1, 2, 3, 4, 5, 6], caves: 2, capMinutes: 60 };
 /** How far each figure may move from the baseline, as a share of it, before the check fails. */
 const TOLERANCE = { minutes: 0.2, banked: 0.15, purchases: 0.2 };
 
 type Figures = Record<string, number>;
 
-/** The figures the check holds, for a way of playing: the median minutes each room took, and the mean banked and bought. */
+/** The figures the check holds, for a way of playing: the median minutes each cave took, and the mean banked and bought. */
 function figures(runs: PlayRun[]): Figures {
   const out: Figures = {};
-  for (let k = 0; k < CHECK.rooms; k++) {
-    const times = runs.map((r) => r.rooms[k]?.minutes ?? CHECK.capMinutes);
-    out[`room ${k + 1} minutes`] = Math.round(median(times) * 100) / 100;
+  for (let k = 0; k < CHECK.caves; k++) {
+    const times = runs.map((r) => r.caves[k]?.minutes ?? CHECK.capMinutes);
+    out[`cave ${k + 1} minutes`] = Math.round(median(times) * 100) / 100;
   }
   out.banked = Math.round(mean(runs.map((r) => r.banked)));
   out.purchases = Math.round(mean(runs.map((r) => r.purchases.length)) * 100) / 100;
@@ -117,7 +117,7 @@ async function check(update: boolean) {
   const profiles: Profile[] = ['thorough', 'rusher'];
   const runs = await runAll(
     profiles.flatMap((profile) =>
-      CHECK.seeds.map((seed) => ({ seed, profile, rooms: CHECK.rooms, capMinutes: CHECK.capMinutes })),
+      CHECK.seeds.map((seed) => ({ seed, profile, caves: CHECK.caves, capMinutes: CHECK.capMinutes })),
     ),
   );
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
@@ -126,7 +126,7 @@ async function check(update: boolean) {
     ...r.problems,
     ...(r.finished
       ? []
-      : [`${r.profile} seed ${r.seed}: did not get through ${CHECK.rooms} rooms in ${CHECK.capMinutes} min`]),
+      : [`${r.profile} seed ${r.seed}: did not get through ${CHECK.caves} caves in ${CHECK.capMinutes} min`]),
   ]);
   if (update) {
     if (problems.length) {
@@ -189,10 +189,10 @@ async function main() {
   const range = (value('seeds') ?? '1-6').split('-').map(Number);
   const seeds = Array.from({ length: (range[1] ?? range[0]) - range[0] + 1 }, (_, k) => range[0] + k);
   const profiles = (value('profile') ? [value('profile')] : ['thorough', 'rusher']) as Profile[];
-  const rooms = value('rooms') !== undefined ? +value('rooms')! : undefined;
+  const caves = value('caves') !== undefined ? +value('caves')! : undefined;
   const capMinutes = +(value('cap') ?? 90);
   const started = performance.now();
-  const runs = await runAll(profiles.flatMap((profile) => seeds.map((seed) => ({ seed, profile, rooms, capMinutes }))));
+  const runs = await runAll(profiles.flatMap((profile) => seeds.map((seed) => ({ seed, profile, caves, capMinutes }))));
   console.log(`${runs.length} play-throughs (${((performance.now() - started) / 1000).toFixed(1)} s)`);
   for (const profile of profiles)
     for (const line of report(runs.filter((r) => r.profile === profile))) console.log(line);

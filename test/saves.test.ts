@@ -13,7 +13,7 @@ import { Autopilot } from '../src/autopilot';
 import { Economy, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
 import { checkInvariants } from '../src/invariants';
-import { AREAS, FIVE, ORDER, SPEC, newGame, withSeed } from './helpers';
+import { RUN, caveOf, newGame, specOf, withSeed } from './helpers';
 
 const DIR = new URL('saves/', import.meta.url);
 const files = readdirSync(DIR)
@@ -27,30 +27,166 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '02-magnet.json': { magnet: 3, engine: 3 },
   '03-paint-shop.json': { paint: 'red', horn: true, blade: 2 },
   '04-rooms-in-order.json': { banked: 5200, drones: 2 },
-  '05-sealing.json': { room: 3, magnet: 4 },
-  '06-chambers.json': { room: 1, engine: 4 },
-  '07-walls-and-lamps.json': { room: 2, magnet: 5 },
-  '08-barrels.json': { room: 4, drones: 3 },
-  '09-current.json': { room: 1, engine: 2 },
-  '10-spider.json': { room: 1, body: 'spider' },
+  '05-sealing.json': { magnet: 4 },
+  '06-chambers.json': { engine: 4 },
+  '07-walls-and-lamps.json': { magnet: 5 },
+  '08-barrels.json': { drones: 3 },
+  '09-current.json': { engine: 2 },
+  '10-spider.json': { body: 'spider' },
+  '11-linear.json': { cave: 'east-gallery', open: true },
+};
+
+/**
+ * Where each save lands, and what of its cave it keeps. An old save's room becomes the cave of the
+ * same name; what was left of the room is the cave's source 0, and the chamber, side room and wall that
+ * were off the room are the cave's, at index 0; rubble, barrels and broken lamps, which were in the old
+ * map's coordinates, start afresh.
+ */
+const LANDS: Record<
+  string,
+  {
+    cave: string;
+    open: boolean;
+    /** What was left of the room, by kind: empty where the save did not say, which is all of it. */
+    left: number[];
+    belts: string[];
+    secrets: boolean[];
+    walls: boolean[];
+    wallDamage: number[];
+  }
+> = {
+  '01-three-rooms.json': {
+    cave: 'south-gallery',
+    open: false,
+    left: [],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '02-magnet.json': {
+    cave: 'north-vault',
+    open: false,
+    left: [],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '03-paint-shop.json': {
+    cave: 'north-vault',
+    open: false,
+    left: [],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '04-rooms-in-order.json': {
+    cave: 'east-gallery',
+    open: false,
+    left: [420, 30, 12, 4, 1],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '05-sealing.json': {
+    cave: 'east-gallery',
+    open: false,
+    left: [610, 40, 20, 6, 2],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '06-chambers.json': {
+    cave: 'south-gallery',
+    open: false,
+    left: [700, 55, 24, 8, 3],
+    belts: [],
+    secrets: [true],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '07-walls-and-lamps.json': {
+    cave: 'north-vault',
+    open: false,
+    left: [520, 44, 18, 9, 4],
+    belts: ['north-belt'],
+    secrets: [true],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '08-barrels.json': {
+    cave: 'west-gallery',
+    open: false,
+    left: [820, 60, 30, 14, 6],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [60],
+  },
+  '09-current.json': {
+    cave: 'south-gallery',
+    open: false,
+    left: [1920, 40, 28, 0, 0, 0, 0, 0],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '10-spider.json': {
+    cave: 'south-gallery',
+    open: false,
+    left: [1920, 40, 28, 0, 0, 0, 0, 0],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
+  '11-linear.json': {
+    cave: 'east-gallery',
+    open: true,
+    left: [300, 20, 0, 0, 0, 0, 0, 0],
+    belts: ['east-belt'],
+    secrets: [true],
+    walls: [false],
+    wallDamage: [0],
+  },
 };
 
 describe('saves from every shape the game has written', () => {
-  it('has a file for every shape, oldest first', () => {
-    expect(files.length).toBeGreaterThanOrEqual(10);
+  it('has a file for every shape, oldest first, and says where each lands', () => {
+    expect(files.length).toBeGreaterThanOrEqual(11);
     expect(files).toEqual(Object.keys(KEPT).sort());
+    expect(Object.keys(LANDS).sort()).toEqual(files);
   });
 
   for (const file of files) {
     describe(file, () => {
-      it('loads with what it bought kept, and every list filled out to the cave as it is now', () => {
-        const e = new Economy(memoryStore(read(file)), SPEC);
+      it('loads into the cave it was in, with what it bought kept and every list sized to that cave', () => {
+        const e = new Economy(memoryStore(read(file)), RUN);
         const save = e.save;
+        const want = LANDS[file];
         for (const [key, was] of Object.entries(KEPT[file])) expect(save[key as keyof typeof save]).toEqual(was);
-        expect(save.areas).toHaveLength(AREAS.length);
-        expect(save.belts).toHaveLength(AREAS.length);
-        expect(save.areas[ORDER[0]], 'the hollow is always open').toBe(true);
-        expect(ORDER).toContain(save.room);
+        expect(save.cave, 'the cave it lands in').toBe(want.cave);
+        expect(save.open).toBe(want.open);
+        const spec = specOf(want.cave);
+        const sources = 1 + spec.secrets.length + spec.stashes.length + spec.walls.length;
+        expect(save.left, 'one row a source of the cave').toHaveLength(sources);
+        expect(save.left[0], 'what was left of the room is what is left of the cave').toEqual(want.left);
+        expect(save.belts).toEqual(want.belts);
+        expect(save.secrets).toEqual(want.secrets);
+        expect(save.walls).toEqual(want.walls);
+        expect(save.wallDamage).toEqual(want.wallDamage);
+        expect(save.rubble, 'rubble starts afresh').toEqual([]);
+        // an old save's rubble, lamps and barrels were in the old map's coordinates: they start afresh; a new one's are kept
+        if (file.startsWith('11')) expect(save.lampsBroken).toEqual([4, 9]);
+        else {
+          expect(save.lampsBroken, 'lamps start afresh').toEqual([]);
+          expect(save.barrels, 'barrels start afresh').toBeNull();
+        }
         expect(Number.isFinite(save.bank) && save.bank >= 0).toBe(true);
       });
 
@@ -66,19 +202,47 @@ describe('saves from every shape the game has written', () => {
 
       it('comes back as it went, written again in the shape of today', () => {
         const store = memoryStore(read(file));
-        const before = new Economy(store, SPEC).save;
-        new Economy(memoryStore(read(file)), SPEC); // loading alone must not write
-        const game = new Game(new Economy(store, SPEC), FIVE);
+        const before = new Economy(store, RUN).save;
+        new Economy(memoryStore(read(file)), RUN); // loading alone must not write
+        const game = new Game(new Economy(store, RUN), caveOf(before.cave));
         game.persist();
-        const after = new Economy(memoryStore(store.json), SPEC).save;
+        const after = new Economy(memoryStore(store.json), RUN).save;
         expect(after.bank).toBe(before.bank);
-        expect(after.room).toBe(before.room);
-        expect(after.areas).toEqual(before.areas);
+        expect(after.cave).toBe(before.cave);
+        expect(after.open).toBe(before.open);
+        expect(after.belts).toEqual(before.belts);
         expect(after.secrets).toEqual(before.secrets);
         expect(after.walls).toEqual(before.walls);
       });
     });
   }
+
+  it('opens the way out of the cave a save was in, when the next room’s gate was already open', () => {
+    // 06 was clearing the south gallery, and the east gallery was the next to open: with its gate up
+    const old = JSON.parse(read('06-chambers.json')) as { areas: boolean[] };
+    old.areas = [true, true, false, true, false];
+    const e = new Economy(memoryStore(JSON.stringify(old)), RUN);
+    expect(e.save.cave).toBe('south-gallery');
+    expect(e.save.open).toBe(true);
+  });
+
+  it('keeps a cleared cave cleared: a save from the last room with the cave done stays done', () => {
+    const old = JSON.parse(read('08-barrels.json')) as { done: boolean };
+    old.done = true;
+    const e = new Economy(memoryStore(JSON.stringify(old)), RUN);
+    expect(e.save.cave).toBe('west-gallery');
+    expect(e.save.done).toBe(true);
+    expect(e.isLast()).toBe(true);
+  });
+
+  it('refuses a cave it does not know, by name, and starts the run from its first', () => {
+    const e = new Economy(
+      memoryStore(JSON.stringify({ ...JSON.parse(read('11-linear.json')), cave: 'the-moon' })),
+      RUN,
+    );
+    expect(e.save.cave).toBe(RUN[0].id);
+    expect(e.save.open).toBe(false);
+  });
 
   it('has the shape the game writes now: a new field means a new file here', () => {
     const game = newGame();

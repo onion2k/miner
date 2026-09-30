@@ -104,6 +104,15 @@ export class SceneLights {
     this.quads = new Float32Array(effectCapacity * EFFECT_STRIDE);
   }
 
+  /**
+   * Which lamps and features were lit are numbers of the cave the lights were built for. A page that swaps
+   * to another cave lets go of them, or what reads them before the next frame is built finds no such lamp.
+   */
+  forget() {
+    this.lampsLit.length = 0;
+    this.featuresLit.length = 0;
+  }
+
   build(s: LightState): this {
     this.placeLights(s);
     this.placeGlows(s);

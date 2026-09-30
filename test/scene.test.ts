@@ -1,19 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import { lookAt, multiply, perspective } from 'artshape-render/gpu/camera';
-import { buildCave, gateTiles } from '../src/cave';
 import { CAMERA_HOME, CameraRig } from '../src/camera';
 import { placePointer } from '../src/hud';
 import { SceneLights, type LightState } from '../src/lighting';
 import { StaticScene, type StaticState } from '../src/scene-static';
 import { holeLamps } from '../src/lamps';
 import { layBricks } from '../src/walls';
-import { AREAS, FIVE, HOLE, SECRETS, SPEC, WALLS } from './helpers';
+import { caveOf } from './helpers';
 
-const cave = buildCave(SPEC);
+/** The South Gallery: a wall, a chamber, a way out, and lamps. */
+const cave = caveOf('south-gallery');
+const SPEC = cave.spec;
+const HOLE = cave.holes[0];
+const WALLS = SPEC.walls;
+const SECRETS = SPEC.secrets;
 const scene = new StaticScene(cave);
 const state = (over: Partial<StaticState> = {}): StaticState => ({
-  areas: AREAS.map((_, a) => a === 0),
+  open: false,
   secrets: SECRETS.map(() => false),
   walls: WALLS.map(() => false),
   wallDamage: WALLS.map(() => 0),
@@ -33,32 +36,12 @@ function camera(x: number, y: number, aspect = 16 / 9) {
 }
 
 describe('the static scene', () => {
-  it('shuts the gates of rooms not open, and opens them', () => {
-    const shut = AREAS.slice(1).reduce((n, _, a) => n + gateTiles(cave, a + 1).length, 0);
-    const find = (s: StaticState) => scene.groups(s).find((g) => g.albedo?.[0] === 0.62)!;
-    expect(find(state()).count).toBe(shut);
-    expect(find(state({ areas: AREAS.map(() => true) })).count).toBe(0);
-  });
-
   it('draws a wall still standing, brick by brick, and none once it is down', () => {
-    const bricks = WALLS.reduce((n, _, w) => n + layBricks(FIVE, w).length, 0);
+    const bricks = WALLS.reduce((n, _, w) => n + layBricks(cave, w).length, 0);
     const brickGroup = (s: StaticState) => scene.groups(s).find((g) => g.materials && g.count === bricks);
     expect(brickGroup(state())).toBeDefined();
     const down = scene.groups(state({ walls: WALLS.map(() => true) }));
     expect(down.some((g) => g.materials && g.count === bricks)).toBe(false);
-  });
-
-  it('draws the rock and floor of a room not open all but black, and of an open one in colour', () => {
-    const lum = (g: GameGroup) => g.materials![0] + g.materials![1] + g.materials![2];
-    const shut = scene.groups(state());
-    const open = scene.groups(state({ areas: AREAS.map(() => true) }));
-    // the terrain comes first, one colour a group
-    const surface = shut.filter((g) => g.materials?.length === MATERIAL_STRIDE && g.matrices.length === 16);
-    expect(surface.length).toBeGreaterThan(10);
-    const dark = surface.filter((g) => lum(g) < 0.02).length;
-    expect(dark).toBeGreaterThan(0);
-    const openSurface = open.filter((g) => g.materials?.length === MATERIAL_STRIDE && g.matrices.length === 16);
-    expect(openSurface.filter((g) => lum(g) < 0.02).length).toBeLessThan(dark);
   });
 
   it('lays a lamp knocked over on the floor, its head dark', () => {
@@ -71,11 +54,19 @@ describe('the static scene', () => {
     expect(down.materials![0]).toBeLessThan(up.materials![0]);
   });
 
-  it('rebuilds the rock only when a chamber is broken into', () => {
+  it('rebuilds the rock only when a chamber is broken into or the way out opens', () => {
     const s = new StaticScene(cave);
     const first = s.groups(state())[0].mesh;
     expect(s.groups(state({ lampsBroken: [1] }))[0].mesh).toBe(first);
     expect(s.groups(state({ secrets: SECRETS.map((_, k) => k === 0) }))[0].mesh).not.toBe(first);
+    const again = new StaticScene(cave);
+    const shut = again.groups(state())[0].mesh;
+    expect(again.groups(state({ open: true }))[0].mesh).not.toBe(shut);
+  });
+
+  it('draws the belts that run, and only those', () => {
+    const count = (s: StaticState) => scene.groups(s).length;
+    expect(count(state({ belts: [0] }))).toBe(count(state()) + 2);
   });
 });
 
@@ -86,7 +77,7 @@ describe('the lights', () => {
     dozer: { x: 0, y: -14, yaw: Math.PI / 2 },
     bots: [],
     lamps: cave.lamps,
-    lampOn: (k) => cave.lamps[k].area === 0,
+    lampOn: () => true,
     lampColour: () => [1, 0.8, 0.55],
     fuses: [],
     blasts: [],
@@ -96,8 +87,8 @@ describe('the lights', () => {
     vein: null,
     sealing: null,
     magnet: null,
-    holes: SPEC.holes,
-    holeLamps: holeLamps(SPEC.holes),
+    holes: cave.holes,
+    holeLamps: holeLamps(cave.holes),
     holePulse: [0],
     ...over,
   });
@@ -106,7 +97,6 @@ describe('the lights', () => {
     const lights = new SceneLights(256, 256).build(base());
     expect(lights.shadowed).toHaveLength(1);
     expect(lights.lampsLit.length).toBeGreaterThan(0);
-    expect(lights.lampsLit.every((k) => cave.lamps[k].area === 0)).toBe(true);
     // two headlights, the cab, the lamps, and the three over the hole, in view
     expect(lights.lights.count).toBe(3 + lights.lampsLit.length + 3);
   });
@@ -124,7 +114,7 @@ describe('the lights', () => {
     expect(busy).toBe(plain + 2 + 1 + 1 + 1);
   });
 
-  it('light a biome’s features in view when their room is open, beating, and never crowd out the lamps', () => {
+  it('light a biome’s features in view when they are on, beating, and never crowd out the lamps', () => {
     const feature = (x: number, y: number, beat: 'steady' | 'blink') => ({
       x,
       y,
@@ -135,7 +125,6 @@ describe('the lights', () => {
       beat,
       glow: 3,
       phase: 0,
-      area: 1,
       biome: 'lava' as const,
     });
     const features = [feature(5, -14, 'steady'), feature(-5, -10, 'blink'), feature(900, 900, 'steady')];
@@ -153,6 +142,27 @@ describe('the lights', () => {
     expect(busy.featuresLit.length).toBeLessThanOrEqual(48);
   });
 
+  it('forget which lamps and features were lit when the cave is swapped, since those numbers are of the old cave', () => {
+    const feature = {
+      x: 5,
+      y: -14,
+      z: 2,
+      colour: [1, 0.4, 0.1] as [number, number, number],
+      radius: 10,
+      intensity: 5,
+      beat: 'steady' as const,
+      glow: 3,
+      phase: 0,
+      biome: 'lava' as const,
+    };
+    const lights = new SceneLights(256, 256).build(base({ features: [feature], featureOn: () => true }));
+    expect(lights.featuresLit).toEqual([0]);
+    expect(lights.lampsLit.length).toBeGreaterThan(0);
+    lights.forget();
+    expect(lights.featuresLit).toEqual([]);
+    expect(lights.lampsLit).toEqual([]);
+  });
+
   it('glow the hole only while something is going down it, and never past capacity', () => {
     const quiet = new SceneLights(256, 256).build(base()).count;
     expect(new SceneLights(256, 256).build(base({ holePulse: [1] })).count).toBe(quiet + 1);
@@ -161,9 +171,9 @@ describe('the lights', () => {
   });
 });
 
-describe('the arrow to the next gate', () => {
+describe('the arrow to the way out', () => {
   const vp = camera(0, -14).viewProjection;
-  it('hangs over a gate in view', () => {
+  it('hangs over the way out in view', () => {
     const p = placePointer(vp, { x: 0, y: -10 }, { x: 0, y: -14 }, 1280, 800, false, 0)!;
     expect(p.over).toBe(true);
     expect(p.x).toBeCloseTo(640, -1);
@@ -235,5 +245,18 @@ describe('the camera rig', () => {
     expect(orbit.currentAzimuth).toBeCloseTo(CAMERA_HOME.azimuth, 5);
     for (let f = 0; f < 600; f++) r.update(1 / 60, 10 + f / 60, { x: 0, y: 0, yaw: 0, speed: 5 });
     expect(Math.abs(Math.cos(orbit.currentAzimuth) + 1)).toBeLessThan(0.01);
+  });
+
+  it('jumps to a machine in a new cave at once, with no easing from where it was and no lead left over', () => {
+    const { r, cam } = rig(null);
+    for (let f = 0; f < 240; f++) r.update(1 / 60, f / 60, { x: 300, y: 40, yaw: 0, speed: 10 });
+    expect(cam.target[0]).toBeGreaterThan(300);
+    // the next cave's coordinates are its own: the machine comes in at the edge of a grid about the origin
+    r.snapTo(-120, 8);
+    expect([r.follow[0], r.follow[1]]).toEqual([-120, 8]);
+    // a frame later, stood still, it is still there and not drifting back to the lead or the aim of the old one
+    r.update(1 / 60, 10, { x: -120, y: 8, yaw: 0, speed: 0 });
+    expect(cam.target[0]).toBeCloseTo(-120, 5);
+    expect(cam.target[1]).toBeCloseTo(8, 5);
   });
 });

@@ -1,15 +1,14 @@
 /**
  * What is in the cave: every coin, gem, bar and brick the world holds, where
- * each came from, and how much of each room, chamber, side room and wall is
- * still lying about. Put back from the save when the game starts, added to
- * as rooms open and walls come down, and taken from as things go down the
- * hole or are sealed in with their room.
+ * each came from, and how much of the cave, each chamber, side room and wall
+ * is still lying about. Put back from the save when the game starts, added to
+ * as walls come down, and taken from as things go down the hole.
  *
  * It keeps its own counts rather than asking the world, and hands the counts
  * of what is left to the save as they are, so the save is never behind.
  */
 import { chamberCentre, stashCentre, tileCentre, type BarrelSpot, type Cave, type Heap } from './cave';
-import { roomStock, sourcesOf, type Sources } from './economy';
+import { caveStock, sourcesOf, type Sources } from './economy';
 import { BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, KIND_VALUE, type World } from './physics';
 
 /** Where a body came from when it came from nowhere that counts: a brick. */
@@ -35,14 +34,6 @@ export function treasureHeap(cave: Cave, w: number): Heap {
   return { x, y, coins: 0, gems: wall.treasure };
 }
 
-/** The parts of the game's progress that say what is to be put back. */
-export interface Progress {
-  current(): number;
-  next(): number | null;
-  nextOpen(): boolean;
-  sealed(area: number): boolean;
-}
-
 /** The parts of the save that say what was left. */
 export interface SavedStock {
   /** What was left of each source, by kind, when last saved; any shape an older save had. */
@@ -52,7 +43,7 @@ export interface SavedStock {
   walls: readonly boolean[];
   /** Every brick lying about, four numbers each: x, y, z and the grade of wall it came from. */
   rubble: readonly number[];
-  /** Every barrel still about, four numbers each: x, y, z and its room; null for none ever placed. */
+  /** Every barrel still about, three numbers each: x, y and z; null for none ever placed. */
   barrels: readonly number[] | null;
 }
 
@@ -61,40 +52,35 @@ export class Stock {
   readonly origin: Uint8Array;
   /** The grade of wall each brick came from, by slot. */
   readonly brickGrade: Uint8Array;
-  /** The room each barrel belongs to, and is sealed with, by slot. */
-  readonly home: Uint8Array;
   /** How many of each kind are in the world. */
   readonly kinds = new Array<number>(KINDS).fill(0);
   /** How many of each kind are left from each source. */
   readonly left: number[][];
   private readonly sources: Sources;
-  private readonly stocks: { value: number; kinds: number[] }[];
+  private readonly stocked: { value: number; kinds: number[] };
 
   /**
-   * `cave` is what is being kept, for where its chambers and walls are and what is in its rooms.
+   * `cave` is what is being kept, for where its chambers and walls are and what is in it.
    * `capacity[kind]` is how many of each kind past the coins may be in the
-   * world at once, for drawing; `current` is the room being cleared, which is
-   * where anything spawned without a source is counted. `barrels` is where
-   * each room's barrels stand when it opens.
+   * world at once, for drawing; anything spawned without a source is counted
+   * to the cave. `barrels` is where its barrels stand when it begins.
    */
   constructor(
     private readonly cave: Cave,
     private readonly world: World,
     private readonly capacity: readonly number[],
-    private readonly current: () => number,
     private readonly barrels: readonly BarrelSpot[] = [],
     private readonly random: () => number = Math.random,
   ) {
     this.sources = sourcesOf(cave.spec);
     this.left = Array.from({ length: this.sources.count }, () => new Array<number>(KINDS).fill(0));
-    this.stocks = cave.spec.areas.map((_, a) => roomStock(cave.spec, a));
+    this.stocked = caveStock(cave.spec);
     this.origin = new Uint8Array(world.capacity);
     this.brickGrade = new Uint8Array(world.capacity);
-    this.home = new Uint8Array(world.capacity);
   }
 
   /** A body into the world from a source, if there is room for another of its kind. */
-  spawn(kind: number, x: number, y: number, z: number, vx = 0, vy = 0, vz = 0, from = this.current()): boolean {
+  spawn(kind: number, x: number, y: number, z: number, vx = 0, vy = 0, vz = 0, from = 0): boolean {
     if (kind > 0 && this.kinds[kind] >= this.capacity[kind]) return false;
     const i = this.world.spawn(kind, x, y, z, vx, vy, vz);
     if (i < 0) return false;
@@ -115,13 +101,12 @@ export class Stock {
     return i;
   }
 
-  /** A barrel for a room, standing at (x, y): counted in the world, from no source, since it is worth nothing. Its slot, or -1. */
-  spawnBarrel(area: number, x: number, y: number, z = KIND_RADIUS[BARREL_KIND] + 0.05): number {
+  /** A barrel standing at (x, y): counted in the world, from no source, since it is worth nothing. Its slot, or -1. */
+  spawnBarrel(x: number, y: number, z = KIND_RADIUS[BARREL_KIND] + 0.05): number {
     if (this.kinds[BARREL_KIND] >= (this.capacity[BARREL_KIND] ?? Infinity)) return -1;
     const i = this.world.spawn(BARREL_KIND, x, y, z);
     if (i < 0) return -1;
     this.origin[i] = NO_SOURCE;
-    this.home[i] = area;
     this.kinds[BARREL_KIND]++;
     return i;
   }
@@ -157,17 +142,16 @@ export class Stock {
   }
 
   /**
-   * Put the cave back as the save left it. The rooms in play, as much of each
-   * as was left, the heaps smaller where they started; a room with nothing
-   * saved whole, unless the cave is done and the last room was emptied long
-   * ago. The hidden chambers broken into off rooms not sealed, the side rooms
-   * off rooms in play, and treasure off walls knocked down, each from what
-   * was left of it. And the bricks, where they lay.
+   * Put the cave back as the save left it: its heaps, as much of them as was
+   * left, smaller where they started; whole for a save with nothing said of
+   * it, unless the game is done and the last cave was emptied long ago. The
+   * hidden chambers broken into, the side rooms, and treasure off walls knocked
+   * down, each from what was left of it. And the bricks, where they lay.
    */
-  restore(saved: SavedStock, progress: Progress) {
+  restore(saved: SavedStock) {
     const hadOf = (from: number): number[] | null => {
       const was = saved.left[from];
-      // a save from before the gold bars has a kind fewer; one from before sources were kept per room has a number
+      // a save from before the gold bars has a kind fewer; one from before sources were kept has a number
       if (was === undefined || typeof was === 'number' || was.length < 5) return null;
       return Array.from({ length: KINDS }, (_, k) => was[k] ?? 0);
     };
@@ -179,14 +163,11 @@ export class Stock {
       for (const [kind, n] of heap.gems) stock[kind] += n;
       this.spawnHeap(from, heap, shareOf(hadOf(from), stock));
     };
-    const next = progress.next();
-    const inPlay = [progress.current(), ...(next !== null && progress.nextOpen() ? [next] : [])];
-    for (const a of inPlay) {
-      const had = hadOf(a);
-      if (!had && saved.done) continue;
-      // exactly what was left of each kind, shared out over the room's heaps as they started: a share
+    const had = hadOf(0);
+    if (had || !saved.done) {
+      // exactly what was left of each kind, shared out over the cave's heaps as they started: a share
       // rounded heap by heap would come back with a few more or fewer than went
-      const heaps = this.cave.spec.areas[a].heaps;
+      const heaps = this.cave.spec.heaps;
       const counts = heaps.map(() => new Array<number>(KINDS).fill(0));
       for (let kind = 0; kind < KINDS; kind++) {
         const per = heaps.map((h) =>
@@ -203,42 +184,30 @@ export class Stock {
           counts[j][kind]++;
         }
       }
-      heaps.forEach((h, j) => this.spawnCounted(a, h, counts[j]));
+      heaps.forEach((h, j) => this.spawnCounted(0, h, counts[j]));
     }
     const { cave, sources } = this;
-    cave.spec.secrets.forEach((secret, k) => {
-      if (saved.secrets[k] && !progress.sealed(secret.area)) spawnSaved(sources.chamber(k), lootHeap(cave, k));
+    cave.spec.secrets.forEach((_, k) => {
+      if (saved.secrets[k]) spawnSaved(sources.chamber(k), lootHeap(cave, k));
     });
-    cave.spec.stashes.forEach((stash, k) => {
-      if (inPlay.includes(stash.area)) spawnSaved(sources.stash(k), stashHeap(cave, k));
-    });
+    cave.spec.stashes.forEach((_, k) => spawnSaved(sources.stash(k), stashHeap(cave, k)));
     cave.spec.walls.forEach((wall, w) => {
-      if (saved.walls[w] && wall.treasure.length && inPlay.includes(wall.area) && hadOf(sources.wall(w)))
+      if (saved.walls[w] && wall.treasure.length && hadOf(sources.wall(w)))
         spawnSaved(sources.wall(w), treasureHeap(cave, w));
     });
     for (let k = 0; k + 3 < saved.rubble.length; k += 4) {
       const [x, y, z, grade] = saved.rubble.slice(k, k + 4);
       if (this.spawnBrick(grade, x, y, z) < 0) break;
     }
-    // the barrels where they were left, or for a save from before there were any, each room's where they start
+    // the barrels where they were left, or for a cave just begun, where they start
     if (saved.barrels === null) {
-      for (const b of this.barrels) if (inPlay.includes(b.area)) this.spawnBarrel(b.area, b.x, b.y);
+      for (const b of this.barrels) this.spawnBarrel(b.x, b.y);
     } else {
-      for (let k = 0; k + 3 < saved.barrels.length; k += 4) {
-        const [x, y, z, area] = saved.barrels.slice(k, k + 4);
-        if (inPlay.includes(area)) this.spawnBarrel(area, x, y, z);
+      for (let k = 0; k + 2 < saved.barrels.length; k += 3) {
+        const [x, y, z] = saved.barrels.slice(k, k + 3);
+        this.spawnBarrel(x, y, z);
       }
     }
-  }
-
-  /** A room just opened: its heaps, its barrels, and what is in its side rooms, to be seen over their walls. */
-  openRoom(area: number) {
-    const { cave, sources } = this;
-    cave.spec.areas[area].heaps.forEach((h) => this.spawnHeap(area, h));
-    for (const b of this.barrels) if (b.area === area) this.spawnBarrel(area, b.x, b.y);
-    cave.spec.stashes.forEach((stash, k) => {
-      if (stash.area === area) this.spawnHeap(sources.stash(k), stashHeap(cave, k));
-    });
   }
 
   /**
@@ -252,46 +221,28 @@ export class Stock {
     return KIND_VALUE[kind];
   }
 
-  /**
-   * A room sealed: everything from it, and from any chamber, side room or wall
-   * off it, taken out of the world wherever it has got to. Each is told to
-   * `gone` as it goes, before it is removed.
-   */
-  seal(area: number, gone: (x: number, y: number, z: number, slot: number) => void = () => {}) {
-    const { world } = this;
-    for (let i = 0; i < world.count; i++) {
-      if (!world.alive[i]) continue;
-      if (world.kind[i] === BARREL_KIND) {
-        if (this.home[i] !== area) continue;
-        gone(world.x[i], world.y[i], world.z[i], i);
-        this.removeBarrel(i);
-        continue;
-      }
-      if (this.origin[i] === NO_SOURCE || this.sources.area(this.origin[i]) !== area) continue;
-      gone(world.x[i], world.y[i], world.z[i], i);
-      this.kinds[world.kind[i]]--;
-      this.left[this.origin[i]][world.kind[i]]--;
-      world.remove(i);
-    }
+  /** What is still in the cave from a source, in coins: the cave itself by default, or a chamber, side room or wall. */
+  lying(from = 0): number {
+    return this.left[from].reduce((sum, n, k) => sum + n * KIND_VALUE[k], 0);
   }
 
-  /** What is still in the cave from a room, in coins. */
-  lying(area: number): number {
-    return this.left[area].reduce((sum, n, k) => sum + n * KIND_VALUE[k], 0);
+  /** What is still in the cave from every source, in coins: what leaving it loses. */
+  lyingAll(): number {
+    return this.left.reduce((sum, _, from) => sum + this.lying(from), 0);
   }
 
-  /** How much of a room is banked, 0 to 1. */
-  banked(area: number): number {
-    return Math.max(0, Math.min(1, 1 - this.lying(area) / this.stocks[area].value));
+  /** How much of the cave itself is banked, 0 to 1: what a chamber or side room holds is over and above it. */
+  banked(): number {
+    return Math.max(0, Math.min(1, 1 - this.lying() / this.stocked.value));
   }
 
-  /** Where every barrel is, four numbers each with its room, for the save. */
+  /** Where every barrel is, three numbers each, for the save. */
   barrelRecord(): number[] {
     const { world } = this;
     const out: number[] = [];
     for (let i = 0; i < world.count; i++) {
       if (!world.alive[i] || world.kind[i] !== BARREL_KIND) continue;
-      out.push(+world.x[i].toFixed(2), +world.y[i].toFixed(2), +world.z[i].toFixed(2), this.home[i]);
+      out.push(+world.x[i].toFixed(2), +world.y[i].toFixed(2), +world.z[i].toFixed(2));
     }
     return out;
   }

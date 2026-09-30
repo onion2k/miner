@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "test:slow": "vitest run --config vitest.slow.config.ts",
     "sim": "esbuild scripts/sim.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/sim.mjs --log-level=warning && node node_modules/.cache/sim/sim.mjs",
     "sim:check": "esbuild scripts/sim-check.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/sim-check.mjs --log-level=warning && node node_modules/.cache/sim/sim-check.mjs",
     "bench": "esbuild scripts/physics-bench.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/physics-bench.mjs --log-level=warning && node node_modules/.cache/sim/physics-bench.mjs",
@@ -21,11 +22,12 @@
     "leaks:check": "esbuild scripts/leak-check.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/leaks.mjs --log-level=warning && node node_modules/.cache/sim/leaks.mjs --minutes 20",
     "balance": "esbuild scripts/balance.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/balance.mjs --log-level=warning && node node_modules/.cache/sim/balance.mjs",
     "balance:check": "esbuild scripts/balance.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/balance.mjs --log-level=warning && node node_modules/.cache/sim/balance.mjs --check",
+    "caves:map": "esbuild scripts/cave-map.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/cave-map.mjs --log-level=warning && node node_modules/.cache/sim/cave-map.mjs",
     "smoke": "playwright test",
     "look": "playwright test smoke/look.spec.ts",
     "look:update": "playwright test smoke/look.spec.ts --update-snapshots",
     "check:quick": "prettier --check . --log-level warn && npm run --silent typecheck && eslint . && vitest run --reporter dot",
-    "check": "npm run --silent check:quick && npm run --silent fuzz && npm run --silent determinism && npm run --silent leaks:check && npm run --silent sim:check && npm run --silent balance:check && npm run --silent bench && npm run --silent smoke",
+    "check": "npm run --silent check:quick && npm run --silent test:slow && npm run --silent fuzz && npm run --silent determinism && npm run --silent leaks:check && npm run --silent sim:check && npm run --silent balance:check && npm run --silent bench && npm run --silent smoke",
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {

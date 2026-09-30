@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { TILE, buildCave, tileCentre } from '../src/cave';
+import { TILE, tileCentre } from '../src/cave';
 import { Dozer, separate } from '../src/dozer';
-import { AREAS, COLS, GRID, ORIGIN_X, ORIGIN_Y, PLAYER_SPEC, ROWS, SPEC, grid, tileAt, withSeed } from './helpers';
+import {
+  IDS,
+  PLAYER_SPEC,
+  ROWS,
+  ORIGIN_X,
+  ORIGIN_Y,
+  TEST_GRID as GRID,
+  caveOf,
+  grid,
+  tileAt,
+  tileIn,
+  withSeed,
+} from './helpers';
 
 const DT = 1 / 60;
 
@@ -66,16 +78,17 @@ describe('the dozer', () => {
     expect(walled[tileAt(d.x, d.y)]).toBe(0);
   });
 
-  it('never ends up in the rock, driven about the whole cave at random', () => {
-    const cave = buildCave(SPEC);
-    const solid = cave.solid(AREAS.map(() => true));
+  it.each(IDS)('never ends up in the rock, driven about the cave %s at random', (id) => {
+    const cave = caveOf(id);
+    const { cols } = cave.grid;
+    const solid = cave.solid(true);
     const open: number[] = [];
-    for (let t = 0; t < COLS * ROWS; t++) if (!solid[t]) open.push(t);
+    for (let t = 0; t < solid.length; t++) if (!solid[t]) open.push(t);
     withSeed(3, () => {
       for (let run = 0; run < 12; run++) {
-        const d = new Dozer(solid, GRID);
+        const d = new Dozer(solid, cave.grid);
         const t = open[Math.floor(Math.random() * open.length)];
-        [d.x, d.y] = tileCentre(GRID, t % COLS, (t / COLS) | 0);
+        [d.x, d.y] = tileCentre(cave.grid, t % cols, (t / cols) | 0);
         d.yaw = Math.random() * Math.PI * 2;
         let throttle = 1,
           steer = 0;
@@ -85,7 +98,7 @@ describe('the dozer', () => {
             steer = Math.random() * 2 - 1;
           }
           d.update(DT, { throttle, steer }, PLAYER_SPEC, 0);
-          const at = tileAt(d.x, d.y);
+          const at = tileIn(cave, d.x, d.y);
           if (at < 0 || solid[at]) expect.fail(`run ${run} frame ${f}: in rock at ${d.x.toFixed(1)},${d.y.toFixed(1)}`);
         }
       }

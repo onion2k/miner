@@ -4,8 +4,8 @@
  *   npm run bench              measure, and fail if any scenario has got slower by more than the tolerance
  *   npm run bench -- --update  write what it takes now as the new baseline
  *
- * Three scenarios, each from a seed, over the whole cave with every room's
- * heaps in it: the cave at rest, which is what most frames are; blades and
+ * Three scenarios, each from a seed, over the East Gallery with its heaps in
+ * it, which is the cave whose belt runs through a heap: the cave at rest, which is what most frames are; blades and
  * belts churning the heaps, which is what a busy frame is; and a heap
  * falling into the hollow all at once, which is the worst a frame gets.
  *
@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { BODY_CAPACITY, buildCave, type Heap } from '../src/cave';
-import { FIVE_ROOMS } from '../src/caves';
+import { RUN } from '../src/caves';
 import { makeWorld, type Pusher, type World } from '../src/physics';
 
 const BASELINE = 'scripts/bench-baseline.json';
@@ -61,16 +61,17 @@ function seeded(seed: number) {
   };
 }
 
-const AREAS = FIVE_ROOMS.areas;
-const HOLE = FIVE_ROOMS.holes[0];
+/** The cave the bench plays in: the East Gallery, whose belt runs down the length of a heap's way to the hole. */
+const SPEC = RUN.find((c) => c.id === 'east-gallery')!;
+const HOLE = SPEC.holes[0];
 
-/** A world over the game's cave with every room open. */
+/** A world over the cave with its way out open. */
 function inCave(): World {
-  const cave = buildCave(FIVE_ROOMS);
-  return makeWorld(BODY_CAPACITY, cave.solid(AREAS.map(() => true)), cave.grid, cave.holes);
+  const cave = buildCave(SPEC);
+  return makeWorld(BODY_CAPACITY, cave.solid(true), cave.grid, cave.holes);
 }
 
-/** Every room open and every heap dropped as the game drops them, settled. */
+/** Every heap dropped as the game drops them, settled. */
 function cave(settle = true): World {
   seeded(1);
   const world = inCave();
@@ -86,7 +87,7 @@ function cave(settle = true): World {
     for (let k = 0; k < h.coins; k++) one(0);
     for (const [kind, n] of h.gems) for (let k = 0; k < n; k++) one(kind);
   };
-  for (const area of AREAS) for (const h of area.heaps) drop(h);
+  for (const h of SPEC.heaps) drop(h);
   if (settle) for (let f = 0; f < 420; f++) world.step(DT, () => {});
   return world;
 }
@@ -102,11 +103,11 @@ const SCENARIOS: Scenario[] = [
     frames: 600,
     setup: () => {
       const world = cave();
-      // a blade and a hull on a circle through a heap in each room, as four machines would push
-      const heaps = AREAS.map((a) => a.heaps[0]);
+      // a blade and a hull on a circle through each heap, as two machines would push
+      const heaps = SPEC.heaps;
       const pushers: Pusher[] = heaps.flatMap((_, owner) => [0, 1].map(() => pusher(owner)));
-      world.belts = AREAS.filter((a) => a.belt).map((a) => {
-        const s = a.belt!.spec;
+      world.belts = SPEC.belts.map((b) => {
+        const s = b.spec;
         const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0);
         return {
           cx: (s.x0 + s.x1) / 2,
@@ -158,7 +159,7 @@ const SCENARIOS: Scenario[] = [
       for (let k = 0; k < 4000; k++) {
         const r = Math.sqrt(Math.random()) * 14,
           a = Math.random() * Math.PI * 2;
-        world.spawn(0, HOLE.x - 26 + Math.cos(a) * r, HOLE.y + 12 + Math.sin(a) * r, 2 + Math.random() * 18);
+        world.spawn(0, HOLE.x + 24 + Math.cos(a) * r, HOLE.y + 40 + Math.sin(a) * r, 2 + Math.random() * 18);
       }
       return { world, before: () => {} };
     },

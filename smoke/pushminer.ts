@@ -17,8 +17,9 @@ declare global {
 /** The parts of a save a test might want to set; the rest start as a new game's. */
 export interface SaveSetup {
   bank?: number;
-  areas?: boolean[];
-  room?: number;
+  /** The cave the save stands in, by its id, and whether its way out is open. */
+  cave?: string;
+  open?: boolean;
   done?: boolean;
   drones?: number;
   horn?: boolean;
@@ -83,3 +84,62 @@ export async function ready(page: Page) {
     throw new Error(`the game did not boot: ${await page.locator('#bootMsg').textContent()}`);
   }
 }
+
+/** What the page shows of the way out: the black layer's opacity, the arrow and what it says, the note and the progress line. */
+export async function screen(page: Page) {
+  return page.evaluate(() => {
+    const text = (id: string) => document.getElementById(id)!.textContent;
+    const pointer = document.getElementById('pointer')!;
+    return {
+      fade: +getComputedStyle(document.getElementById('fade')!).opacity,
+      arrow: pointer.hidden ? null : pointer.querySelector('span')!.textContent,
+      note: document.getElementById('cameraNote')!.hidden ? null : text('cameraNote'),
+      progress: text('progress'),
+    };
+  });
+}
+
+/**
+ * Drive with the keys, as a player does, to a point and on through it: W held, and A or D held for as
+ * long as the machine's heading is off the bearing of the point by more than a little, re-read every few
+ * frames. Stops when `until` says so or after `frames`, and lets go of the keys. Each sample is handed to
+ * `seen`, so a test can watch what the page does on the way.
+ */
+export async function steerTo(
+  page: Page,
+  target: { x: number; y: number },
+  until: (state: GameStateLike) => boolean,
+  options: { frames?: number; every?: number; seen?: (state: GameStateLike) => Promise<void> | void } = {},
+) {
+  const { frames = 60 * 40, every = 5, seen } = options;
+  const held = new Set<string>();
+  const hold = async (key: string, on: boolean) => {
+    if (on === held.has(key)) return;
+    if (on) await page.keyboard.down(key);
+    else await page.keyboard.up(key);
+    if (on) held.add(key);
+    else held.delete(key);
+  };
+  try {
+    await hold('w', true);
+    for (let f = 0; f < frames; f += every) {
+      const state = await page.evaluate((n) => {
+        window.pushminer!.step(n);
+        return window.pushminer!.state();
+      }, every);
+      if (seen) await seen(state);
+      if (until(state)) return state;
+      const want = Math.atan2(target.y - state.dozer.y, target.x - state.dozer.x);
+      let err = want - state.dozer.yaw;
+      while (err > Math.PI) err -= Math.PI * 2;
+      while (err < -Math.PI) err += Math.PI * 2;
+      await hold('a', err > 0.08);
+      await hold('d', err < -0.08);
+    }
+    throw new Error(`did not get there in ${frames} frames`);
+  } finally {
+    for (const key of [...held]) await hold(key, false);
+  }
+}
+
+type GameStateLike = ReturnType<PushminerApi['state']>;

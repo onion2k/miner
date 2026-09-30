@@ -1,49 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import { buildCave } from '../src/cave';
 import { Nav } from '../src/nav';
 import { beltOf } from '../src/tools';
-import { AREAS, COLS, GRID, HOLE, ROWS, SPEC, flood, tileAt } from './helpers';
+import { IDS, caveOf, floodIn, tileIn } from './helpers';
 
-const cave = buildCave(SPEC);
-const solid = cave.solid(AREAS.map(() => true));
-const nav = new Nav(solid, GRID, SPEC.holes);
-const reachable = flood(tileAt(HOLE.x, HOLE.y), (t) => solid[t] === 0);
+describe.each(IDS)('the way round the rock in %s', (id) => {
+  const cave = caveOf(id);
+  const { spec, holes } = cave;
+  const hole = holes[0];
+  const solid = cave.solid(true);
+  const nav = new Nav(solid, cave.grid, holes);
+  const reachable = floodIn(cave, tileIn(cave, hole.x, hole.y), (t) => solid[t] === 0);
 
-describe('the way round the rock', () => {
   it('knows how far every tile joined to the hole is from it, and no other', () => {
-    for (let t = 0; t < COLS * ROWS; t++) {
+    for (let t = 0; t < solid.length; t++) {
       if (reachable.has(t)) expect(Number.isFinite(nav.toHole[t]), `tile ${t}`).toBe(true);
       else expect(nav.toHole[t], `tile ${t}`).toBe(Infinity);
     }
-    expect(nav.toHole[tileAt(HOLE.x, HOLE.y)]).toBe(0);
+    expect(nav.toHole[tileIn(cave, hole.x, hole.y)]).toBe(0);
   });
 
-  it('leads from anywhere in every room to the hole in clear straight runs', () => {
-    for (const area of AREAS) {
-      for (const h of area.heaps) {
-        let x = h.x,
-          y = h.y;
-        for (let leg = 0; leg < 60 && Math.hypot(x - HOLE.x, y - HOLE.y) > HOLE.radius + 4; leg++) {
-          const aim = nav.ahead(nav.toHole, x, y, 2.4, 6);
-          expect(aim, `${area.name}: no way on from ${x},${y}`).not.toBeNull();
-          expect(nav.clear(x, y, aim![0], aim![1], 0.5)).toBe(true);
-          expect(nav.distance(nav.toHole, aim![0], aim![1])).toBeLessThan(nav.distance(nav.toHole, x, y));
-          [x, y] = aim!;
-        }
-        expect(
-          Math.hypot(x - HOLE.x, y - HOLE.y),
-          `${area.name} heap at ${h.x},${h.y} never got to the hole`,
-        ).toBeLessThanOrEqual(HOLE.radius + 4);
+  it('leads from every heap to the hole in clear straight runs', () => {
+    for (const h of spec.heaps) {
+      let x = h.x,
+        y = h.y;
+      for (let leg = 0; leg < 160 && Math.hypot(x - hole.x, y - hole.y) > hole.radius + 4; leg++) {
+        const aim = nav.ahead(nav.toHole, x, y, 2.4, 6);
+        expect(aim, `${spec.name}: no way on from ${x},${y}`).not.toBeNull();
+        expect(nav.clear(x, y, aim![0], aim![1], 0.5)).toBe(true);
+        expect(nav.distance(nav.toHole, aim![0], aim![1])).toBeLessThan(nav.distance(nav.toHole, x, y));
+        [x, y] = aim!;
       }
+      expect(
+        Math.hypot(x - hole.x, y - hole.y),
+        `${spec.name} heap at ${h.x},${h.y} never got to the hole`,
+      ).toBeLessThanOrEqual(hole.radius + 4);
     }
   });
 
   it('counts a running belt as somewhere to leave a load, and never as further than the hole', () => {
-    const area = AREAS.find((a) => a.belt)!;
-    const belt = beltOf(area.belt!.spec);
+    if (!spec.belts.length) return;
+    const belt = beltOf(spec.belts[0].spec);
     nav.setBelts([belt]);
     try {
-      for (let t = 0; t < COLS * ROWS; t++)
+      for (let t = 0; t < solid.length; t++)
         if (Number.isFinite(nav.toHole[t])) expect(nav.toDrop[t]).toBeLessThanOrEqual(nav.toHole[t] + 1e-3);
       const farEnd = { x: belt.cx - belt.dx * belt.half, y: belt.cy - belt.dy * belt.half };
       expect(nav.onBelt(farEnd.x, farEnd.y, 0.5)).toBe(belt);
@@ -54,8 +53,18 @@ describe('the way round the rock', () => {
   });
 
   it('has no way toward a point in the rock', () => {
-    const rock = solid.findIndex((s, t) => s === 1 && t > COLS);
+    const rock = solid.findIndex((s, t) => s === 1 && t > cave.grid.cols);
     const [x, y] = nav.centre(rock);
     expect(nav.toward(x, y).every((v) => v === Infinity)).toBe(true);
+  });
+
+  it('reaches through the way out once it is open, and not before', () => {
+    if (!spec.exit) return;
+    const shut = new Nav(cave.solid(false), cave.grid, holes);
+    const exits = [...cave.cells.keys()].filter((t) => cave.cells[t] === 64);
+    expect(exits.length).toBeGreaterThan(0);
+    const [x, y] = nav.centre(exits[exits.length >> 1]);
+    expect(Number.isFinite(nav.distance(nav.toHole, x, y)), 'open').toBe(true);
+    expect(shut.distance(shut.toHole, x, y), 'shut').toBe(Infinity);
   });
 });

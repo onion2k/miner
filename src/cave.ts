@@ -1,15 +1,15 @@
 /**
  * The cave: a grid of tiles, each rock or open, carved as a few wobbly
- * ellipses joined by corridors. Four of the corridors are blocked by gates —
- * rock that comes down when the room before is cleared — and each room has
- * heaps of coins, which is all it has, and somewhere a conveyor could run.
- * The last room also has a vein, which trickles more in once the whole cave
- * is clear, so there is still something to push.
+ * ellipses and boxes, with heaps of coins in it, and somewhere a conveyor
+ * could run. It has a way in, always open, and a way out, a cutting through
+ * the rock at its edge that opens when the cave is cleared; the last cave has
+ * none, and its vein trickles more in once it is clear, so there is still
+ * something to push.
  *
  * This file is the machinery: the kinds of thing a cave is made of, how a
  * `CaveSpec` is carved into a `Cave`, and the questions asked of one. What a
- * cave actually holds is content, and is handed in (`caves.ts` has the one the
- * game plays), so the grid's size, its corner and its holes are the cave's
+ * cave actually holds is content, and is handed in (`caves.ts` has the run
+ * the game plays), so the grid's size, its corner and its holes are the cave's
  * and never constants here. Without that there is no handing the game a
  * second cave.
  *
@@ -23,12 +23,12 @@ export const TILE = 4;
 
 export const ROCK = 0,
   OPEN = 1;
-/** A gate tile's value is GATE + the index of the area it opens. */
-export const GATE = 2;
 /** A hidden chamber's tiles, and the rock that breaks to open it, are SECRET + the chamber's index. */
 export const SECRET = 16;
 /** A brick wall's tiles are BRICK + the wall's index. */
 export const BRICK = 32;
+/** The tiles of the way out: rock, and nothing to break into, until the cave is cleared. */
+export const EXIT = 64;
 
 /** Where a cave's tiles are: how many, and where the corner of the grid is in the world. */
 export interface Grid {
@@ -75,58 +75,42 @@ export interface BeltSpec {
   speed: number;
 }
 
-export interface Area {
-  name: string;
-  /** What is in it, said when it opens. */
-  blurb: string;
-  heaps: Heap[];
-  vein: Vein;
-  /** Where the floor cracks and fountains of coins come up, now and then. */
-  cracks: [number, number][];
-  belt: { spec: BeltSpec; cost: number } | null;
+/** A conveyor bought for the cave: which, what it is and what it costs. */
+export interface BeltOffer {
+  id: string;
+  spec: BeltSpec;
+  cost: number;
 }
 
 /**
- * The hollow in the middle, and an alcove out each side of it, in tiles from
- * the middle of the grid; a tile is TILE world units, so a tile n along is 4n
- * in the world. Each other room is out one way from it (see `Wing`), and its
- * extents along that way are what says where its gate is, where the way into
- * it starts, and where going on into it seals the room behind.
+ * One piece of what is carved, in tiles from the grid's corner: a wobbly ellipse, or a box. Carved
+ * in order, and a shape with `rock` set puts rock back, for a pillar or an island.
  */
-export interface HollowShape {
-  rx: number;
-  ry: number;
-  alcove: { along: number; rx: number; ry: number };
-}
+export type Shape =
+  | { kind: 'ellipse'; cx: number; cy: number; rx: number; ry: number; seed: number; rock?: true }
+  | { kind: 'rect'; tiles: [number, number, number, number]; rock?: true };
 
-/** A gated room, out from the hollow. `dir` is the way out; `along` and `across` are in tiles, the way out and square to it. */
-export interface Wing {
-  dir: [number, number];
-  /** The room: its middle along and across, its half-lengths along and across. */
-  room: { along: number; across: number; half: number; halfAcross: number; seed: number };
-  /** The corridor from the hollow: from and to along it, and its tiles across, from and to. */
-  corridor: { from: number; to: number; across: [number, number] };
-  /** How far along the gate stands. */
-  gate: number;
-  /** Where the way in starts, along: the hollow's edge on that side, or for the galleries the alcove's mouth. */
-  mouth: number;
+/** A cutting through the rock at the cave's edge: the way out, or the way in. */
+export interface Cutting {
+  /** The tiles of the cutting, [x0, y0, x1, y1] inclusive, from a little inside the cave's floor out to near the grid's edge. */
+  tiles: [number, number, number, number];
+  /** Which way is out of the cave along it, as a unit step: [1, 0], [0, -1] and so on. */
+  out: [number, number];
 }
 
 /**
- * A hidden chamber off a room: rock that looks like any other, until the
+ * A hidden chamber off a cave: rock that looks like any other, until the
  * player drives square into the stretch of it that is thin, which smashes
  * and opens a pocket with gold bars in it. What is in one is over and above
- * the room: it does not count toward clearing it, and it goes with the room
- * when the room is sealed.
+ * the cave: it does not count toward clearing it, and it goes with the cave
+ * when the cave is left.
  *
  * In tiles, counted as the map is: `wall` is the rock that breaks, from the
- * room's edge to the chamber; `chamber` the pocket behind it, carved as the
- * rooms are. Each is kept two tiles and more from any other open floor, so
+ * cave's edge to the chamber; `chamber` the pocket behind it, carved as the
+ * shapes are. Each is kept two tiles and more from any other open floor, so
  * nothing else shows it and nothing else reaches it.
  */
 export interface Secret {
-  /** The room it is off. */
-  area: number;
   wall: [number, number, number, number];
   chamber: { cx: number; cy: number; rx: number; ry: number; seed: number };
   loot: { coins: number; gems: [GemKind, number][] };
@@ -141,73 +125,84 @@ export interface Secret {
  * or down the hole to be rid of. Some walls have treasure set in them — gold
  * bricks, gems in the face — which comes loose with the bricks.
  *
- * In tiles, from the middle of the grid.
+ * In tiles, from the grid's corner.
  */
 export interface Wall {
-  /** The room it is in, or off. */
-  area: number;
   /** 1 clay brick, 2 stone, 3 iron-bound. */
   grade: 1 | 2 | 3;
   tiles: [number, number, number, number];
-  /** What is set in it, over and above the room. */
+  /** What is set in it, over and above the cave. */
   treasure: [GemKind, number][];
 }
 
 /**
  * Something behind a brick wall, to be smashed into: a side room down a
- * corridor off a room.
- * What is in it can be seen over the walls, from when its area opens, and is
- * over and above the area, like a hidden chamber's, and gone with the area
- * when it is sealed.
+ * corridor off a cave.
+ * What is in it can be seen over the walls, and is over and above the cave,
+ * like a hidden chamber's, and gone with the cave when it is left.
  *
- * In tiles, from the middle of the grid: the `corridor`, and the `room`
+ * In tiles, from the grid's corner: the `corridor`, and the `room`
  * carved as the others are; `at` the middle of what is in it.
  */
 export interface Stash {
   name: string;
-  area: number;
   at: [number, number];
   loot: { coins: number; gems: [GemKind, number][] };
   corridor?: [number, number, number, number];
   room?: { cx: number; cy: number; rx: number; ry: number; seed: number };
 }
 
-/** A barrel where it stands when its room opens. */
+/** A barrel where it stands when its cave begins. */
 export interface BarrelSpot {
   x: number;
   y: number;
-  area: number;
 }
 
-/** A lamp on a post. `area` is the room it lights, which is when it is lit. */
+/** A lamp on a post. */
 export interface Lamp {
   x: number;
   y: number;
-  area: number;
   /** How high its head stands. */
   height: number;
 }
 
 /**
  * A cave as content: everything `buildCave` carves from and everything the
- * game asks of it, in tiles from the middle of the grid, which is where
- * the rooms are laid out from.
+ * game asks of it. Tiles are counted from the grid's corner, which is where
+ * `shapes`, the chambers, walls and side rooms are laid out; heaps, holes,
+ * belts, the vein and the cracks are in world units, where the tile at the
+ * middle of the grid is centred on the origin.
  */
 export interface CaveSpec {
+  /** A stable name, kept in the save: 'hollow', 'south-gallery', and so on. */
+  id: string;
+  name: string;
+  /** What is in it, said on arriving. */
+  blurb: string;
+  /** The look of the whole cave: null for the plain one. */
+  biome: 'jungle' | 'ice' | 'lava' | 'future' | null;
   cols: number;
   rows: number;
+  /** Carved in order; `rock: true` puts rock back (pillars, the island a ring of floor goes round). */
+  shapes: Shape[];
   /** Every way down. The first is where a drone is sent home to. */
   holes: HoleSpec[];
-  hollow: HollowShape;
-  wings: Wing[];
-  areas: Area[];
-  /** The order the rooms open in, one when the one before is cleared: by what is in them. */
-  order: number[];
+  heaps: Heap[];
+  /** Runs once the last cave is cleared: a cave with a way out has one too, to be kept when it is not the last. */
+  vein: Vein;
+  /** Where the floor cracks and fountains of coins come up, once the game is done. */
+  cracks: [number, number][];
+  /** The conveyors that can be bought for it. */
+  belts: BeltOffer[];
+  /** Where the machine arrives: always open. */
+  entry: Cutting;
+  /** The way out, shut until the cave is cleared; null in the last cave. */
+  exit: Cutting | null;
   secrets: Secret[];
   walls: Wall[];
   stashes: Stash[];
-  /** How many barrels each room has, the hollow first. */
-  barrelsIn: number[];
+  /** How many barrels it has. */
+  barrels: number;
 }
 
 export interface Cave {
@@ -217,14 +212,14 @@ export interface Cave {
   cells: Uint8Array;
   /** The lamps, the same ones every time the cave is built. */
   lamps: Lamp[];
-  /** Where each room's barrels stand when it opens, the same every time. */
+  /** Where the barrels stand when the cave begins, the same every time. */
   barrels: BarrelSpot[];
   /**
-   * A rock tile's cell is 1; a gate's is 1 until its area is opened, a hidden
+   * A rock tile's cell is 1; the way out's is 1 until it is `open`, a hidden
    * chamber's, and the rock in front of it, until it is broken into, and a
    * brick wall's until it is knocked down.
    */
-  solid(unlocked: boolean[], revealed?: boolean[], broken?: boolean[]): Uint8Array;
+  solid(open: boolean, revealed?: boolean[], broken?: boolean[]): Uint8Array;
 }
 
 /**
@@ -287,9 +282,9 @@ export function hash(a: number, b: number, c = 0): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** Whether a cell is rock to look at: rock, or a chamber not yet broken into. A brick wall is drawn as bricks, on floor. */
-export function rockish(cell: number, revealed: boolean[]): boolean {
-  return cell === ROCK || (cell >= SECRET && cell < BRICK && !revealed[cell - SECRET]);
+/** Whether a cell is rock to look at: rock, the way out before it opens, or a chamber not yet broken into. A brick wall is drawn as bricks, on floor. */
+export function rockish(cell: number, revealed: boolean[], open = false): boolean {
+  return cell === ROCK || (cell === EXIT && !open) || (cell >= SECRET && cell < BRICK && !revealed[cell - SECRET]);
 }
 
 /** The ellipse's tiles set to `value`; with `onlyRock`, only those that were rock. */
@@ -336,34 +331,16 @@ function carveRect(
 export function buildCave(spec: CaveSpec): Cave {
   const grid = gridOf(spec),
     { cols, rows } = grid;
-  // tiles counted from the middle of the grid, which is where the rooms are laid out from
-  const C = cols / 2,
-    R = rows / 2;
-  const { hollow, wings } = spec;
   const cells = new Uint8Array(cols * rows).fill(ROCK);
-  // the hollow, with an alcove each side
-  carveEllipse(cells, grid, C, R, hollow.rx, hollow.ry, 1.7);
-  carveEllipse(cells, grid, C - hollow.alcove.along, R - 1, hollow.alcove.rx, hollow.alcove.ry, 4.1);
-  carveEllipse(cells, grid, C + hollow.alcove.along, R + 1, hollow.alcove.rx, hollow.alcove.ry, 2.9);
-  // each wing: its room, and its corridor from the hollow with a gate across it
-  for (let a = 1; a < wings.length; a++) {
-    const {
-      dir: [dx, dy],
-      room,
-      corridor,
-      gate,
-    } = wings[a];
-    const tile = (along: number, across: number): [number, number] =>
-      dx ? [C + dx * along, R + across] : [C + across, R + dy * along];
-    const [cx, cy] = tile(room.along, room.across);
-    carveEllipse(cells, grid, cx, cy, dx ? room.half : room.halfAcross, dx ? room.halfAcross : room.half, room.seed);
-    const [ax, ay] = tile(corridor.from, corridor.across[0]),
-      [bx, by] = tile(corridor.to, corridor.across[1]);
-    carveRect(cells, grid, Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by));
-    const [gx0, gy0] = tile(gate, corridor.across[0]),
-      [gx1, gy1] = tile(gate, corridor.across[1]);
-    carveRect(cells, grid, Math.min(gx0, gx1), Math.min(gy0, gy1), Math.max(gx0, gx1), Math.max(gy0, gy1), GATE + a);
+  // what the cave is carved of, in order: a pillar put back in rock comes after the floor it stands in
+  for (const shape of spec.shapes) {
+    const value = shape.rock ? ROCK : OPEN;
+    if (shape.kind === 'ellipse') carveEllipse(cells, grid, shape.cx, shape.cy, shape.rx, shape.ry, shape.seed, value);
+    else carveRect(cells, grid, ...shape.tiles, value);
   }
+  // the way in is open floor, through whatever stands in it; the way out is rock, until it is opened
+  carveRect(cells, grid, ...spec.entry.tiles);
+  if (spec.exit) carveRect(cells, grid, ...spec.exit.tiles, EXIT, true);
   // the side rooms, down their corridors
   for (const { corridor, room: c } of spec.stashes) {
     if (corridor) carveRect(cells, grid, corridor[0], corridor[1], corridor[2], corridor[3], OPEN, true);
@@ -384,23 +361,24 @@ export function buildCave(spec: CaveSpec): Cave {
     cells,
     lamps,
     barrels: placeBarrels(cells, spec, grid, lamps),
-    solid(unlocked, revealed = [], broken = []) {
+    solid(open, revealed = [], broken = []) {
       const out = new Uint8Array(cols * rows);
       for (let i = 0; i < cells.length; i++) {
         const c = cells[i];
+        // the way out is looked at first: its value is past the walls', which would take it for one
         out[i] =
           c === OPEN
             ? 0
-            : c >= BRICK
-              ? broken[c - BRICK]
+            : c >= EXIT
+              ? open
                 ? 0
                 : 1
-              : c >= SECRET
-                ? revealed[c - SECRET]
+              : c >= BRICK
+                ? broken[c - BRICK]
                   ? 0
                   : 1
-                : c >= GATE
-                  ? unlocked[c - GATE]
+                : c >= SECRET
+                  ? revealed[c - SECRET]
                     ? 0
                     : 1
                   : 1;
@@ -425,16 +403,40 @@ export function nearHole(holes: readonly HoleSpec[], x: number, y: number, margi
   return holes.some((h) => Math.hypot(x - h.x, y - h.y) < h.radius + margin);
 }
 
+/** The world rectangle of a cutting's tiles: its corner and far corner. */
+function cuttingBox(grid: Grid, c: Cutting): [number, number, number, number] {
+  const [x0, y0, x1, y1] = c.tiles;
+  return [
+    grid.originX + x0 * TILE,
+    grid.originY + y0 * TILE,
+    grid.originX + (x1 + 1) * TILE,
+    grid.originY + (y1 + 1) * TILE,
+  ];
+}
+
 /**
- * Where each room's barrels stand: out on the floor the dozer drives, with
- * floor all round, clear of the heaps, the belts, the lamps, the holes and
- * anything that comes down or opens; spread about, and the same every time.
- * Not behind a brick wall, where they would be no use to anyone.
+ * Whether a point is on a cutting, or within `margin` tiles of one: where no lamp, barrel or dressing
+ * is put, which is what keeps a cutting dark but for the machine's own lights.
+ */
+export function nearCutting(grid: Grid, spec: CaveSpec, x: number, y: number, margin = 0): boolean {
+  const m = margin * TILE;
+  return [spec.entry, spec.exit].some((c) => {
+    if (!c) return false;
+    const [x0, y0, x1, y1] = cuttingBox(grid, c);
+    return x >= x0 - m && x <= x1 + m && y >= y0 - m && y <= y1 + m;
+  });
+}
+
+/**
+ * Where the barrels stand: out on the floor the dozer drives, with floor all
+ * round, clear of the heaps, the belts, the lamps, the holes, the cuttings
+ * and anything that opens; spread about, and the same every time. Not behind
+ * a brick wall, where they would be no use to anyone.
  */
 function placeBarrels(cells: Uint8Array, spec: CaveSpec, grid: Grid, lamps: readonly Lamp[]): BarrelSpot[] {
   const { cols, rows } = grid;
   const at = (tx: number, ty: number) => (tx < 0 || ty < 0 || tx >= cols || ty >= rows ? ROCK : cells[ty * cols + tx]);
-  // the floor joined to a hole with every gate down and every wall standing
+  // the floor joined to a hole with every wall standing
   const joined = new Uint8Array(cols * rows);
   const stack = spec.holes.map(
     (h) => Math.floor((h.y - grid.originY) / TILE) * cols + Math.floor((h.x - grid.originX) / TILE),
@@ -442,7 +444,7 @@ function placeBarrels(cells: Uint8Array, spec: CaveSpec, grid: Grid, lamps: read
   while (stack.length) {
     const t = stack.pop()!;
     const c = cells[t];
-    if (joined[t] || !(c === OPEN || (c >= GATE && c < SECRET))) continue;
+    if (joined[t] || !(c === OPEN || (c >= BRICK && c < EXIT))) continue;
     joined[t] = 1;
     const tx = t % cols;
     if (tx > 0) stack.push(t - 1);
@@ -450,7 +452,7 @@ function placeBarrels(cells: Uint8Array, spec: CaveSpec, grid: Grid, lamps: read
     if (t >= cols) stack.push(t - cols);
     if (t < cols * (rows - 1)) stack.push(t + cols);
   }
-  const candidates: { x: number; y: number; area: number; rank: number }[] = [];
+  const candidates: { x: number; y: number; rank: number }[] = [];
   for (let ty = 2; ty < rows - 2; ty++) {
     for (let tx = 2; tx < cols - 2; tx++) {
       if (!joined[ty * cols + tx] || at(tx, ty) !== OPEN) continue;
@@ -460,30 +462,29 @@ function placeBarrels(cells: Uint8Array, spec: CaveSpec, grid: Grid, lamps: read
       if (!clear) continue;
       const [x, y] = tileCentre(grid, tx, ty);
       if (nearHole(spec.holes, x, y, 12) || nearHeap(spec, x, y, 5) || nearBelt(spec, x, y, 4)) continue;
+      if (nearCutting(grid, spec, x, y, 2)) continue;
       if (lamps.some((l) => Math.hypot(l.x - x, l.y - y) < 5)) continue;
-      candidates.push({ x, y, area: areaAt(spec, x, y), rank: hash(tx, ty, 91) });
+      candidates.push({ x, y, rank: hash(tx, ty, 91) });
     }
   }
   candidates.sort((a, b) => a.rank - b.rank);
   const out: BarrelSpot[] = [];
   for (const c of candidates) {
-    if (out.filter((b) => b.area === c.area).length >= (spec.barrelsIn[c.area] ?? 0)) continue;
+    if (out.length >= spec.barrels) break;
     if (out.some((b) => Math.hypot(b.x - c.x, b.y - c.y) < BARREL_SPACING)) continue;
-    out.push({ x: c.x, y: c.y, area: c.area });
+    out.push({ x: c.x, y: c.y });
   }
   return out;
 }
 
-/** Whether a point is within `margin` of the edge of any room's heap. */
+/** Whether a point is within `margin` of the edge of any heap. */
 function nearHeap(spec: CaveSpec, x: number, y: number, margin = 4): boolean {
-  return spec.areas.some((a) => a.heaps.some((h) => Math.hypot(h.x - x, h.y - y) < Math.sqrt(h.coins) * 0.36 + margin));
+  return spec.heaps.some((h) => Math.hypot(h.x - x, h.y - y) < Math.sqrt(h.coins) * 0.36 + margin);
 }
 
-/** Whether a point is within `margin` of the side of any room's belt. */
+/** Whether a point is within `margin` of the side of any belt that can be bought. */
 function nearBelt(spec: CaveSpec, x: number, y: number, margin = 3): boolean {
-  return spec.areas.some((a) => {
-    const b = a.belt?.spec;
-    if (!b) return false;
+  return spec.belts.some(({ spec: b }) => {
     const dx = b.x1 - b.x0,
       dy = b.y1 - b.y0,
       len2 = dx * dx + dy * dy;
@@ -495,9 +496,9 @@ function nearBelt(spec: CaveSpec, x: number, y: number, margin = 3): boolean {
 /**
  * Lamps along the edges of the floor: on open tiles against the rock, the
  * post set in from the rock face, one every so far. Not on a belt's line, in
- * a heap, by a gate, or against a brick wall or a hidden chamber's rock,
- * which come down; every tile is tried in the same order, so the same lamps
- * come every time. A pen has none.
+ * a heap, on or beside a cutting, or against a brick wall or a hidden
+ * chamber's rock, which come down; every tile is tried in the same order, so
+ * the same lamps come every time.
  */
 function placeLamps(cells: Uint8Array, spec: CaveSpec, grid: Grid): Lamp[] {
   const { cols, rows } = grid;
@@ -513,7 +514,7 @@ function placeLamps(cells: Uint8Array, spec: CaveSpec, grid: Grid): Lamp[] {
       for (let oy = -1; oy <= 1; oy++) {
         for (let ox = -1; ox <= 1; ox++) {
           const c = at(tx + ox, ty + oy);
-          if (c >= GATE) unsure = true;
+          if (c >= SECRET) unsure = true;
           if (c === ROCK && (ox === 0 || oy === 0)) {
             nx -= ox;
             ny -= oy;
@@ -526,8 +527,9 @@ function placeLamps(cells: Uint8Array, spec: CaveSpec, grid: Grid): Lamp[] {
       const x = cx - (nx / len) * (TILE / 2 - LAMP_OFF_ROCK),
         y = cy - (ny / len) * (TILE / 2 - LAMP_OFF_ROCK);
       if (nearHole(spec.holes, x, y, 8) || nearHeap(spec, x, y) || nearBelt(spec, x, y)) continue;
+      if (nearCutting(grid, spec, x, y, 1)) continue;
       if (out.some((l) => Math.hypot(l.x - x, l.y - y) < LAMP_SPACING)) continue;
-      out.push({ x, y, area: areaAt(spec, x, y), height: LAMP_HEIGHT });
+      out.push({ x, y, height: LAMP_HEIGHT });
     }
   }
   // and across the middle of the floor, on a grid, so nowhere is out of reach of one: not in a heap,
@@ -547,80 +549,144 @@ function placeLamps(cells: Uint8Array, spec: CaveSpec, grid: Grid): Lamp[] {
       if (!clear) continue;
       const [x, y] = tileCentre(grid, tx, ty);
       if (nearHole(spec.holes, x, y, 10) || nearHeap(spec, x, y, 1.5) || nearBelt(spec, x, y)) continue;
+      if (nearCutting(grid, spec, x, y, 1)) continue;
       if (out.some((l) => Math.hypot(l.x - x, l.y - y) < 12)) continue;
-      out.push({ x, y, area: areaAt(spec, x, y), height: LAMP_HEIGHT });
+      out.push({ x, y, height: LAMP_HEIGHT });
     }
   }
   return out;
 }
 
-/** The gate tiles of an area, as world centres. */
-export function gateTiles(cave: Cave, area: number): [number, number][] {
-  const { cols, rows } = cave.grid;
+// ---- the way in and the way out ----
+
+/**
+ * A point against a cutting: how far along it the point is, from the cutting's inner end toward its
+ * outer one, in world units; how long the cutting is; and whether the point is inside it.
+ */
+function alongCutting(
+  grid: Grid,
+  c: Cutting,
+  x: number,
+  y: number,
+): { along: number; length: number; inside: boolean } {
+  const [bx0, by0, bx1, by1] = cuttingBox(grid, c);
+  const [ox, oy] = c.out;
+  const inside = x >= bx0 && x <= bx1 && y >= by0 && y <= by1;
+  if (ox) {
+    const inner = ox > 0 ? bx0 : bx1;
+    return { along: (x - inner) * ox, length: bx1 - bx0, inside };
+  }
+  const inner = oy > 0 ? by0 : by1;
+  return { along: (y - inner) * oy, length: by1 - by0, inside };
+}
+
+/** How far short of a way out's outer end the leaving line is: past it, the machine has gone. */
+export const LEAVING_SHORT = 3 * TILE;
+/** How dark it is at the outer end of the way in, where the machine arrives. */
+export const ARRIVAL_DARK = 0.85;
+
+/**
+ * How dark it is at a point, 0 to 1: nothing outside the cuttings; down the
+ * way out, rising from nothing at the cave's floor to black at the leaving
+ * line; down the way in, from ARRIVAL_DARK at its outer end, falling to
+ * nothing at the floor. The page fades to black by it, so the swap to the
+ * next cave is made in the dark.
+ */
+export function darkness(cave: Cave, open: boolean, x: number, y: number): number {
+  const { spec, grid } = cave;
+  let d = 0;
+  const a = alongCutting(grid, spec.entry, x, y);
+  if (a.inside) d = ARRIVAL_DARK * Math.max(0, Math.min(1, a.along / a.length));
+  if (open && spec.exit) {
+    const e = alongCutting(grid, spec.exit, x, y);
+    if (e.inside) d = Math.max(d, Math.max(0, Math.min(1, e.along / (e.length - LEAVING_SHORT))));
+  }
+  return d;
+}
+
+/** Whether a point is down the way out, past its leaving line: where the machine has gone on into the next cave. */
+export function pastLeavingLine(cave: Cave, x: number, y: number): boolean {
+  const { spec, grid } = cave;
+  if (!spec.exit) return false;
+  const e = alongCutting(grid, spec.exit, x, y);
+  return e.inside && e.along > e.length - LEAVING_SHORT;
+}
+
+/**
+ * Whether a point is down the way out: in its cutting, and more than a tile past the mouth. The machine
+ * there has left the cave's floor, so what it needs to be told is no longer where the way out is.
+ */
+export function downWayOut(cave: Cave, x: number, y: number): boolean {
+  const points = exitPoints(cave);
+  if (!points || !cave.spec.exit) return false;
+  if (!alongCutting(cave.grid, cave.spec.exit, x, y).inside) return false;
+  const [ox, oy] = cave.spec.exit.out;
+  return (x - points.mouth.x) * ox + (y - points.mouth.y) * oy > TILE;
+}
+
+/**
+ * Where the machine arrives, and which way it faces: one tile in from the outer end of the way in,
+ * facing into the cave, along the middle of the cutting.
+ */
+export function arrival(cave: Cave): { x: number; y: number; yaw: number } {
+  const { spec, grid } = cave;
+  const [x0, y0, x1, y1] = spec.entry.tiles;
+  const [ox, oy] = spec.entry.out;
+  const tx = ox < 0 ? x0 - ox : ox > 0 ? x1 - ox : (x0 + x1) / 2,
+    ty = oy < 0 ? y0 - oy : oy > 0 ? y1 - oy : (y0 + y1) / 2;
+  const [x, y] = tileCentre(grid, tx, ty);
+  // a cutting an even number of tiles across has its middle on a tile's edge
+  return { x, y, yaw: Math.atan2(-oy, -ox) };
+}
+
+/**
+ * Two points down the way out, along its middle: its mouth, the first tile of it that is rock, where it
+ * meets the cave's floor, for an arrow to point at; and one a tile short of its outer end, which is past
+ * the leaving line, for something that wants to drive on out. The mouth is found in the cells and not
+ * taken from the cutting's box, since the box's inner end may lie in floor that was carved already. Null
+ * in the last cave, which has no way out.
+ */
+export function exitPoints(cave: Cave): { mouth: { x: number; y: number }; beyond: { x: number; y: number } } | null {
+  const { spec, grid, cells } = cave;
+  if (!spec.exit) return null;
+  const [x0, y0, x1, y1] = spec.exit.tiles;
+  const [ox, oy] = spec.exit.out;
+  const mid = (a: number, b: number) => (a + b) / 2;
+  // along the cutting from its inner end outward, down the middle
+  const at = (along: number): [number, number] =>
+    ox ? [ox > 0 ? x0 + along : x1 - along, mid(y0, y1)] : [mid(x0, x1), oy > 0 ? y0 + along : y1 - along];
+  const length = ox ? x1 - x0 + 1 : y1 - y0 + 1;
+  let first = 0;
+  while (first < length - 1) {
+    const [tx, ty] = at(first);
+    if (cells[Math.floor(ty) * grid.cols + Math.floor(tx)] === EXIT) break;
+    first++;
+  }
+  const [mx, my] = tileCentre(grid, ...at(first)),
+    [bx, by] = tileCentre(grid, ...at(length - 2));
+  return { mouth: { x: mx, y: my }, beyond: { x: bx, y: by } };
+}
+
+/** The tiles of the way out that meet the cave's floor, as world centres: where the rock bursts when it opens. */
+export function exitFaces(cave: Cave): [number, number][] {
+  const { cells, grid } = cave;
+  const { cols, rows } = grid;
   const out: [number, number][] = [];
-  for (let ty = 0; ty < rows; ty++) {
-    for (let tx = 0; tx < cols; tx++) {
-      if (cave.cells[ty * cols + tx] === GATE + area) out.push(tileCentre(cave.grid, tx, ty));
-    }
+  for (let t = 0; t < cells.length; t++) {
+    if (cells[t] !== EXIT) continue;
+    const tx = t % cols,
+      ty = (t / cols) | 0;
+    const beside = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ].some(([dx, dy]) => {
+      const nx = tx + dx,
+        ny = ty + dy;
+      return nx >= 0 && ny >= 0 && nx < cols && ny < rows && cells[ny * cols + nx] === OPEN;
+    });
+    if (beside) out.push(tileCentre(grid, tx, ty));
   }
   return out;
-}
-
-/** How far out a point is along a wing, and how far across it, in world units. */
-function alongWing(spec: CaveSpec, area: number, x: number, y: number): [number, number] {
-  const [dx, dy] = spec.wings[area].dir;
-  return dx ? [dx * x, y] : [dy * y, x];
-}
-
-/**
- * The band a room lies across, from the hollow out: a little wider than the
- * room itself. It keeps a hidden chamber, side room or pen off one room, out
- * past the corner of another, from counting as the way into that other.
- */
-function inBand(spec: CaveSpec, area: number, x: number, y: number): boolean {
-  const { room } = spec.wings[area];
-  const [, across] = alongWing(spec, area, x, y);
-  return Math.abs(across - room.across * TILE) < (room.halfAcross + 3) * TILE;
-}
-
-/** Where a wing's room starts, along it, in world units: its near edge. */
-const nearEdge = (spec: CaveSpec, area: number) => (spec.wings[area].room.along - spec.wings[area].room.half) * TILE;
-
-/**
- * Whether a point is well inside a room, through the gate and the corridor
- * and out among its heaps: where the player has gone on into it. The hollow
- * has no gate, and nobody goes on into it.
- */
-export function pastGate(spec: CaveSpec, area: number, x: number, y: number): boolean {
-  return area > 0 && inBand(spec, area, x, y) && alongWing(spec, area, x, y)[0] > nearEdge(spec, area) + 8;
-}
-
-/** Where, down a room's corridor, going on seals the room behind: the line `pastGate` draws, in the corridor's middle. */
-export function sealPoint(cave: Cave, area: number): [number, number] {
-  const [gx, gy] = gateCentre(cave, area);
-  const [dx, dy] = cave.spec.wings[area].dir,
-    at = nearEdge(cave.spec, area) + 8;
-  return dx ? [dx * at, gy] : [gx, dy * at];
-}
-
-/** Whether a point is up to a room's gate, or through it and not yet past: where going on is a turn of the wheel away. */
-export function atGate(spec: CaveSpec, area: number, x: number, y: number): boolean {
-  return area > 0 && inBand(spec, area, x, y) && alongWing(spec, area, x, y)[0] > spec.wings[area].mouth * TILE - 6;
-}
-
-/** Whether a machine at a point would be shut in, or in the rock, when a room's gate closes. */
-export function behindGate(spec: CaveSpec, area: number, x: number, y: number): boolean {
-  return area > 0 && inBand(spec, area, x, y) && alongWing(spec, area, x, y)[0] > spec.wings[area].mouth * TILE - 3;
-}
-
-/** The middle of an area's gate, for pointing at. */
-export function gateCentre(cave: Cave, area: number): [number, number] {
-  const tiles = gateTiles(cave, area);
-  return [tiles.reduce((s, t) => s + t[0], 0) / tiles.length, tiles.reduce((s, t) => s + t[1], 0) / tiles.length];
-}
-
-/** Which area a world point is in, by the room's rough extent: 1 south, 2 north, 3 east, 4 west, 0 otherwise. */
-export function areaAt(spec: CaveSpec, x: number, y: number): number {
-  for (let a = 1; a < spec.wings.length; a++) if (behindGate(spec, a, x, y)) return a;
-  return 0;
 }

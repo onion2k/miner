@@ -2,7 +2,7 @@
  * The help you can buy: conveyor belts that carry what lands on them to the
  * hole, and drones that go and fetch things.
  */
-import { TILE, nearHole, nearestHole, type Area, type BeltSpec, type Grid, type HoleSpec } from './cave';
+import { TILE, nearHole, nearestHole, type BeltSpec, type CaveSpec, type Grid, type HoleSpec } from './cave';
 import { KIND_VALUE, type Belt, type World } from './physics';
 
 /** A belt's physics strip, from its spec. */
@@ -167,7 +167,7 @@ export class Bot {
 
   /**
    * `choose` names the coin to go for, or -1 with nothing worth it; the game
-   * knows which room is being worked and what the other machines are after.
+   * knows which cave is being worked and what the other machines are after.
    */
   update(dt: number, world: World, load: number, nav: Nav, choose: (bot: Bot) => number, traffic: Traffic) {
     this.dozer.update(dt, this.decide(dt, world, load, nav, choose, traffic), this.spec(), load);
@@ -493,9 +493,8 @@ export class Bot {
 }
 
 /**
- * What the robo-dozers go for. They work the room being cleared, and only
- * that: not the next one before the player has gone on into it, and not the
- * strays of one sealed. Its coins are listed now and then; a machine takes
+ * What the robo-dozers go for. They work the cave being cleared, and only
+ * that. Its coins are listed now and then; a machine takes
  * the best of a handful, for value, company, nearness and how far it has to
  * go to the hole, and leaves alone what another machine is already after.
  */
@@ -507,9 +506,9 @@ export class Foreman {
     private readonly world: World,
     private readonly nav: Nav,
     private readonly bots: Bot[],
-    /** Where each body came from, by slot: a room, or a hidden chamber after the rooms. */
+    /** Where each body came from, by slot: the cave, or a hidden chamber after it. */
     private readonly origin: Uint8Array,
-    /** Whether bodies from a place are the drones' to work: the room being cleared, and what is broken into off it. */
+    /** Whether bodies from a place are the drones' to work: the cave being cleared, and what is broken into off it. */
     private readonly works: (from: number) => boolean,
   ) {}
 
@@ -560,7 +559,7 @@ export class Foreman {
 }
 
 /**
- * A fountain: now and then the floor of a room cracks, glows for a moment,
+ * A fountain: now and then the floor of the cave cracks, glows for a moment,
  * and throws up a spray of coins for a few seconds. Nothing to react to,
  * just somewhere to wander over to.
  */
@@ -573,7 +572,7 @@ export class Fountain {
   private timer: number;
   private spill = 0;
 
-  constructor(private area: Area) {
+  constructor(private cave: Pick<CaveSpec, 'cracks' | 'vein'>) {
     this.timer = 12 + Math.random() * 18;
   }
 
@@ -588,7 +587,7 @@ export class Fountain {
       case 'idle':
         this.glow = Math.max(0, this.glow - dt);
         if (this.timer <= 0) {
-          const [x, y] = this.area.cracks[(Math.random() * this.area.cracks.length) | 0];
+          const [x, y] = this.cave.cracks[(Math.random() * this.cave.cracks.length) | 0];
           this.x = x;
           this.y = y;
           this.state = 'warn';
@@ -611,7 +610,7 @@ export class Fountain {
           let kind = 0;
           const roll = Math.random();
           let acc = 0;
-          for (const [k, p] of this.area.vein.gems) {
+          for (const [k, p] of this.cave.vein.gems) {
             acc += p * 2;
             if (roll < acc) {
               kind = k;

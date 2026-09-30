@@ -20,6 +20,11 @@ if (!isMainThread) {
   await main();
 }
 
+/** How many times a seed's game went on into another cave. */
+function caveChanges(r: FuzzResult): number {
+  return (r.happened as Record<string, number | undefined>).caveLeft ?? 0;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const value = (name: string) => {
@@ -61,6 +66,11 @@ async function main() {
   );
   console.log(`  done: ${sum('done')}`);
   console.log(`  happened: ${sum('happened')}`);
+  // a monkey that never leaves the first cave has not tried the rest of the run
+  const changed = results.filter((r) => caveChanges(r) > 0);
+  console.log(
+    `  changed cave: ${changed.length} of ${results.length} seeds, ${results.reduce((n, r) => n + caveChanges(r), 0)} times in all`,
+  );
   for (const r of failed) {
     const f = r.failure!;
     console.error(`\nseed ${f.seed} failed at frame ${f.frame}:`);

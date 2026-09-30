@@ -5,13 +5,13 @@
  * speed; one hit to each run at it, however long the blade is up against it
  * after. The rock in front of a hidden chamber, driven square into fast,
  * smashes; any other knock on it sounds hollow, which is all that gives it
- * away. Anything else is rock.
+ * away. Anything else is rock, the way out included, until the cave is cleared.
  *
  * This decides which, and remembers when each was last hit, so a blade held
  * against a wall is not a hit every frame. What follows — the damage, the
  * noise, the dust — is the caller's.
  */
-import { BRICK, SECRET, tileCentre, type CaveSpec, type Grid } from './cave';
+import { BRICK, EXIT, SECRET, tileCentre, type CaveSpec, type Grid } from './cave';
 
 /** Square enough on, as the cosine off straight at it, and fast enough, to smash the rock that breaks or hurt a wall. */
 export const SMASH_SQUARE = 0.7,
@@ -56,6 +56,8 @@ export class Impacts {
   hit(tx: number, ty: number, square: number, speed: number, t: number, state: ImpactState): Impact | null {
     const cell = this.cells[ty * this.grid.cols + tx];
     speed = Math.abs(speed);
+    // the way out is only rock, whatever is driven into it, and its value is past the walls', which would take it for one
+    if (cell >= EXIT) return null;
     if (cell >= BRICK) {
       const wall = cell - BRICK;
       if (state.wallsDown[wall] || square < SMASH_SQUARE || t - this.hitAt[wall] < WALL_EVERY) return null;

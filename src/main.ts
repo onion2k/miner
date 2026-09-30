@@ -14,8 +14,8 @@ import { Orbit } from 'artshape-render/gpu/camera';
 import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import type { Emit } from 'artshape-render/game/particles';
-import { BODY_CAPACITY, buildCave, gateCentre, gateTiles, nearHole, sealPoint } from './cave';
-import { FIVE_ROOMS } from './caves';
+import { BODY_CAPACITY, buildCave, nearHole, type Cave, type CaveSpec } from './cave';
+import { RUN } from './caves';
 import { TRACK_GAUGE } from './dozer';
 import { Input } from './input';
 import { TouchControls, isTouchDevice } from './touch';
@@ -27,7 +27,8 @@ import { floorHeight } from './terrain';
 import { TrackMarks } from './tracks';
 import { SpiderGait } from './spider';
 import { FUSE } from './barrels';
-import { progressText, the } from './progress';
+import { EXIT_OPEN_NOTE, arrivalNote, progressText } from './progress';
+import { aimFor, shownArrow, type Aim } from './aim';
 import { holeLamps, lampOn } from './lamps';
 import { stashBehind, wallTiles } from './walls';
 import { StaticScene } from './scene-static';
@@ -63,8 +64,6 @@ const TRACK_PAGES = 16,
 const RENDER_BUDGET_MS = 8;
 /** How many places near the eye are tried each frame for something drifting in a biome's air. */
 const AIR_TRIES = 4;
-/** How many things a sealed room's going puffs over, at most. */
-const SEAL_PUFFS = 160;
 /** How many of the game's events the test API keeps, before the oldest go. */
 const EVENTS_KEPT = 500;
 
@@ -137,10 +136,12 @@ async function main() {
 
   // ---- the game, and what it says has happened ----
 
-  // the cave the game plays, carved from its content and handed to everything that needs it
-  const spec = FIVE_ROOMS;
-  const cave = buildCave(spec);
-  const economy = new Economy(browserStore, spec);
+  // The cave the save is in, carved from its content and handed to everything that needs it. They are
+  // let, since the player drives out of each cave into the next and all of them are made again then.
+  const economy = new Economy(browserStore, RUN);
+  let spec: CaveSpec = economy.cave();
+  let cave: Cave = buildCave(spec);
+  // the economy keeps the one save object for good, moving it on from cave to cave
   const save = economy.save;
   const input = new Input();
   const sound = new Sound();
@@ -161,25 +162,19 @@ async function main() {
       const colour: Rgb = kind === 0 ? [1.6, 1.2, 0.4] : (kindColour(kind).map((c) => c * 2) as Rgb);
       emit(fx.sparkle(x, y, colour, kind > 0, heat));
     },
-    roomOpened(a) {
-      log(`roomOpened ${a}`);
+    exitOpened(faces, [c, s]) {
+      log('exitOpened');
       sound.chime();
-      hud.note(`${the(spec, a)} is open: ${spec.areas[a].blurb} · go on in when you are done here`, 5);
-      gateCloud(a);
+      for (const [x, y] of faces) emit(fx.rockBurst(x, y, c, s));
+      sound.smash();
+      hud.note(EXIT_OPEN_NOTE, 4);
+      // the arrow is for the way out from now on, and not after a wait
+      aimAt = 0;
     },
-    roomSealed(old, lost, where) {
-      log(`roomSealed ${old} ${lost}`);
-      sound.chime();
-      // a puff where each thing left in the room was
-      for (const [x, y, z] of where.slice(0, SEAL_PUFFS)) emit(fx.puff(x, y, z));
-      if (old !== spec.order[0]) gateCloud(old);
-      const gone = lost > 0 ? ` · ${lost} left behind` : '';
-      hud.note(
-        old === spec.order[0]
-          ? `on into ${the(spec, economy.current())}${gone}`
-          : `${the(spec, old)} is sealed behind you${gone}`,
-        4,
-      );
+    caveLeft(from, lost) {
+      log(`caveLeft ${from} ${lost}`);
+      // the game that told of it is still in the middle of its step: the swap is made once it has returned
+      left = { lost };
     },
     chamberOpened(k, faces, [c, s]) {
       log(`chamberOpened ${k}`);
@@ -239,7 +234,7 @@ async function main() {
     done() {
       log('done');
       sound.chime();
-      hud.note(`the cave is cleared · ${the(spec, game.last)}'s vein runs on`, 6);
+      hud.note('the cave is cleared · its vein runs on', 6);
     },
     bought(id) {
       log(`bought ${id}`);
@@ -256,19 +251,17 @@ async function main() {
       for (const b of game.bots) tracks.update(b, b.dozer);
     },
   };
-  const game = new Game(economy, cave, events);
-  const { world, dozer, bots, stock, barrels, tally } = game;
+  let game = new Game(economy, cave, events);
+  /** The game has been driven out of its cave, with this much still in it: the page swaps to the next once the step is over. */
+  let left: { lost: number } | null = null;
   addEventListener('pagehide', () => game.persist());
   addEventListener('visibilitychange', () => {
     if (document.hidden) game.persist();
   });
 
-  /** The rock at a gate, coming down or going up. */
-  const gateCloud = (area: number) => emit(gateTiles(cave, area).map(([x, y]) => fx.gateCloud(x, y)));
-
   // ---- the scene ----
 
-  const staticScene = new StaticScene(cave);
+  let staticScene = new StaticScene(cave);
   const buildStatic = () => renderer.setStatic(staticScene.groups({ ...save, belts: game.running() }));
   buildStatic();
 
@@ -284,13 +277,13 @@ async function main() {
     ground: (x, y) => {
       if (nearHole(cave.holes, x, y, 0.6)) return null;
       const tile = game.nav.tileOf(x, y);
-      return tile < 0 || world.solid[tile] ? null : floorHeight(cave.holes, x, y);
+      return tile < 0 || game.world.solid[tile] ? null : floorHeight(cave.holes, x, y);
     },
   });
   const scene = new DynamicScene(renderer, {
     bodyCapacity: BODY_CAPACITY,
     kindCapacity: KIND_CAPACITY,
-    belts: spec.areas.map((a) => a.belt?.spec ?? null),
+    belts: spec.belts.map((b) => b.spec),
     bots: MAX_DRONES,
     botScale: BOT_SCALE,
     botBladeWidth: BOT_SPEC.bladeWidth,
@@ -300,12 +293,12 @@ async function main() {
   });
   // the Spiderdozer's legs, walked from where the dozer is; a foot landing prints the floor
   const gait = new SpiderGait();
-  gait.onStep = (_, x, y) => tracks.mark(x, y, dozer.yaw + Math.PI / 4, 0.55);
+  gait.onStep = (_, x, y) => tracks.mark(x, y, game.dozer.yaw + Math.PI / 4, 0.55);
   /** The body the save says the machine stands on, drawn: the feet set down afresh, the tracks' run forgotten. */
   function standOn() {
     scene.setBody(save.body);
     gait.reset();
-    tracks.forget(dozer);
+    tracks.forget(game.dozer);
   }
   standOn();
   let coinDetail = 0;
@@ -317,10 +310,10 @@ async function main() {
   // ---- the camera ----
 
   const cam = renderer.camera;
-  cam.target = [dozer.x, dozer.y, 0];
+  cam.target = [game.dozer.x, game.dozer.y, 0];
   cam.position = [
-    dozer.x,
-    dozer.y - CAMERA_HOME.radius * Math.sin(CAMERA_HOME.polar),
+    game.dozer.x,
+    game.dozer.y - CAMERA_HOME.radius * Math.sin(CAMERA_HOME.polar),
     CAMERA_HOME.radius * Math.cos(CAMERA_HOME.polar),
   ];
   // On a phone a finger on the screen is a finger on a slider or the shop, and a stray
@@ -345,7 +338,7 @@ async function main() {
   const rig = new CameraRig(
     orbit,
     cam,
-    dozer,
+    game.dozer,
     {
       get: () => {
         try {
@@ -382,9 +375,14 @@ async function main() {
   // ---- each frame's lights and placements ----
 
   const lights = new SceneLights(LIGHT_CAPACITY, EFFECT_CAPACITY);
-  const lampColours = cave.lamps.map((l) => lampColour(spec, l.x, l.y));
-  const overHoles = holeLamps(cave.holes);
+  /** What is of the cave as the lights see it: each lamp's colour, and the lamps over the holes. */
+  const lightsOf = (c: Cave, s: CaveSpec) => ({
+    lampColours: c.lamps.map((l) => lampColour(s, l.x, l.y)),
+    overHoles: holeLamps(c.holes),
+  });
+  let { lampColours, overHoles } = lightsOf(cave, spec);
   function lightUp() {
+    const { world, dozer, bots, barrels, tally } = game;
     lights.build({
       t: game.t,
       view: cam,
@@ -394,10 +392,10 @@ async function main() {
       lampOn: (k) => lampOn(cave.lamps, k, save),
       lampColour: (k) => lampColours[k],
       features: staticScene.features,
-      featureOn: (k) => save.areas[staticScene.features[k].area],
+      featureOn: () => true,
       fountains: game.fountains.map((f) => ({ x: f.x, y: f.y, glow: f.glow, warning: f.state === 'warn' })),
-      vein: save.done ? spec.areas[game.last].vein : null,
-      sealing: game.warning ? sealPoint(cave, economy.next()!) : null,
+      vein: save.done ? spec.vein : null,
+      sealing: null,
       magnet: world.magnet,
       fuses: barrels.lit.map((i) => ({ x: world.x[i], y: world.y[i], z: world.z[i], flash: barrels.flashing(i) })),
       blasts,
@@ -410,6 +408,7 @@ async function main() {
   }
   let awake = 0;
   function upload() {
+    const { world, stock, dozer, bots, barrels } = game;
     awake = scene.write({
       world,
       brickGrade: stock.brickGrade,
@@ -494,7 +493,7 @@ async function main() {
   }
 
   /**
-   * What drifts in the air of the biomes near the eye, in rooms open: snow, fireflies, embers, motes; and
+   * What drifts in the air of the biome near the eye: snow, fireflies, embers, motes; and
    * now and then something off a feature in view.
    */
   function biomeAir() {
@@ -504,9 +503,9 @@ async function main() {
         out = Math.sqrt(Math.random()) * 50;
       const x = cx + Math.cos(a) * out,
         y = cy + Math.sin(a) * out;
-      const { area, weight } = biomeAt(spec, x, y);
-      if (!weight || !save.areas[area] || Math.random() > weight) continue;
-      const e = airParticle(spec, area, x, y, Math.random);
+      const { biome, weight } = biomeAt(spec, x, y);
+      if (!biome || Math.random() > weight) continue;
+      const e = airParticle(spec, x, y, Math.random);
       if (e) renderer.emit(e);
     }
     const lit = lights.featuresLit;
@@ -519,6 +518,7 @@ async function main() {
   /** The lit barrels in the bright half of a flash last frame, for a beep and a spit of sparks as each flash starts. */
   const flashed = new Set<number>();
   function fuses(dt: number) {
+    const { world, barrels } = game;
     for (const i of barrels.lit) {
       const flash = barrels.flashing(i);
       if (flash && !flashed.has(i)) {
@@ -543,9 +543,45 @@ async function main() {
     shopIn = 0,
     aimAt = 0;
   let lastBank = -1,
-    lastRoom = -1;
-  let gate: { x: number; y: number; label: string } | null = null;
+    lastOpen = false;
+  /** What the gold arrow points at, worked out every little while and not every frame. */
+  let aim: Aim | null = null;
   let frames = 0;
+
+  /**
+   * Into the cave the economy has moved on to, or made again if it is the same: its game, its rock and
+   * belts, the lights of its lamps, and the camera at the dozer. What was of the last cave is let go, so
+   * that twenty changes leave no more behind than one. It is timed, and logged for the test API, since it
+   * is made with the screen black and has a second to do it in.
+   */
+  function enter(speed: number, lost = 0) {
+    const began = performance.now();
+    game.persist();
+    game.dispose();
+    spec = economy.cave();
+    cave = buildCave(spec);
+    game = new Game(economy, cave, events, { speed });
+    ({ lampColours, overHoles } = lightsOf(cave, spec));
+    staticScene = new StaticScene(cave);
+    scene.setBelts(spec.belts.map((b) => b.spec));
+    buildStatic();
+    tracks.clear();
+    blasts.length = 0;
+    blastShake = 0;
+    flashed.clear();
+    gait.reset();
+    lights.forget();
+    rig.snapTo(game.dozer.x, game.dozer.y);
+    lastBank = -1;
+    aimAt = 0;
+    // a workshop left open sells this cave's belts now, and not the last one's
+    if (shopOpen) renderShops();
+    const note = arrivalNote(spec, lost);
+    hud.note(note.text, note.seconds);
+    const ms = performance.now() - began;
+    log(`swap ${spec.id} ${ms.toFixed(0)}`);
+    console.info(`into ${spec.id}: ${ms.toFixed(0)} ms`);
+  }
 
   /** A frame of the game, and of everything round it but the picture. */
   function simulate(dt: number) {
@@ -569,6 +605,12 @@ async function main() {
 
     const drive = input.read();
     game.step(dt, drive, { horn });
+    if (left) {
+      const { lost } = left;
+      left = null;
+      enter(game.dozer.speed, lost);
+    }
+    const { world, dozer, stock, tally } = game;
     if (save.body === 'spider') gait.update(dt, dozer);
 
     // what goes with it: the fuses beeping, the cracking floors' dust, the air, the rumble and the engine
@@ -590,24 +632,17 @@ async function main() {
       hud.run(tally.summary());
       tally.reset();
     }
-    if (economy.bank !== lastBank || economy.current() !== lastRoom) {
+    if (economy.bank !== lastBank || save.open !== lastOpen) {
       if (economy.bank !== lastBank) hud.run(tally.summary());
       lastBank = economy.bank;
-      lastRoom = economy.current();
+      lastOpen = save.open;
       hud.bank(economy.bank);
-      hud.progress(progressText(spec, economy, stock.banked(economy.current())));
+      hud.progress(progressText(economy, stock.banked()));
     }
-    if (game.warning) {
-      const room = economy.current(),
-        still = stock.lying(room);
-      hud.note(`further in seals ${the(spec, room)}${still > 0 ? ` · ${still} still in it` : ''}`, 0.4);
-    }
-    // the arrow to the next room's gate, while it is open
+    // what the arrow points at: the way out once it is open, else the hole
     if (game.t >= aimAt) {
       aimAt = game.t + 0.4;
-      const next = economy.next();
-      const at = next !== null && !save.done && economy.nextOpen() ? gateCentre(cave, next) : null;
-      gate = at && next !== null ? { x: at[0], y: at[1], label: spec.areas[next].name } : null;
+      aim = aimFor(cave, save.open, dozer, save.done);
     }
     hud.tick(dt);
     smoothed += (dt * 1000 - smoothed) * 0.08;
@@ -623,6 +658,7 @@ async function main() {
 
   /** The picture of the frame: the camera after the dozer, the lights, everything where it is, drawn. */
   function draw(dt: number) {
+    const { dozer } = game;
     rig.update(dt, performance.now() / 1000, dozer);
     const reach = orbit.distance * 1.1 + 20;
     renderer.setSunShadow({
@@ -632,9 +668,11 @@ async function main() {
     lightUp();
     upload();
     renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
+    // the black of the cutting, as dark as the game says it is where the dozer is
+    hud.fade(game.darkness());
     hud.showPointer(
-      gate && placePointer(cam.viewProjection, gate, dozer, innerWidth, innerHeight, touch, game.t),
-      gate?.label ?? '',
+      shownArrow(aim, aim && placePointer(cam.viewProjection, aim, dozer, innerWidth, innerHeight, touch, game.t)),
+      aim?.label ?? '',
     );
   }
 
@@ -646,8 +684,9 @@ async function main() {
   let paused = new URLSearchParams(location.search).has('paused');
   let ready = false;
   window.pushminer = createApi({
-    game,
-    cave,
+    game: () => game,
+    cave: () => cave,
+    rebuild: () => enter(0),
     ready: () => ready,
     paused: () => paused,
     setPaused: (p) => {

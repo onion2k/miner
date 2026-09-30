@@ -4,38 +4,40 @@ A bulldozer in a cave full of coins, and a hole to push them into.
 
 Drive with **W A S D** (or the arrows), shove coins and gems into the hole to
 bank them, and press **B** for the workshop: a bigger engine, a wider blade,
-a stronger magnet, a conveyor belt for the room you are in, and drones that
+a stronger magnet, a conveyor belt for the cave you are in, and drones that
 go and fetch things. Drag to orbit the camera, wheel to zoom, **C** to put it
 back, **M** to mute. Progress is saved in the browser; the workshop has a
 _start over_ button.
 
-The cave is five rooms, and nothing refills them. Bank nine tenths of what a
-room holds and the rock at the next gate comes down: the Hollow, then the
-South Gallery, the East Gallery, the North Vault and the West Gallery, each
-with dearer gems than the last. A gold arrow at the edge of the screen points
-to the open gate. Chase the last tenth or leave it: drive on through the new
-gate and down its corridor and the room behind is sealed, with whatever was
-still in it. Up at the gate the game says so, and the line that seals it
-glows red. Only a room or two is ever in play, so a cave that has been worked
-through does not weigh on the frame.
+The run is five caves, one after another, and nothing refills them: the
+Hollow, then the South Gallery, the East Gallery, the North Vault and the West
+Gallery, each with dearer gems than the last. Bank nine tenths of what a cave
+holds and a stretch of its edge cracks open in a burst of rock and dust: the way
+out. A gold arrow points to it, and the page says so. Chase the last tenth or
+leave it: drive down the way out, a cutting through the rock lit only by your
+own headlights, and the screen goes dark along it. Past the line at its end the
+cave behind is gone, with whatever was still in it (the next cave says how much),
+and you come out of the far end of the next cave's way in at the speed you
+left. Only one cave is ever in play, so a run that has been worked through does
+not weigh on the frame. Clearing the last cave, which has no way out, ends the
+game with the vein running.
 
-Each gallery is a world of its own. The South Gallery is jungle: mossy rock,
+Each cave is a world of its own. The South Gallery is jungle: mossy rock,
 ferns and trees, and mushrooms that glow in the dark with fireflies about them.
 The North Vault is ice: blue walls, snow falling, and crystal clusters lit from
 inside. The East Gallery is lava: black basalt, pools of it glowing on the
 rock, embers rising. The West Gallery is the future: steel panels, neon along
 the walls, beacons blinking on pylons. The hollow is the cave as it always was,
-and each world creeps in down the corridor out to its room rather than starting
-at a line. A world is only how a room looks: the rock, the floor and the coins
+and a world fills the whole of its cave. A world is only how a cave looks: the rock, the floor and the coins
 play the same in all of them.
 
-Off each gallery a stretch of the wall looks like any other rock and is not.
+Off each cave a stretch of the wall looks like any other rock and is not.
 Knock into it and it sounds hollow; drive square into it at speed and it
 smashes, and behind it is a hidden chamber with gold bars in it. What is in a
-chamber does not count toward clearing the room, and whatever is still in it
-when the room is sealed is gone with the room.
+chamber does not count toward clearing the cave, and whatever is still in it
+when you leave is gone with the cave.
 
-Down a corridor off each gallery is a side room behind a brick wall, and you
+Down a corridor off each cave is a side room behind a brick wall, and you
 can see what is in it over the top. Drive square into
 a wall hard and it takes a beating, by how good the engine is and how fast
 you hit it: clay brick stands little, stone more, iron-bound a great deal.
@@ -44,19 +46,18 @@ the bricks show the damage until the wall comes down. Then the bricks tumble
 and stay where they fall, to be pushed aside, or down the hole to be rid of.
 Some walls have treasure set in them, a gold brick or a gem in the top of
 one, which comes loose with the rest. What is in a side room, or set in its
-wall, is over and above the room, as a chamber's is, and sealed in with it.
+wall, is over and above the cave, as a chamber's is, and left behind with it.
 
-Barrels stand about each room. Push one and it goes where it is pushed; hit
+Barrels stand about each cave. Push one and it goes where it is pushed; hit
 one with the dozer and its fuse is lit. It flashes, faster and faster, beeping,
 and three seconds later it goes off with a bang and a flash that lights the
 cave, throwing every coin and gem near it outward and up. A barrel caught in a
 blast goes off soon after, so a row of them goes up one after another. Only the
 player lights a fuse; the drones push barrels about without setting them off.
-Barrels are worth nothing down the hole, and are sealed in with their room.
+Barrels are worth nothing down the hole, and are left behind with their cave.
 
 The cave is pitch black. What you see by is the dozer's own lights, the
-drones', and the lamps on posts along the rooms' edges, which come on when a
-room opens and go out when it is sealed. Drive into a lamp and it goes over,
+drones', and the lamps on posts along the cave's edges. Drive into a lamp and it goes over,
 glass everywhere, and stays dark.
 
 The dozer's tracks, and the drones', press into the floor where they drive, and the marks stay,
@@ -80,9 +81,9 @@ It needs a browser with WebGPU.
 ## Measuring the drones
 
     npm run sim                                  # the south gallery, three drones, two minutes, seeds 1-8
-    npm run sim -- --room 3 --belt               # the east gallery, with its belt running
-    npm run sim -- --room 1 --player patrol      # the player driving in and out through the drones
-    npm run sim -- --room 2 --secret             # the north vault with its hidden chamber broken into
+    npm run sim -- --cave east-gallery --belt               # the east gallery, with its belt running
+    npm run sim -- --cave south-gallery --player patrol      # the player driving in and out through the drones
+    npm run sim -- --cave north-vault --secret             # the north vault with its hidden chamber broken into
     npm run sim -- --drones 1 --seconds 300 --seeds 1-3 --each
 
 The game without the picture: the same cave, physics, machines and drone code,
@@ -103,7 +104,7 @@ and how much the drones got in each other's way — see the top of
     npm run sim:check -- --update
     npm run balance        # the whole game played through by the autopilot, seeds 1-6, thorough and rushed
     npm run balance -- --profile thorough --seeds 1-12 --purchases
-    npm run balance:check  # the first two rooms' pacing held to its baseline
+    npm run balance:check  # the first two caves' pacing held to its baseline
     npm run balance:check -- --update
     npm run fuzz           # the game played at random, the rules that must hold checked
     npm run fuzz -- --seed 17
@@ -120,10 +121,10 @@ and how much the drones got in each other's way — see the top of
 `check:quick` (a few seconds). `git commit --no-verify` skips it.
 
 The unit tests in `test/` cover what runs without WebGPU: the cave's layout
-rules (every heap reachable, each room shut off by its gate, side rooms and
+rules (every heap reachable and within its haul, the way out solid rock until the cave is cleared, side rooms and
 chambers sealed in rock), the physics' sleep bookkeeping while blades churn a
-heap, the dozer never ending up in rock, the way to the hole from every room,
-the save and the order rooms open and seal in, and that the drawn rock never
+heap, the dozer never ending up in rock, the way to the hole from every cave,
+the save and moving on from cave to cave, and that the drawn rock never
 stands over floor the dozer can drive on.
 
 The drone gate runs six scenarios, eight seeds each, side by side, and fails
@@ -170,24 +171,24 @@ The balance run (`scripts/balancer.ts`) plays the whole game through, from a
 new save to the cave cleared, with the autopilot (`src/autopilot.ts`) at the
 controls: the drones' own mind driving the player's dozer, buying the cheapest
 thing in the workshop as soon as it can, and going on when it is done with a
-room. Played `thorough` it breaks into every chamber and wall and clears each
-room to its last twentieth; played `rusher` it goes on as soon as the next
-gate opens. It reports how long each room took, when each purchase came and
+cave. Played `thorough` it breaks into every chamber and wall and clears each
+cave to its last twentieth; played `rusher` it goes on as soon as the way
+out opens. It reports how long each cave took, when each purchase came and
 how far apart, and what was banked, spent and left over, for tuning prices
 and loot against. The autopilot is not a person: its minutes are its own, and
 say how the game paces, not how long a player will take. The balance gate
 plays the Hollow and the South Gallery both ways, six seeds each, and fails if
-the rooms' times, what was banked or how much was bought moved beyond a
+the caves' times, what was banked or how much was bought moved beyond a
 tolerance either way, since quicker is as much a change to the balance as
 slower.
 
 The fuzzer (`scripts/fuzzer.ts`) plays the real game without the picture, at
 random, from a seed: driving about and charging walls, chambers, lamps and
 barrels, pushing anything at all down the hole, setting barrels off, buying
-things, opening rooms and going on into them, saving and loading. After every
+things, opening the way out and going on into the next cave, saving and loading. After every
 few frames it checks the rules in `src/invariants.ts` — nothing in the rock,
 nothing not a number, the counts of what is in the cave agreeing with what is
-in it, nothing left of a sealed room, a save that comes back as it went — and
+in it, every per-cave list the size of its cave, the way out open exactly when enough is banked, a save that comes back as it went — and
 fails with the seed, the frame and what was done before it, to be played again
 with `--seed`. It only does what a player can: a monkey that did what no player
 can would find bugs no player will.
@@ -198,7 +199,7 @@ set a scene, and read back its state, what has happened, and whether any rule
 is broken. `CLAUDE.md` has the definition of done a change is held to, and
 `/feature` is a Claude Code skill that takes a feature from a prompt to done.
 
-The physics bench times three scenarios over the whole cave with every room's
+The physics bench times three scenarios over the whole cave with a cave's
 heaps in it: at rest, blades and belts churning the heaps, and a heap of four
 thousand coins falling at once. Each runs several times in a worker of its own
 and the fastest counts. It is held to `scripts/bench-baseline.json` as a
@@ -211,8 +212,7 @@ headless mode on the machine's own GPU, a fresh save each time: it boots with
 no errors, draws a picture that is not black, drives the dozer and sees tracks
 laid, opens and shuts the workshop, keeps the cave across a reload, and boots
 on a phone-sized screen with the touch controls. And it goes through the whole
-cave in one go: every room opened and gone on into, a chamber and a wall in
-each, a lamp, a drone, the horn, and the end. Screenshots of each go in
+cave in one go: the Hollow cleared and driven out of with the keys, through the dark and into the South Gallery, a chamber and a wall there, a lamp, a drone, the horn, and the end; and every way out swapped through, timed under a second, with twenty swaps leaving no more of the renderer's buffers behind than one. Screenshots of each go in
 `test-results/` when a test fails, with a trace to step through.
 
 ## How it is put together
@@ -221,16 +221,16 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/game.ts           the game without the picture: a step of everything that happens, told as events
     src/debug.ts          window.pushminer, the test API
     src/invariants.ts     the rules that must always hold, whatever has been played
-    src/cave.ts           the tile grid: rooms and the order they open in, gates, heaps, veins, belt routes, lamps
-    src/economy.ts        the bank, the upgrades, which room is being cleared, the save, the shop
-    src/stock.ts          what is in the cave, from where: put back from the save, spawned, banked, sealed away
-    src/progress.ts       when the next room opens, going on through its gate, and what the player is told
+    src/cave.ts           the tile grid of one cave: floor, rock, the way in and the way out, heaps, veins, belt routes, lamps, and how dark it is down the cuttings
+    src/economy.ts        the bank, the upgrades, which cave is being cleared, the save, the shop
+    src/stock.ts          what is in the cave, from where: put back from the save, spawned, banked, left behind
+    src/progress.ts       the progress line, and what the player is told on the way out and on arriving
     src/walls.ts          the brick walls as bricks: laid, beaten, treasure set in them, coming apart
     src/lamps.ts          which lamps are lit, knocked over, and worth lighting this frame
     src/impacts.ts        what driving into a wall or a chamber's rock does
     src/tally.ts          a run of things into the hole, and how hot it is
     src/barrels.ts        barrels: fuses lit by the player, flashing, and the blast that throws what is near
-    src/vein.ts           the last room's vein, once the cave is cleared
+    src/vein.ts           the last cave's vein, once the cave is cleared
     src/physics.ts        the kinds of thing there are to push, and a world from this cave, made with artshape-physics
     src/dozer.ts          the bulldozer: tank steering, the blade and hull as pushers, load
     src/tools.ts          conveyor belts, drones, and the fountains
@@ -240,12 +240,13 @@ each, a lamp, a drone, the horn, and the end. Screenshots of each go in
     src/biomes.ts         each gallery's world: its palette and rock, how it blends in, what stands in it, its lights and air
     src/noise.ts          smooth noise, for rock, floor and the patches a world creeps in by
     src/tracks.ts         the marks the tracks press into the floor, kept a page at a time, the oldest fading
-    src/scene-static.ts   what does not move, as groups for the renderer: ground, hole, gates, walls, lamps, belts
+    src/scene-static.ts   what does not move, as groups for the renderer: ground, hole, the way out, walls, lamps, belts
     src/scene-dynamic.ts  what moves, written each frame: bodies, machines, treads, stripes, pennant, track marks
     src/lighting.ts       each frame's lights and glows
     src/camera.ts         the camera rig: fixed, chase and free
     src/calibrate.ts      how much coin this machine can draw
-    src/hud.ts            the page round the cave: counters, tally, notes, the arrow to the next gate, a phone's buttons
+    src/aim.ts            what the gold arrow points at: the way out once open, else the hole while it is off the screen
+    src/hud.ts            the page round the cave: counters, tally, notes, the arrow, the black layer of the fade, a phone's buttons
     src/palette.ts        the colours things are drawn in
     src/effects.ts        the bursts of particles: glass, chips, dust, sparkle
     src/audio.ts          every sound, synthesised: clinks, thunks, the engine, the rumble
@@ -302,7 +303,7 @@ piece so it could be lifted out:
 - A module takes what it needs as arguments or options, when it is made or
   called; it does not import the game's constants, content or state to find
   it out for itself.
-- Game content — rooms, prices, values, names — stays in the modules that
+- Game content — caves, prices, values, names — stays in the modules that
   own it (`cave.ts`, `economy.ts`), and flows out from there. Nothing lower
   down, like the physics, the navigation or the machines, should hold any.
 - Talk across boundaries through small interfaces and plain data (a

@@ -13,14 +13,18 @@
  * failure anywhere else, only as figures that wander.
  *
  * The autopilot drives, so the two runs are played the same way without a
- * recording: it pushes, buys, breaks in and goes on, which is most of the
- * game, and it does it from the seed alone.
+ * recording: it pushes, buys, breaks in and drives out through the way out,
+ * which is most of the game, and it does it from the seed alone. Each run
+ * starts with the Hollow all but cleared, so every seed is played through at
+ * least one change of cave, which builds a world, a nav and a scene's worth
+ * of state afresh and is where a module keeping state between caves would show.
  */
 import { Autopilot } from '../src/autopilot';
 import { buildCave } from '../src/cave';
-import { FIVE_ROOMS } from '../src/caves';
+import { RUN } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
+import { onward } from './run';
 
 const DT = 1 / 60;
 
@@ -40,7 +44,16 @@ export interface TwiceResult {
   diverged: number | null;
   /** The hashes of the first run, one per checkpoint. */
   checkpoints: string[];
+  /** How many times the first run went on into another cave. */
+  changes: number;
   note: string;
+}
+
+/** A new game, but for the Hollow having only a few coins left in it, so its way out opens at once. */
+function almostCleared(): Economy {
+  const fresh = new Economy(memoryStore(), RUN);
+  const left = fresh.save.left.map((row, source) => (source === 0 ? [60, 0, 0, 0, 0, 0, 0, 0] : row));
+  return new Economy(memoryStore(JSON.stringify({ ...fresh.save, left })), RUN);
 }
 
 /** A number in [0, 1) from a seed, the same one the gates and the fuzzer use. */
@@ -106,13 +119,22 @@ export function playTwice({ seed, frames, every = 300, meddle }: TwiceOptions): 
   const saved = Math.random;
   try {
     const passes: string[][] = [];
+    let changes = 0;
     for (let pass = 0; pass < 2; pass++) {
       Math.random = seeded(seed);
-      const game = new Game(new Economy(memoryStore(), FIVE_ROOMS), buildCave(FIVE_ROOMS));
-      const pilot = new Autopilot(game, 'thorough');
+      const economy = almostCleared();
+      let game = new Game(economy, buildCave(economy.cave()));
+      // a rusher takes the way out as soon as it is open, which is what the almost cleared Hollow wants;
+      // in the next cave it plays thorough, breaking into its chamber and wall
+      let pilot = new Autopilot(game, 'rusher');
       const hashes: string[] = [];
       for (let f = 1; f <= frames; f++) {
         pilot.step(DT);
+        if (game.left) {
+          game = onward(game, economy, RUN);
+          pilot = new Autopilot(game, 'thorough');
+          if (pass === 0) changes++;
+        }
         meddle?.(game, pass);
         if (f % every === 0) hashes.push(hashGame(game));
       }
@@ -120,13 +142,15 @@ export function playTwice({ seed, frames, every = 300, meddle }: TwiceOptions): 
     }
     const [one, two] = passes;
     const at = one.findIndex((h, k) => h !== two[k]);
-    if (at < 0) return { seed, frames, diverged: null, checkpoints: one, note: `seed ${seed}: the same, twice` };
+    if (at < 0)
+      return { seed, frames, diverged: null, checkpoints: one, changes, note: `seed ${seed}: the same, twice` };
     const frame = (at + 1) * every;
     return {
       seed,
       frames,
       diverged: frame,
       checkpoints: one,
+      changes,
       note: `seed ${seed}: the two runs parted by frame ${frame} (${one[at]} against ${two[at]}); the last they agreed on was ${at ? `frame ${at * every}` : 'the start'}`,
     };
   } finally {

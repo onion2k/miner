@@ -43,8 +43,6 @@ export const ROCK_TONES = [
 ];
 /** The colour of the floor where a track has pressed it down. */
 export const TRACK_MARK: Rgb = [0.185, 0.13, 0.08];
-/** How much of its own colour something in a room not open shows: next to none, so no light spilling through the rock shows there. */
-export const UNSEEN = 0.02;
 
 /** The colour a kind of thing is, loose: a coin, a gem, a gold bar, a clay brick, a barrel. Every kind has one. */
 export function kindColour(kind: number): Rgb {

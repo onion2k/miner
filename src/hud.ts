@@ -1,6 +1,6 @@
 /**
  * The page round the cave: the counters, the tally of a run, the word at the
- * top of the screen, the arrow to the next gate, the workshop, the boot
+ * top of the screen, the arrow to the way out, the black layer of the fade, the workshop, the boot
  * screen, and a phone's buttons.
  *
  * Everything here is the DOM, and nothing here is the game: it is told what
@@ -10,9 +10,9 @@
 import type { RunSummary } from './tally';
 import { project } from './matrix';
 
-/** Where the arrow to the next gate goes on the screen, in CSS pixels. */
+/** Where the arrow to the way out, or to the hole, goes on the screen, in CSS pixels. */
 export type PointerPlacement =
-  /** Over the gate, which is in view: bobbing above it, pointing down. */
+  /** Over the place, which is in view: bobbing above it, pointing down. */
   | { over: true; x: number; y: number }
   /** At the edge of the screen, on the way to it, pointing along (ux, uy). */
   | { over: false; x: number; y: number; ux: number; uy: number };
@@ -83,6 +83,7 @@ export class Hud {
   private readonly helpPanel = byId('help');
   private readonly toast = byId('toast');
   private readonly noteLine = byId('cameraNote');
+  private readonly fadeLayer = byId('fade');
   private readonly shopPanel = byId('shop');
   readonly shopRows = this.shopPanel.querySelector('.rows') as HTMLElement;
   readonly shopCosmetics = this.shopPanel.querySelector('.rows.cosmetics') as HTMLElement;
@@ -107,6 +108,12 @@ export class Hud {
     this.noteLine.textContent = text;
     this.noteLine.hidden = false;
     this.noteFor = seconds;
+  }
+
+  /** The black layer over the page, as dark as the game says: 0 none, 1 black. */
+  fade(darkness: number) {
+    const v = Math.max(0, Math.min(1, darkness));
+    this.fadeLayer.style.opacity = v === 0 ? '0' : v.toFixed(3);
   }
 
   /** Time passes: the word at the top goes when its time is up. */
@@ -143,7 +150,7 @@ export class Hud {
     this.shopButton.textContent = open ? 'close' : 'shop';
   }
 
-  /** The arrow to the next gate, with the gate's name behind it; or none. */
+  /** The arrow to a place, with its name behind it; or none. */
   showPointer(place: PointerPlacement | null, label: string) {
     if (!place) {
       this.pointer.hidden = true;

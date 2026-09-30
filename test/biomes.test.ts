@@ -1,169 +1,178 @@
 import { describe, expect, it } from 'vitest';
-import { TILE, buildCave, rockish, tileCentre } from '../src/cave';
-import { LAMP_COLOUR, biomeAt, biomeStyle, biomesOf, decorate, groundTone, lampColour, tint } from '../src/biomes';
+import { TILE, nearCutting, rockish, tileCentre } from '../src/cave';
+import {
+  LAMP_COLOUR,
+  airParticle,
+  biomeAt,
+  biomeOf,
+  biomeStyle,
+  decorate,
+  groundTone,
+  lampColour,
+  tint,
+  type BiomeName,
+} from '../src/biomes';
 import { FLOOR_TONES, ROCK_TONES } from '../src/palette';
 import { FOOT_TONE, PLAIN_ROCK, buildTerrain } from '../src/terrain';
-import { AREAS, COLS, GRID, HOLE, HOLLOW, ROWS, SPEC, WINGS } from './helpers';
+import { IDS, caveOf } from './helpers';
 
-const cave = buildCave(SPEC);
-const BIOMES = biomesOf(SPEC);
-const BIOME_STYLE = biomeStyle(SPEC);
-const hidden = [false, false, false, false];
-const terrain = buildTerrain(cave, hidden, BIOME_STYLE);
-const decor = decorate(SPEC, terrain.samples);
-/** The middle of a wing's room, in world units. */
-const roomMiddle = (a: number): [number, number] => {
-  const { dir, room } = WINGS[a];
-  const along = room.along * TILE,
-    across = room.across * TILE;
-  return dir[0] ? [dir[0] * along, across] : [across, dir[1] * along];
+/** Which biome each cave of the run has: the Hollow none. */
+const BIOME: Record<string, BiomeName | null> = {
+  hollow: null,
+  'south-gallery': 'jungle',
+  'east-gallery': 'lava',
+  'north-vault': 'ice',
+  'west-gallery': 'future',
 };
 
+/** Every cave built once, with the terrain it is drawn from and what stands in it. */
+const BUILT = new Map(
+  IDS.map((id) => {
+    const cave = caveOf(id);
+    const hidden = cave.spec.secrets.map(() => false);
+    const terrain = buildTerrain(cave, hidden, biomeStyle(cave.spec));
+    return [id, { cave, hidden, terrain, decor: decorate(cave.spec, terrain.samples) }] as const;
+  }),
+);
+
 describe('the biomes', () => {
-  it('give every gallery its own, and leave the hollow as it was', () => {
-    expect(BIOMES[0]).toBeNull();
-    expect(new Set(BIOMES.slice(1).map((b) => b?.name))).toEqual(new Set(['jungle', 'ice', 'lava', 'future']));
-    expect(BIOMES.slice(1).every((b) => b !== null)).toBe(true);
-    expect(AREAS.map((a, k) => (k ? `${a.name}:${BIOMES[k]!.name}` : a.name))).toEqual([
-      AREAS[0].name,
-      `${AREAS[1].name}:jungle`,
-      `${AREAS[2].name}:ice`,
-      `${AREAS[3].name}:lava`,
-      `${AREAS[4].name}:future`,
-    ]);
-  });
-
-  it('are nothing anywhere in the hollow or its walls, and whole in the middle of each room', () => {
-    // the hollow's ellipse and a tile of rock round it
-    for (let ty = 0; ty < ROWS; ty++) {
-      for (let tx = 0; tx < COLS; tx++) {
-        const [x, y] = tileCentre(GRID, tx, ty);
-        const inside = (x / ((HOLLOW.rx + 1) * TILE)) ** 2 + (y / ((HOLLOW.ry + 1) * TILE)) ** 2 < 1;
-        if (inside) expect(biomeAt(SPEC, x, y).weight, `${x},${y}`).toBe(0);
-      }
-    }
-    for (let a = 1; a < AREAS.length; a++) expect(biomeAt(SPEC, ...roomMiddle(a))).toEqual({ area: a, weight: 1 });
-  });
-
-  it('come in gradually down each corridor, never all at once', () => {
-    for (let a = 1; a < AREAS.length; a++) {
-      const { dir, mouth, room } = WINGS[a];
-      let last = 0,
-        biggestStep = 0;
-      for (let along = mouth * TILE; along <= room.along * TILE; along += 1) {
-        const x = dir[0] ? dir[0] * along : 0,
-          y = dir[0] ? room.across * TILE : dir[1] * along;
-        const { weight } = biomeAt(SPEC, x, y);
-        biggestStep = Math.max(biggestStep, weight - last);
-        expect(weight).toBeGreaterThanOrEqual(last - 1e-9);
-        last = weight;
-      }
-      expect(last).toBe(1);
-      expect(biggestStep, `${AREAS[a].name} ramps`).toBeLessThan(0.25);
-    }
-  });
-
-  it('draw the hollow in the cave’s own palette and shape, and each room in its biome’s', () => {
-    // the hollow's floor is its own; only the backs of its walls, out toward a room, take on the room's biome
-    for (const g of terrain.groups) if (!g.rock && g.area === 0) expect(g.palette, 'biome floor in the hollow').toBe(0);
-    for (let a = 1; a < AREAS.length; a++) expect(terrain.groups.some((g) => g.palette === a)).toBe(true);
-    expect(BIOME_STYLE.shape(0, -14)).toBe(PLAIN_ROCK);
-    expect(BIOME_STYLE.palette(0, -14)).toBe(0);
-    expect(groundTone(SPEC, 0, true, 1)).toEqual(ROCK_TONES[1]);
-    expect(groundTone(SPEC, 0, false, 2)).toEqual(FLOOR_TONES[2]);
-    expect(groundTone(SPEC, 3, false, 0)).toEqual(BIOMES[3]!.floor[0]);
-  });
-
-  it('shape the hollow’s ground exactly as it was without them', () => {
-    const plain = buildTerrain(cave, hidden);
-    const { samples: a } = plain,
-      { samples: b } = terrain;
-    for (let k = 0; k < a.z.length; k++) {
-      // past where the rock is drawn in detail it is a plateau between tile corners, which may be in a biome
-      if (!Number.isFinite(a.depth[k]) || biomeAt(SPEC, a.x[k], a.y[k]).weight > 0) continue;
-      if (a.z[k] !== b.z[k]) expect.fail(`height at ${a.x[k]},${a.y[k]}: ${a.z[k]} became ${b.z[k]}`);
-    }
-  });
-
-  it('colour lamps and stones by how strong the biome is, and not at all in the hollow', () => {
-    expect(lampColour(SPEC, 0, -14)).toEqual(LAMP_COLOUR);
-    const lava = BIOMES[3]!;
-    const middle = lampColour(SPEC, ...roomMiddle(3));
-    lava.lamp.forEach((c, i) => expect(middle[i]).toBeCloseTo(c * lava.lampBright, 9));
-    const base: [number, number, number] = [1, 1, 1];
-    expect(tint(SPEC, base, 0, -14, (b) => b.stone.rock)).toBe(base);
-  });
-
-  it('put its decoration in the rooms, the same every time, and nothing tall where the dozer drives', () => {
-    const again = decorate(SPEC, terrain.samples);
-    expect(again).toEqual(decor);
-    const kinds = new Set(decor.props.map((p) => p.kind));
-    for (const kind of ['crystal', 'fern', 'pool', 'neon', 'column', 'crate', 'trunk', 'cap'] as const)
-      expect(kinds.has(kind), kind).toBe(true);
-    const solid = cave.solid(
-      AREAS.map(() => true),
-      hidden,
+  it('give each cave its own, and leave the Hollow as it was', () => {
+    for (const id of IDS) expect(biomeOf(caveOf(id).spec)?.name ?? null, id).toBe(BIOME[id]);
+    expect(new Set(IDS.slice(1).map((id) => biomeOf(caveOf(id).spec)?.name))).toEqual(
+      new Set(['jungle', 'ice', 'lava', 'future']),
     );
-    const toRock = (x: number, y: number) => {
-      const tx = Math.floor((x + (COLS / 2 + 0.5) * TILE) / TILE),
-        ty = Math.floor((y + (ROWS / 2 + 0.5) * TILE) / TILE);
-      let best = Infinity;
-      for (let oy = -2; oy <= 2; oy++) {
-        for (let ox = -2; ox <= 2; ox++) {
-          const nx = tx + ox,
-            ny = ty + oy;
-          const rock = nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || rockish(cave.cells[ny * COLS + nx], hidden);
-          if (!rock) continue;
-          const [cx, cy] = tileCentre(GRID, nx, ny);
-          best = Math.min(
-            best,
-            Math.hypot(Math.max(0, Math.abs(x - cx) - TILE / 2), Math.max(0, Math.abs(y - cy) - TILE / 2)),
-          );
-        }
-      }
-      return best;
-    };
-    for (const p of decor.props) {
-      expect(biomeAt(SPEC, p.x, p.y).weight, `${p.kind} outside the biomes`).toBeGreaterThan(0);
-      // what stands up off the floor stands on the rock, or at its very foot
-      const tall = p.z + p.size[2] > 0.9 && !['snow', 'tuft', 'seep', 'pool'].includes(p.kind);
-      if (tall && toRock(p.x, p.y) > 0.8)
-        expect.fail(`${p.kind} at ${p.x.toFixed(1)},${p.y.toFixed(1)} stands on the floor`);
-    }
-    expect(solid.length).toBe(COLS * ROWS);
-    expect(Math.hypot(HOLE.x, HOLE.y)).toBe(0);
   });
 
-  it('shed a skirt each of their own, and the future room none, only a gutter along its panels', () => {
-    // how much the rock sheds: whole in the galleries that are rock, nothing in the future's, none in the hollow's own
-    expect(BIOME_STYLE.scree(...roomMiddle(1))).toBeGreaterThan(0.9);
-    expect(BIOME_STYLE.scree(...roomMiddle(3))).toBeGreaterThan(0.9);
-    expect(BIOME_STYLE.scree(...roomMiddle(4))).toBe(0);
-    expect(BIOME_STYLE.scree(0, -14)).toBe(1);
-    // and so no scree lies about in the future room, where the jungle is thick with it
-    const grit = (area: number) => terrain.stones.filter((s) => s.area === area && s.size[0] < 0.7).length;
-    expect(grit(4)).toBeLessThan(grit(1) / 4);
+  it.each(IDS)('fill the whole of %s at full strength, or nothing of the plain one', (id) => {
+    const { cave } = BUILT.get(id)!;
+    const { cols, rows } = cave.grid;
+    const want = BIOME[id] ? 1 : 0;
+    // every tile, the cuttings and the rock round the edge too
+    for (let ty = 0; ty < rows; ty += 3)
+      for (let tx = 0; tx < cols; tx += 3) {
+        const [x, y] = tileCentre(cave.grid, tx, ty);
+        expect(biomeAt(cave.spec, x, y).weight, `${id} at ${x},${y}`).toBe(want);
+      }
+  });
+
+  it.each(IDS)('draw %s in its own palette and shape, and the Hollow in the cave’s', (id) => {
+    const { cave, terrain } = BUILT.get(id)!;
+    const style = biomeStyle(cave.spec);
+    const biome = biomeOf(cave.spec);
+    const want = biome ? 1 : 0;
+    for (const g of terrain.groups) expect(g.palette, `${id} group`).toBe(want);
+    expect(style.palette(0, -14)).toBe(want);
+    expect(style.shape(0, -14)).toBe(biome ? biome.shape : PLAIN_ROCK);
+    expect(groundTone(cave.spec, 0, true, 1)).toEqual(ROCK_TONES[1]);
+    expect(groundTone(cave.spec, 0, false, 2)).toEqual(FLOOR_TONES[2]);
+    if (biome) expect(groundTone(cave.spec, 1, false, 0)).toEqual(biome.floor[0]);
+  });
+
+  it('shape the Hollow’s ground exactly as it was without them', () => {
+    const { cave, hidden, terrain } = BUILT.get('hollow')!;
+    const plain = buildTerrain(cave, hidden);
+    for (let k = 0; k < plain.samples.z.length; k++)
+      if (plain.samples.z[k] !== terrain.samples.z[k])
+        expect.fail(`height at ${plain.samples.x[k]},${plain.samples.y[k]} changed`);
+  });
+
+  it('colour lamps and stones by the biome, and not at all in the Hollow', () => {
+    const hollow = caveOf('hollow').spec;
+    expect(lampColour(hollow, 0, -14)).toEqual(LAMP_COLOUR);
+    const base: [number, number, number] = [1, 1, 1];
+    expect(tint(hollow, base, 0, -14, (b) => b.stone.rock)).toBe(base);
+    const lava = caveOf('east-gallery').spec;
+    const b = biomeOf(lava)!;
+    const lit = lampColour(lava, 0, 0);
+    b.lamp.forEach((c, i) => expect(lit[i]).toBeCloseTo(c * b.lampBright, 9));
+  });
+
+  it.each(IDS.slice(1))(
+    'put its decoration in %s, the same every time, nothing on its cuttings, and nothing tall where the dozer drives',
+    (id) => {
+      const { cave, hidden, terrain, decor } = BUILT.get(id)!;
+      expect(decorate(cave.spec, terrain.samples)).toEqual(decor);
+      expect(decor.props.length).toBeGreaterThan(20);
+      const toRock = (x: number, y: number) => {
+        const { cols, rows, originX, originY } = cave.grid;
+        const tx = Math.floor((x - originX) / TILE),
+          ty = Math.floor((y - originY) / TILE);
+        let best = Infinity;
+        for (let oy = -2; oy <= 2; oy++) {
+          for (let ox = -2; ox <= 2; ox++) {
+            const nx = tx + ox,
+              ny = ty + oy;
+            const rock = nx < 0 || ny < 0 || nx >= cols || ny >= rows || rockish(cave.cells[ny * cols + nx], hidden);
+            if (!rock) continue;
+            const [cx, cy] = tileCentre(cave.grid, nx, ny);
+            best = Math.min(
+              best,
+              Math.hypot(Math.max(0, Math.abs(x - cx) - TILE / 2), Math.max(0, Math.abs(y - cy) - TILE / 2)),
+            );
+          }
+        }
+        return best;
+      };
+      for (const p of decor.props) {
+        expect(
+          nearCutting(cave.grid, cave.spec, p.x, p.y, 1.5),
+          `${p.kind} at ${p.x},${p.y} on or beside a cutting`,
+        ).toBe(false);
+        // what stands up off the floor stands on the rock, or at its very foot
+        const tall = p.z + p.size[2] > 0.9 && !['snow', 'tuft', 'seep', 'pool'].includes(p.kind);
+        if (tall && toRock(p.x, p.y) > 0.8)
+          expect.fail(`${p.kind} at ${p.x.toFixed(1)},${p.y.toFixed(1)} stands on the floor`);
+      }
+      for (const l of decor.lights)
+        expect(nearCutting(cave.grid, cave.spec, l.x, l.y, 1.5), `${l.biome} light on a cutting`).toBe(false);
+    },
+  );
+
+  it('have the kinds of thing each is known for, and the Hollow none', () => {
+    const kinds = (id: string) => new Set(BUILT.get(id)!.decor.props.map((p) => p.kind));
+    expect(BUILT.get('hollow')!.decor.props).toEqual([]);
+    expect(BUILT.get('hollow')!.decor.lights).toEqual([]);
+    for (const kind of ['fern', 'trunk', 'cap']) expect(kinds('south-gallery').has(kind as never), kind).toBe(true);
+    for (const kind of ['crystal']) expect(kinds('north-vault').has(kind as never), kind).toBe(true);
+    for (const kind of ['pool', 'column']) expect(kinds('east-gallery').has(kind as never), kind).toBe(true);
+    for (const kind of ['neon', 'crate']) expect(kinds('west-gallery').has(kind as never), kind).toBe(true);
+  });
+
+  it('shed a skirt each of their own, and the future cave none, only a gutter along its panels', () => {
+    const scree = (id: string) => biomeStyle(caveOf(id).spec).scree(0, 0);
+    expect(scree('south-gallery')).toBe(1);
+    expect(scree('north-vault')).toBe(1);
+    expect(scree('east-gallery')).toBe(1);
+    expect(scree('hollow')).toBe(1);
+    expect(scree('west-gallery')).toBe(0);
+    // and so no scree lies about in the future cave, where the jungle is thick with it
+    const grit = (id: string) => BUILT.get(id)!.terrain.stones.filter((s) => s.size[0] < 0.7).length;
+    expect(grit('west-gallery')).toBeLessThan(grit('south-gallery') / 4);
     // every biome has a foot tone of its own for its floor, darker than its open floor; the future's is its gutter
-    for (const b of BIOMES) {
-      if (!b) continue;
+    for (const id of IDS.slice(1)) {
+      const b = biomeOf(caveOf(id).spec)!;
       expect(b.floor.length).toBe(FOOT_TONE + 1);
       const sum = (t: readonly number[]) => t[0] + t[1] + t[2];
       expect(sum(b.floor[FOOT_TONE])).toBeLessThan(sum(b.floor[1]));
     }
-    expect(groundTone(SPEC, 0, false, FOOT_TONE)).toEqual(FLOOR_TONES[FOOT_TONE]);
+    expect(groundTone(caveOf('hollow').spec, 0, false, FOOT_TONE)).toEqual(FLOOR_TONES[FOOT_TONE]);
     // the future's floor keeps its panels and seams, and its foot is the gutter
-    expect(BIOME_STYLE.tone(4, ...roomMiddle(4), false, FOOT_TONE)).toBe(FOOT_TONE);
-    expect(BIOME_STYLE.tone(4, ...roomMiddle(4), false, 0)).toBeLessThan(FOOT_TONE);
+    const future = biomeStyle(caveOf('west-gallery').spec);
+    expect(future.tone(1, 10, 10, false, FOOT_TONE)).toBe(FOOT_TONE);
+    expect(future.tone(1, 10, 10, false, 0)).toBeLessThan(FOOT_TONE);
   });
 
-  it('light their features only in their own rooms', () => {
-    const byBiome = new Map<string, number>();
-    for (const l of decor.lights) {
-      const { area } = biomeAt(SPEC, l.x, l.y);
-      expect(BIOMES[area]!.name, `${l.biome} light at ${l.x.toFixed(0)},${l.y.toFixed(0)}`).toBe(l.biome);
-      expect(l.area).not.toBe(0);
-      byBiome.set(l.biome, (byBiome.get(l.biome) ?? 0) + 1);
+  it('light their features only in their own cave, and drift their own air', () => {
+    for (const id of IDS.slice(1)) {
+      const { decor } = BUILT.get(id)!;
+      expect(decor.lights.length, id).toBeGreaterThan(3);
+      for (const l of decor.lights) expect(l.biome, `${id} light`).toBe(BIOME[id]);
     }
-    for (const name of ['jungle', 'ice', 'lava', 'future']) expect(byBiome.get(name), name).toBeGreaterThan(3);
+    expect(airParticle(caveOf('hollow').spec, 0, 0, Math.random)).toBeNull();
+    for (const id of IDS.slice(1))
+      expect(
+        airParticle(caveOf(id).spec, 0, 0, () => 0.5),
+        id,
+      ).not.toBeNull();
   });
 });

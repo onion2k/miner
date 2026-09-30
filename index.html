@@ -119,7 +119,21 @@
   #toast.gone {
     opacity: 0;
   }
+  /* the black the cave goes to down the way out and comes out of down the way in, over the whole page: its
+     opacity is the game's darkness, set every frame, so it is never on a clock */
+  #fade {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 6;
+  }
+  /* above the black, so what is said on coming into a cave is read in the dark it comes out of; the line
+     breaks in it are its name, what is in it, and what was left behind */
   #cameraNote {
+    z-index: 7;
+    white-space: pre-line;
     top: 16px;
     left: 50%;
     transform: translateX(-50%);
@@ -503,6 +517,7 @@
   }
 </style>
 <div id="stage"><canvas id="view"></canvas></div>
+<div id="fade"></div>
 <div class="panel" id="bank" hidden><b>0</b><span class="sub" id="progress"></span></div>
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="toast" hidden></div>

@@ -2,32 +2,36 @@
  * One run of the drones without the picture, from a seed: what `npm run sim`
  * reports and what `npm run sim:check` holds to its baseline. See sim.ts.
  */
-import { BODY_CAPACITY, buildCave, chamberCentre, gateCentre, type Heap } from '../src/cave';
-import { FIVE_ROOMS } from '../src/caves';
+import { BODY_CAPACITY, arrival, buildCave, chamberCentre, type Heap } from '../src/cave';
+import { RUN } from '../src/caves';
 import { BAR, KIND_VALUE, makeWorld, type Pusher } from '../src/physics';
 import { Dozer, BLADE_AT, separate } from '../src/dozer';
+import { botHome } from '../src/game';
 import { Bot, BOT_SCALE, BOT_SPEC, Foreman, beltOf } from '../src/tools';
 import { Nav } from '../src/nav';
-import { roomStock, sourcesOf } from '../src/economy';
-
-const { areas: AREAS, secrets: SECRETS } = FIVE_ROOMS;
-const HOLE = FIVE_ROOMS.holes[0];
-const sources = sourcesOf(FIVE_ROOMS);
+import { caveStock, sourcesOf } from '../src/economy';
 
 export interface SimOptions {
-  /** The room, 1 to the last: the hollow has no drones' work of its own. */
-  room: number;
+  /** The cave, by its id. */
+  cave: string;
   drones: number;
   seconds: number;
-  /** The room's belt bought and running. */
+  /** The cave's belt bought and running. */
   belt: boolean;
   /** The player driving to and fro through the drones, rather than parked out of the way. */
   patrol: boolean;
-  /** The room's hidden chamber broken into, its loot out on the floor. */
+  /** The cave's hidden chamber broken into, its loot out on the floor. */
   secret: boolean;
 }
 
-export const SIM_DEFAULTS: SimOptions = { room: 1, drones: 3, seconds: 120, belt: false, patrol: false, secret: false };
+export const SIM_DEFAULTS: SimOptions = {
+  cave: 'south-gallery',
+  drones: 3,
+  seconds: 120,
+  belt: false,
+  patrol: false,
+  secret: false,
+};
 
 const PLAYER_SPEC = { maxSpeed: 11, accel: 14, turnRate: 1.6, bladeWidth: 6.5, magnetRadius: 4, magnetStrength: 5 };
 const DT = 1 / 60;
@@ -52,20 +56,16 @@ export function simulate(opts: SimOptions, seed: number) {
 
 function runSeeded(opts: SimOptions, seed: number) {
   seedRandom(seed);
-  const { room } = opts;
-  const cave = buildCave(FIVE_ROOMS);
-  const secret = SECRETS.findIndex((sc) => sc.area === room);
-  const revealed = SECRETS.map((_, k) => opts.secret && k === secret);
-  const world = makeWorld(
-    BODY_CAPACITY,
-    cave.solid(
-      AREAS.map((_, a) => a === 0 || a === room),
-      revealed,
-    ),
-    cave.grid,
-    cave.holes,
-  );
-  // the room's heaps, as the game drops them, and the chamber's loot if it is open
+  const spec = RUN.find((c) => c.id === opts.cave);
+  if (!spec) throw new Error(`no cave called ${opts.cave}`);
+  const cave = buildCave(spec);
+  const HOLE = cave.holes[0];
+  const sources = sourcesOf(spec);
+  const secret = spec.secrets.length ? 0 : -1;
+  const revealed = spec.secrets.map((_, k) => opts.secret && k === secret);
+  // the way out shut, the walls standing: the drones work the cave, and go nowhere else
+  const world = makeWorld(BODY_CAPACITY, cave.solid(false, revealed), cave.grid, cave.holes);
+  // the cave's heaps, as the game drops them, and the chamber's loot if it is open
   const origin = new Uint8Array(BODY_CAPACITY);
   const dropHeap = (h: Heap, from: number) => {
     const R = Math.sqrt(h.coins) * 0.36 + 1.5,
@@ -80,21 +80,20 @@ function runSeeded(opts: SimOptions, seed: number) {
     for (let k = 0; k < h.coins; k++) drop(0);
     for (const [kind, n] of h.gems) for (let k = 0; k < n; k++) drop(kind);
   };
-  for (const h of AREAS[room].heaps) dropHeap(h, room);
+  for (const h of spec.heaps) dropHeap(h, 0);
   const loot =
     opts.secret && secret >= 0
-      ? { ...SECRETS[secret].loot, x: chamberCentre(cave, secret)[0], y: chamberCentre(cave, secret)[1] }
+      ? { ...spec.secrets[secret].loot, x: chamberCentre(cave, secret)[0], y: chamberCentre(cave, secret)[1] }
       : null;
   if (loot) dropHeap(loot, sources.chamber(secret));
   for (let i = 0; i < 90; i++) world.step(DT, () => {});
-  if (opts.belt && AREAS[room].belt) world.belts = [beltOf(AREAS[room].belt.spec)];
+  if (opts.belt && spec.belts.length) world.belts = spec.belts.map((b) => beltOf(b.spec));
 
   const nav = new Nav(world.solid, cave.grid, cave.holes);
   nav.setBelts(world.belts);
   const player = new Dozer(world.solid, cave.grid);
   const bots: Bot[] = [];
-  for (let i = 0; i < opts.drones; i++)
-    bots.push(new Bot(world.solid, cave.grid, i + 1, HOLE.x + 14 + i * 6, HOLE.y + 10));
+  for (let i = 0; i < opts.drones; i++) bots.push(new Bot(world.solid, cave.grid, i + 1, ...botHome(cave, i)));
   const traffic = { bots, player };
   let t = 0;
   const foreman = new Foreman(
@@ -102,26 +101,32 @@ function runSeeded(opts: SimOptions, seed: number) {
     nav,
     bots,
     origin,
-    (from) => from === room || (secret >= 0 && from === sources.chamber(secret)),
+    (from) => from === 0 || (secret >= 0 && from === sources.chamber(secret)),
   );
   const choose = (bot: Bot) => foreman.choose(bot, t);
 
-  // the player: parked out of the way, or driving between the hole and the middle of the room's heaps
-  const heaps = AREAS[room].heaps;
+  // the player: parked out of the way, or driving between the hole and the middle of the cave's heaps
+  const heaps = spec.heaps;
   const middle: [number, number] = [
     heaps.reduce((s, h) => s + h.x, 0) / heaps.length,
     heaps.reduce((s, h) => s + h.y, 0) / heaps.length,
   ];
-  const [gx, gy] = gateCentre(cave, room);
-  const nearHole: [number, number] = [HOLE.x + (gx / Math.hypot(gx, gy)) * 9, HOLE.y + (gy / Math.hypot(gx, gy)) * 9];
+  // by the hole, on the side the heaps are
+  const toward = Math.hypot(middle[0] - HOLE.x, middle[1] - HOLE.y) || 1;
+  const nearHole: [number, number] = [
+    HOLE.x + ((middle[0] - HOLE.x) / toward) * 9,
+    HOLE.y + ((middle[1] - HOLE.y) / toward) * 9,
+  ];
   const legs = [middle, nearHole].map((p) => ({ at: p, way: nav.toward(p[0], p[1]) }));
   let leg = 0;
   if (opts.patrol) {
     player.x = nearHole[0];
     player.y = nearHole[1];
   } else {
-    player.x = -40;
-    player.y = 16;
+    // out of the way, where the machine arrives
+    const at = arrival(cave);
+    player.x = at.x;
+    player.y = at.y;
   }
 
   let banked = 0,
@@ -202,7 +207,7 @@ function runSeeded(opts: SimOptions, seed: number) {
     }
     world.step(DT, (kind, _x, _y, i) => {
       banked += KIND_VALUE[kind];
-      if (origin[i] === sources.chamber(secret)) {
+      if (secret >= 0 && origin[i] === sources.chamber(secret)) {
         fromChamber += KIND_VALUE[kind];
         if (kind === BAR) barsOut++;
       }
@@ -246,7 +251,7 @@ function runSeeded(opts: SimOptions, seed: number) {
   return {
     seed,
     banked,
-    share: pct(banked, roomStock(FIVE_ROOMS, room).value),
+    share: pct(banked, caveStock(spec).value),
     ...ends,
     touching,
     held: pct(held, pushSamples),

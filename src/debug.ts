@@ -7,13 +7,13 @@
  * Time is the test's to keep: `pause` stops the game where it is, and
  * `step` plays it on a frame at a time, exactly, drawing the last. `seed`
  * makes chance repeat. Anything that changes the game — driving, putting the
- * dozer or a body somewhere, opening a room, lighting a barrel — goes through
+ * dozer or a body somewhere, opening the way out, lighting a barrel — goes through
  * here, and `state`, `bodies`, `events` and `invariants` read it back.
  *
  * The types are shared with the smoke tests, so a test that calls something
  * that is not here does not compile.
  */
-import { gateCentre, sealPoint, type Cave } from './cave';
+import { arrival, chamberCentre, exitPoints, type Cave } from './cave';
 import type { Game } from './game';
 import { checkInvariants } from './invariants';
 import { BARREL_KIND, KIND_NAME } from './physics';
@@ -32,13 +32,12 @@ export interface GameState {
   paused: boolean;
   bank: number;
   banked: number;
-  room: number;
-  next: number | null;
-  nextOpen: boolean;
-  /** At the next room's gate, where going on seals the room behind. */
-  warning: boolean;
+  /** The id of the cave the game is in, and whether its way out is open. */
+  cave: string;
+  open: boolean;
+  /** How dark it is where the dozer is, 0 to 1: the page fades to black by it down the way out. */
+  darkness: number;
   done: boolean;
-  areas: boolean[];
   secrets: boolean[];
   walls: boolean[];
   wallDamage: number[];
@@ -67,27 +66,39 @@ export interface Body {
   y: number;
   z: number;
   asleep: boolean;
-  /** The room it came from and is sealed with, or null for none. */
-  room: number | null;
+  /** Which source of the cave it came from: 0 the cave itself, then its chambers, side rooms and walls; null for none. */
+  source: number | null;
+}
+
+/** A cutting at the cave's edge, for driving down. */
+export interface CuttingAt {
+  /** Where it meets the cave's floor, and a point down it past where the machine leaves the cave, which is the far end of a way out. */
+  mouth: Point;
+  beyond: Point;
+  /** Which way is out of the cave along it, as a unit step. */
+  out: [number, number];
 }
 
 /** Where things are in the cave, for setting a scene without importing the game's source. */
 export interface Content {
+  /** The cave's id and name. */
+  id: string;
+  name: string;
   /** The first hole, which is the only one in a cave with one; and all of them. */
   hole: Point & { radius: number };
   holes: (Point & { radius: number })[];
-  rooms: {
-    area: number;
-    name: string;
-    heaps: (Point & { coins: number })[];
-    barrels: Point[];
-    /** Where its gate stands, and a point just past where going on into it seals the room behind; null for the hollow. */
-    gate: Point | null;
-    pastSeal: Point | null;
-  }[];
-  lamps: (Point & { area: number })[];
-  chambers: { area: number }[];
-  walls: { area: number; tiles: Point[] }[];
+  heaps: (Point & { coins: number })[];
+  /** Where the vein runs from once the last cave is cleared. */
+  vein: Point;
+  barrels: Point[];
+  /** The belts that can be bought, by their ids. */
+  belts: { id: string; from: Point; to: Point }[];
+  /** Where the machine arrives, and which way it faces; and the way out, null in the last cave. */
+  entry: Point & { yaw: number };
+  exit: CuttingAt | null;
+  lamps: Point[];
+  chambers: Point[];
+  walls: { tiles: Point[] }[];
 }
 
 export interface PushminerApi {
@@ -105,7 +116,7 @@ export interface PushminerApi {
   state(): GameState;
   bodies(kind?: string): Body[];
   content(): Content;
-  /** What has happened since this was last asked, a line each: "blast 12.0,4.0", "roomOpened 1". */
+  /** What has happened since this was last asked, a line each: "blast 12.0,4.0", "exitOpened". */
   events(): string[];
   /** The rules that must always hold, broken; empty when all is well. */
   invariants(): string[];
@@ -120,8 +131,10 @@ export interface PushminerApi {
   place(slot: number, x: number, y: number, z?: number): void;
   deposit(value: number): void;
   buy(id: string): boolean;
-  /** The next room opened, as banking enough of this one would. */
-  openNext(): void;
+  /** The way out opened, as banking enough of the cave would. */
+  openExit(): void;
+  /** The page's swap done again for the cave the save is in, as a change of cave does it: for seeing what a run of changes leaves behind. */
+  rebuild(): void;
   reveal(chamber: number): void;
   hitWall(wall: number, damage: number): number;
   lightBarrel(slot: number, seconds?: number): boolean;
@@ -140,8 +153,11 @@ export interface PushminerApi {
 
 /** What the page gives the API that is not the game's: time, the controls, the camera and the renderer. */
 export interface DebugHost {
-  game: Game;
-  cave: Cave;
+  /** The game and cave being played: they change when the player drives out through the way out, so they are asked for each time. */
+  game(): Game;
+  cave(): Cave;
+  /** Swap to the game and scene of the cave the save is in, as a change of cave does. */
+  rebuild(): void;
   ready(): boolean;
   paused(): boolean;
   setPaused(paused: boolean): void;
@@ -169,8 +185,7 @@ function seeded(n: number): () => number {
 }
 
 export function createApi(host: DebugHost): PushminerApi {
-  const { game, cave } = host;
-  const { world, economy } = game;
+  const game = () => host.game();
   return {
     version: 1,
     get ready() {
@@ -187,21 +202,20 @@ export function createApi(host: DebugHost): PushminerApi {
     },
 
     state() {
-      const save = economy.save;
+      const g = game();
+      const save = g.economy.save;
       const kinds: Record<string, number> = {};
-      KIND_NAME.forEach((name, k) => (kinds[name] = game.stock.kinds[k]));
+      KIND_NAME.forEach((name, k) => (kinds[name] = g.stock.kinds[k]));
       return {
-        t: game.t,
+        t: g.t,
         frame: host.frame(),
         paused: host.paused(),
         bank: save.bank,
         banked: save.banked,
-        room: save.room,
-        next: economy.next(),
-        nextOpen: economy.nextOpen(),
-        warning: game.warning,
+        cave: save.cave,
+        open: save.open,
+        darkness: g.darkness(),
         done: save.done,
-        areas: [...save.areas],
         secrets: [...save.secrets],
         walls: [...save.walls],
         wallDamage: [...save.wallDamage],
@@ -209,23 +223,24 @@ export function createApi(host: DebugHost): PushminerApi {
         drones: save.drones,
         horn: save.horn,
         body: save.body,
-        live: world.live,
+        live: g.world.live,
         kinds,
-        dozer: { x: game.dozer.x, y: game.dozer.y, yaw: game.dozer.yaw, speed: game.dozer.speed },
-        bots: game.bots.map((b) => ({ x: b.x, y: b.y, yaw: b.yaw, state: b.state })),
-        barrels: { count: game.stock.kinds[BARREL_KIND], lit: game.barrels.lit },
-        fountains: game.fountains.length,
+        dozer: { x: g.dozer.x, y: g.dozer.y, yaw: g.dozer.yaw, speed: g.dozer.speed },
+        bots: g.bots.map((b) => ({ x: b.x, y: b.y, yaw: b.yaw, state: b.state })),
+        barrels: { count: g.stock.kinds[BARREL_KIND], lit: g.barrels.lit },
+        fountains: g.fountains.length,
         trackMarks: host.trackMarks(),
         muted: host.muted(),
       };
     },
     bodies(kind) {
+      const { world, stock } = game();
       const out: Body[] = [];
       for (let i = 0; i < world.count; i++) {
         if (!world.alive[i]) continue;
         const name = KIND_NAME[world.kind[i]];
         if (kind !== undefined && name !== kind) continue;
-        const from = game.stock.origin[i];
+        const from = stock.origin[i];
         out.push({
           slot: i,
           kind: name,
@@ -233,53 +248,57 @@ export function createApi(host: DebugHost): PushminerApi {
           y: world.y[i],
           z: world.z[i],
           asleep: !!world.asleep[i],
-          room:
-            world.kind[i] === BARREL_KIND ? game.stock.home[i] : from === NO_SOURCE ? null : economy.sources.area(from),
+          source: from === NO_SOURCE ? null : from,
         });
       }
       return out;
     },
     content() {
-      const { areas, wings, secrets, walls } = cave.spec;
+      const cave = host.cave();
+      const { spec } = cave;
       const holes = cave.holes.map((h) => ({ x: h.x, y: h.y, radius: h.radius }));
+      const at = arrival(cave);
+      const points = exitPoints(cave);
+      const exit: CuttingAt | null =
+        points && spec.exit ? { mouth: points.mouth, beyond: points.beyond, out: spec.exit.out } : null;
       return {
+        id: spec.id,
+        name: spec.name,
         hole: holes[0],
         holes,
-        rooms: areas.map((area, a) => {
-          let pastSeal: Point | null = null;
-          if (a > 0) {
-            const [sx, sy] = sealPoint(cave, a);
-            const [dx, dy] = wings[a].dir;
-            pastSeal = { x: sx + dx * 4, y: sy + dy * 4 };
-          }
-          const gate = a > 0 ? gateCentre(cave, a) : null;
-          return {
-            area: a,
-            name: area.name,
-            heaps: area.heaps.map((h) => ({ x: h.x, y: h.y, coins: h.coins })),
-            barrels: cave.barrels.filter((b) => b.area === a).map((b) => ({ x: b.x, y: b.y })),
-            gate: gate && { x: gate[0], y: gate[1] },
-            pastSeal,
-          };
+        heaps: spec.heaps.map((h) => ({ x: h.x, y: h.y, coins: h.coins })),
+        vein: { x: spec.vein.x, y: spec.vein.y },
+        barrels: cave.barrels.map((b) => ({ x: b.x, y: b.y })),
+        belts: spec.belts.map((b) => ({
+          id: b.id,
+          from: { x: b.spec.x0, y: b.spec.y0 },
+          to: { x: b.spec.x1, y: b.spec.y1 },
+        })),
+        entry: { x: at.x, y: at.y, yaw: at.yaw },
+        exit,
+        lamps: cave.lamps.map((l) => ({ x: l.x, y: l.y })),
+        chambers: spec.secrets.map((_, k) => {
+          const [x, y] = chamberCentre(cave, k);
+          return { x, y };
         }),
-        lamps: cave.lamps.map((l) => ({ x: l.x, y: l.y, area: l.area })),
-        chambers: secrets.map((s) => ({ area: s.area })),
-        walls: walls.map((w, k) => ({ area: w.area, tiles: wallTiles(cave, k).map(([x, y]) => ({ x, y })) })),
+        walls: spec.walls.map((_, k) => ({ tiles: wallTiles(cave, k).map(([x, y]) => ({ x, y })) })),
       };
     },
     events() {
       return host.events.splice(0);
     },
-    invariants: () => checkInvariants(game),
+    invariants: () => checkInvariants(game()),
 
     drive: (throttle, steer) => host.setDrive({ throttle, steer }),
     release: () => host.setDrive(null),
-    honk: () => game.honk(),
+    honk: () => game().honk(),
     teleport(x, y, yaw) {
-      Object.assign(game.dozer, { x, y, speed: 0, yawRate: 0 });
-      if (yaw !== undefined) game.dozer.yaw = yaw;
+      const { dozer } = game();
+      Object.assign(dozer, { x, y, speed: 0, yawRate: 0 });
+      if (yaw !== undefined) dozer.yaw = yaw;
     },
     place(slot, x, y, z) {
+      const { world } = game();
       if (!world.alive[slot]) return;
       world.x[slot] = x;
       world.y[slot] = y;
@@ -287,15 +306,16 @@ export function createApi(host: DebugHost): PushminerApi {
       world.vx[slot] = world.vy[slot] = world.vz[slot] = 0;
       world.wake(slot);
     },
-    deposit: (value) => economy.deposit(value),
-    buy: (id) => economy.buy(id),
-    openNext: () => economy.open(),
-    reveal: (k) => economy.reveal(k),
-    hitWall: (w, damage) => economy.hitWall(w, damage),
-    lightBarrel: (slot, seconds) => game.barrels.light(slot, seconds),
+    deposit: (value) => game().economy.deposit(value),
+    buy: (id) => game().economy.buy(id),
+    openExit: () => game().economy.open(),
+    rebuild: () => host.rebuild(),
+    reveal: (k) => game().economy.reveal(k),
+    hitWall: (w, damage) => game().economy.hitWall(w, damage),
+    lightBarrel: (slot, seconds) => game().barrels.light(slot, seconds),
     save() {
-      game.persist();
-      return JSON.stringify(economy.save);
+      game().persist();
+      return JSON.stringify(game().economy.save);
     },
 
     look: (x, y, view = {}) => host.look(x, y, view),

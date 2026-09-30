@@ -32,8 +32,8 @@ export interface DynamicOptions {
   bodyCapacity: number;
   /** How many of each kind past the coins can be drawn at once; the last two are gold bars and bricks. */
   kindCapacity: readonly number[];
-  /** Each room's belt, by the room's index; null for a room with none. */
-  belts: readonly (BeltSpec | null)[];
+  /** The cave's belts that can be bought, by their place in its list. */
+  belts: readonly BeltSpec[];
   bots: number;
   botScale: number;
   botBladeWidth: number;
@@ -53,7 +53,7 @@ export interface DynamicFrame {
   brickGrade: Uint8Array;
   dozer: Dozer;
   bots: readonly DrawnBot[];
-  /** The rooms whose belts run. */
+  /** The belts that run, by their place in the cave's list. */
   belts: readonly number[];
   flag: boolean;
   /** The track marks: each page's count, and which pages have changed. */
@@ -127,6 +127,8 @@ export class DynamicScene {
   readonly legsGroup = LEGS_GROUP;
   private readonly legM = new Float32Array(LEG_COUNT * LEG_PARTS * 16);
   private body: MachineBody = 'dozer';
+  /** The cave's belts that can be bought, as drawn: the ones of the cave the page has swapped to. */
+  private belts: readonly BeltSpec[];
   private readonly stripeM = new Float32Array(STRIPE_CAPACITY * 16);
   private readonly poleM = new Float32Array(16);
   private readonly flagM = new Float32Array(FLAG_SLATS * 16);
@@ -140,6 +142,7 @@ export class DynamicScene {
     private readonly options: DynamicOptions,
   ) {
     const { bodyCapacity, kindCapacity, bots } = options;
+    this.belts = options.belts;
     this.coinM = new Float32Array(bodyCapacity * 16);
     this.gemM = kindCapacity.map((n) => new Float32Array(Math.max(1, n) * 16));
     this.rubbleM = [1, 2, 3].map(() => new Float32Array(kindCapacity[BRICK_KIND] * 16));
@@ -255,6 +258,11 @@ export class DynamicScene {
   setCoinDetail(level: number) {
     this.groups[COINS].mesh = coin(0.52, 0.26, level);
     this.target.setDynamic(this.groups);
+  }
+
+  /** The belts of the cave the page has come into, for the stripes on the ones that run. */
+  setBelts(belts: readonly BeltSpec[]) {
+    this.belts = belts;
   }
 
   /** The body the machine stands on: its tracks, or the Spiderdozer's legs. */
@@ -380,7 +388,7 @@ export class DynamicScene {
   private stripes(belts: readonly number[], t: number) {
     let n = 0;
     for (const a of belts) {
-      const s = this.options.belts[a]!;
+      const s = this.belts[a];
       const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0),
         yaw = Math.atan2(s.y1 - s.y0, s.x1 - s.x0);
       const cx = (s.x0 + s.x1) / 2,

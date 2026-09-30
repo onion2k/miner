@@ -41,17 +41,25 @@ async function main() {
   );
   results.sort((a, b) => a.seed - b.seed);
   const parted = results.filter((r) => r.diverged !== null);
+  // a run that never left the first cave has not tried what a change of cave builds afresh
+  const stayed = results.filter((r) => r.changes === 0);
   console.log(
     `${seeds.length} seed${seeds.length === 1 ? '' : 's'}, played twice, ${frames} frames each (${((performance.now() - started) / 1000).toFixed(1)} s)`,
   );
   for (const r of parted) console.error(`  ${r.note}`);
+  for (const r of stayed)
+    console.error(`  seed ${r.seed}: never left the first cave, so a change of cave was not tried`);
   if (parted.length) {
     console.error(
       `\n${parted.length} seed${parted.length === 1 ? ' does' : 's do'} not play out the same twice: look for chance taken from somewhere other than Math.random, state kept in a module between runs, or an order that is not the same twice`,
     );
     process.exitCode = 1;
+  } else if (stayed.length) {
+    process.exitCode = 1;
   } else {
-    console.log(`  the same twice, every seed (${results[0].checkpoints.length} checkpoints each)`);
+    console.log(
+      `  the same twice, every seed (${results[0].checkpoints.length} checkpoints each), through ${results.map((r) => r.changes).join(', ')} changes of cave`,
+    );
   }
 }
 

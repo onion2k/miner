@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Autopilot } from '../src/autopilot';
+import { Autopilot, DWINDLE_OVER, gainsDwindled } from '../src/autopilot';
 import { BOT_SCALE } from '../src/tools';
 import { checkInvariants } from '../src/invariants';
-import { ORDER, SECRETS, WALLS, newGame, withSeed } from './helpers';
+import { gameIn, newGame, withSeed } from './helpers';
 
 const DT = 1 / 60;
 /** Play `seconds` of the game under the autopilot, or until `until` holds. */
@@ -18,9 +18,9 @@ describe('the autopilot', () => {
       expect(pilot.machine.dozer).toBe(game.dozer);
       expect(game.dozer.scale).toBe(1);
       const start = { x: game.dozer.x, y: game.dozer.y };
-      fly(pilot, 90);
+      fly(pilot, 40);
       expect(Math.hypot(game.dozer.x - start.x, game.dozer.y - start.y)).toBeGreaterThan(5);
-      expect(game.economy.save.banked, 'banked in 90 s').toBeGreaterThan(40);
+      expect(game.economy.save.banked, 'banked in 40 s').toBeGreaterThan(10);
       expect(checkInvariants(game)).toEqual([]);
     });
   });
@@ -42,35 +42,47 @@ describe('the autopilot', () => {
     });
   });
 
-  it('as a rusher, goes on into the next room as soon as it is open', () => {
+  it('as a rusher, drives out through the way out as soon as it is open', () => {
     withSeed(3, () => {
       const game = newGame();
       const pilot = new Autopilot(game, 'rusher', { shop: false });
       game.economy.open();
-      fly(pilot, 120, () => game.economy.current() === ORDER[1]);
-      expect(game.economy.current()).toBe(ORDER[1]);
-      expect(pilot.log.some((l) => l.what === `into ${ORDER[1]}`)).toBe(true);
+      fly(pilot, 120, () => game.left);
+      expect(game.left).toBe(true);
+      expect(game.economy.save.cave).toBe('south-gallery');
+      expect(pilot.log.some((l) => l.what === 'out of hollow')).toBe(true);
     });
   });
 
-  it('as a thorough player, breaks into its room’s hidden chamber and knocks down its brick wall before going on', () => {
+  it('as a thorough player, breaks into its cave’s hidden chamber and knocks down its brick wall before going on', () => {
     withSeed(4, () => {
-      const game = newGame();
+      // in the south gallery, with an engine good for its wall
+      const game = gameIn('south-gallery', { engine: 4 });
       const pilot = new Autopilot(game, 'thorough', { shop: false });
-      // straight on into the south gallery, with an engine good for its wall
-      game.economy.open();
-      fly(pilot, 5);
-      game.economy.save.engine = 4;
-      const room = ORDER[1];
-      Object.assign(game.dozer, pilot.pastSeal(room));
-      game.step(DT, { throttle: 0, steer: 0 });
-      expect(game.economy.current()).toBe(room);
-      const chamber = SECRETS.findIndex((s) => s.area === room);
-      const wall = WALLS.findIndex((w) => w.area === room);
-      fly(pilot, 240, () => game.economy.save.secrets[chamber] && game.economy.save.walls[wall]);
-      expect(game.economy.save.secrets[chamber], 'chamber broken into').toBe(true);
-      expect(game.economy.save.walls[wall], 'wall down').toBe(true);
+      fly(pilot, 360, () => game.economy.save.secrets[0] && game.economy.save.walls[0]);
+      expect(game.economy.save.secrets[0], 'chamber broken into').toBe(true);
+      expect(game.economy.save.walls[0], 'wall down').toBe(true);
       expect(checkInvariants(game)).toEqual([]);
+    });
+  });
+
+  it('judges the gains dwindled when the last stretch has banked next to nothing of the cave, and not before it has a stretch to judge by', () => {
+    const worth = 3000;
+    const at = (t: number, banked: number) => ({ t, banked });
+    // too short a stretch to say, however little it banked
+    expect(gainsDwindled([at(0, 500), at(DWINDLE_OVER - 10, 500)], worth)).toBe(false);
+    // a whole stretch, and a coin or two in it: dwindled
+    expect(gainsDwindled([at(0, 500), at(DWINDLE_OVER / 2, 502), at(DWINDLE_OVER, 504)], worth)).toBe(true);
+    // a whole stretch, and a real share of the cave banked in it: still paying
+    expect(gainsDwindled([at(0, 500), at(DWINDLE_OVER, 500 + worth * 0.05)], worth)).toBe(false);
+  });
+
+  it('as a thorough player, stays while the cave is still paying', () => {
+    withSeed(7, () => {
+      const game = gameIn('south-gallery', { open: true, engine: 3, blade: 2 });
+      const pilot = new Autopilot(game, 'thorough', { shop: false });
+      fly(pilot, 20);
+      expect(game.left, 'not gone while heaps are there to push').toBe(false);
     });
   });
 

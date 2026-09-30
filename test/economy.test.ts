@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Economy, WALL_STRENGTH, browserStore, memoryStore, roomStock } from '../src/economy';
+import { Economy, WALL_STRENGTH, browserStore, caveStock, memoryStore, sourcesOf } from '../src/economy';
 import { KIND_VALUE } from '../src/physics';
-import { AREAS, ORDER, SECRETS, SOURCES, SPEC, STASHES, WALLS } from './helpers';
+import { RUN, specOf } from './helpers';
 
 /** An economy over the browser's storage, which these tests stand in for. */
-const newEconomy = () => new Economy(browserStore, SPEC);
+const newEconomy = () => new Economy(browserStore, RUN);
 
 const KEY = 'pushminer-save-v1';
 let store: Map<string, string>;
@@ -20,43 +20,60 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the economy', () => {
-  it('starts in the hollow with nothing', () => {
+  it('starts in the first cave with nothing', () => {
     const e = newEconomy();
     expect(e.bank).toBe(0);
-    expect(e.current()).toBe(ORDER[0]);
-    expect(e.save.areas).toEqual(AREAS.map((_, a) => a === 0));
-    expect(e.next()).toBe(ORDER[1]);
-    expect(e.nextOpen()).toBe(false);
+    expect(e.cave()).toBe(RUN[0]);
+    expect(e.index()).toBe(0);
+    expect(e.isLast()).toBe(false);
+    expect(e.save.cave).toBe('hollow');
+    expect(e.save.open).toBe(false);
   });
 
-  it('opens the rooms in order, seals each behind the player, and is done after the last', () => {
+  it('opens each cave’s way out, moves on through the run in order, and is done after the last', () => {
     const e = newEconomy();
     const events: string[] = [];
     e.onChange((id) => events.push(id));
-    for (let n = 1; n < ORDER.length; n++) {
+    for (let n = 1; n < RUN.length; n++) {
       e.open();
-      expect(e.save.areas[ORDER[n]]).toBe(true);
+      expect(e.save.open).toBe(true);
       // opening again before moving on does nothing
       e.open();
       e.moveOn();
-      expect(e.current()).toBe(ORDER[n]);
-      if (n > 1) {
-        expect(e.save.areas[ORDER[n - 1]]).toBe(false);
-        expect(e.sealed(ORDER[n - 1])).toBe(true);
-      }
-      // the hollow is never shut
-      expect(e.save.areas[0]).toBe(true);
+      expect(e.cave()).toBe(RUN[n]);
+      expect(e.save.cave).toBe(RUN[n].id);
+      expect(e.index()).toBe(n);
+      expect(e.save.open, 'the way out of the new cave is shut').toBe(false);
     }
+    expect(e.isLast()).toBe(true);
     expect(e.save.done).toBe(false);
     e.open();
     expect(e.save.done).toBe(true);
-    expect(events).toEqual([...ORDER.slice(1).flatMap((a, n) => [`area${a}`, `sealed${ORDER[n]}`]), 'done']);
+    expect(e.save.open, 'the last cave has no way out to open').toBe(false);
+    expect(events).toEqual([...RUN.slice(0, -1).flatMap((c) => ['exit', `left:${c.id}`]), 'done']);
   });
 
-  it('will not move on before the next gate is open', () => {
+  it('will not move on before the way out is open, or past the last cave', () => {
     const e = newEconomy();
     e.moveOn();
-    expect(e.current()).toBe(ORDER[0]);
+    expect(e.cave()).toBe(RUN[0]);
+    e.save.cave = RUN[RUN.length - 1].id;
+    const last = new Economy(memoryStore(JSON.stringify(e.save)), RUN);
+    last.save.open = true;
+    last.moveOn();
+    expect(last.save.cave).toBe(RUN[RUN.length - 1].id);
+  });
+
+  it('stops telling a listener that has let go, so a game that is finished with costs nothing', () => {
+    const e = newEconomy();
+    const told: string[] = [];
+    const stop = e.onChange((id) => told.push(id));
+    expect(e.listening).toBe(1);
+    e.open();
+    stop();
+    expect(e.listening).toBe(0);
+    e.moveOn();
+    expect(told).toEqual(['exit']);
   });
 
   it('keeps its save across a reload', () => {
@@ -68,8 +85,21 @@ describe('the economy', () => {
     const b = newEconomy();
     expect(b.bank).toBe(500);
     expect(b.save.banked).toBe(500);
-    expect(b.save.areas[ORDER[1]]).toBe(true);
+    expect(b.save.open).toBe(true);
     expect(b.save.lampsBroken).toEqual([3]);
+  });
+
+  it('keeps which cave it is in across a reload, and starts the new cave afresh', () => {
+    const a = newEconomy();
+    a.deposit(40);
+    a.breakLamp(2);
+    a.open();
+    a.moveOn();
+    const b = newEconomy();
+    expect(b.save.cave).toBe(RUN[1].id);
+    expect(b.save.open).toBe(false);
+    expect(b.save.lampsBroken).toEqual([]);
+    expect(b.bank).toBe(40);
   });
 
   it('plays from the start when the save is unreadable', () => {
@@ -77,27 +107,61 @@ describe('the economy', () => {
     expect(newEconomy().bank).toBe(0);
   });
 
-  it('brings a save from before rooms were sealed forward to the furthest room it had', () => {
-    const furthest = ORDER[2];
+  it('checks what comes from outside: a value out of range is brought into it, and lists are the cave’s size', () => {
     store.set(
       KEY,
-      JSON.stringify({ bank: 50, areas: AREAS.map((_, a) => ORDER.indexOf(a) <= 2), left: [1, 2, 3, 4, 5] }),
+      JSON.stringify({
+        bank: -5,
+        engine: 99,
+        blade: 'lots',
+        drones: 9,
+        body: 'hovercraft',
+        paint: 'plaid',
+        cave: 'south-gallery',
+        open: true,
+        belts: ['south-belt', 'the-moon'],
+        secrets: [true, true, true],
+        walls: 'yes',
+        rubble: [1, 2, 3, 4, 5],
+        barrels: [1, 2, 3, 4],
+        lampsBroken: [1, 'x', 2],
+      }),
     );
     const e = newEconomy();
-    expect(e.current()).toBe(furthest);
-    expect(e.save.areas).toEqual(AREAS.map((_, a) => a === 0 || a === furthest));
-    expect(e.save.left).toHaveLength(SOURCES.count);
-    expect(e.save.left[furthest]).toEqual([1, 2, 3, 4, 5]);
+    const south = specOf('south-gallery');
+    expect(e.bank).toBe(0);
+    expect(e.save.engine).toBeLessThan(10);
+    expect(e.save.blade).toBe(0);
+    expect(e.save.drones).toBeLessThanOrEqual(3);
+    expect(e.save.body).toBe('dozer');
+    expect(e.save.paint).toBe('yellow');
+    expect(e.save.cave).toBe('south-gallery');
+    expect(e.save.belts).toEqual(['south-belt']);
+    expect(e.save.secrets).toEqual(south.secrets.map(() => true));
+    expect(e.save.walls).toEqual(south.walls.map(() => false));
+    expect(e.save.rubble, 'whole bricks only').toEqual([1, 2, 3, 4]);
+    expect(e.save.barrels, 'whole barrels only').toEqual([1, 2, 3]);
+    expect(e.save.lampsBroken).toEqual([1, 2]);
+  });
+
+  it('refuses a cave it does not know, by name, and begins the run again', () => {
+    store.set(KEY, JSON.stringify({ bank: 30, cave: 'the-moon', open: true }));
+    const e = newEconomy();
+    expect(e.save.cave).toBe('hollow');
+    expect(e.save.open).toBe(false);
+    expect(e.bank).toBe(30);
   });
 
   it('fills in what an older save is missing', () => {
     store.set(KEY, JSON.stringify({ bank: 7, room: 0, areas: [true] }));
     const e = newEconomy();
-    expect(e.save.areas).toHaveLength(AREAS.length);
-    expect(e.save.belts).toHaveLength(AREAS.length);
-    expect(e.save.secrets).toHaveLength(SECRETS.length);
-    expect(e.save.walls).toHaveLength(WALLS.length);
-    expect(e.save.wallDamage).toHaveLength(WALLS.length);
+    const spec = e.cave();
+    expect(e.save.cave).toBe('hollow');
+    expect(e.save.belts).toEqual([]);
+    expect(e.save.secrets).toHaveLength(spec.secrets.length);
+    expect(e.save.walls).toHaveLength(spec.walls.length);
+    expect(e.save.wallDamage).toHaveLength(spec.walls.length);
+    expect(e.save.left).toHaveLength(sourcesOf(spec).count);
   });
 
   it('buys what it can afford and nothing it cannot', () => {
@@ -113,7 +177,7 @@ describe('the economy', () => {
   });
 
   it('sells the Spiderdozer body once, and swaps it for the tracks and back for nothing', () => {
-    const e = new Economy(memoryStore(), SPEC);
+    const e = new Economy(memoryStore(), RUN);
     expect(e.save.body).toBe('dozer');
     expect(e.save.bodies).toEqual(['dozer']);
     const spider = e.cosmetics().find((o) => o.id === 'body:spider')!;
@@ -136,7 +200,7 @@ describe('the economy', () => {
   });
 
   it('loads a save from before there were bodies on its tracks', () => {
-    const e = new Economy(memoryStore(JSON.stringify({ bank: 5, paint: 'red', paints: ['yellow', 'red'] })), SPEC);
+    const e = new Economy(memoryStore(JSON.stringify({ bank: 5, paint: 'red', paints: ['yellow', 'red'] })), RUN);
     expect(e.save.body).toBe('dozer');
     expect(e.save.bodies).toEqual(['dozer']);
   });
@@ -152,14 +216,23 @@ describe('the economy', () => {
     expect(e.bank).toBe(0);
   });
 
-  it('only sells a belt for a room that is open', () => {
-    const e = newEconomy();
-    const a = ORDER.find((r) => AREAS[r].belt)!;
+  it('sells the belts of the cave being cleared, bought for it and gone with it', () => {
+    const e = new Economy(memoryStore(JSON.stringify({ cave: 'south-gallery' })), RUN);
+    const id = 'belt:south-belt';
+    expect(e.offers().map((o) => o.id)).toContain(id);
+    expect(e.offers().find((o) => o.id === id)).toMatchObject({ owned: false, available: true });
+    expect(e.buy(id), 'not without the money').toBe(false);
     e.deposit(1e6);
-    expect(e.buy(`belt${a}`)).toBe(false);
-    e.save.areas[a] = true;
-    expect(e.buy(`belt${a}`)).toBe(true);
-    expect(e.save.belts[a]).toBe(true);
+    expect(e.buy(id)).toBe(true);
+    expect(e.save.belts).toEqual(['south-belt']);
+    expect(e.offers().find((o) => o.id === id)!.owned).toBe(true);
+    // the hollow has none to sell, and the next cave's are its own
+    expect(new Economy(memoryStore(), RUN).offers().some((o) => o.id.startsWith('belt:'))).toBe(false);
+    e.open();
+    e.moveOn();
+    expect(e.save.belts).toEqual([]);
+    expect(e.offers().find((o) => o.id === id)).toBeUndefined();
+    expect(e.offers().map((o) => o.id)).toContain('belt:east-belt');
   });
 
   it('hurts a wall more the harder it is hit, and brings it down at its strength', () => {
@@ -167,42 +240,46 @@ describe('the economy', () => {
     expect(e.ram(2)).toBe(0);
     expect(e.ram(8)).toBeGreaterThan(e.ram(5));
     expect(e.ram(30)).toBe(e.ram(100));
-    if (!WALLS.length) return;
+    // a wall is in the South Gallery, off the hollow's one way out
+    const south = new Economy(memoryStore(JSON.stringify({ cave: 'south-gallery' })), RUN);
     const falls: string[] = [];
-    e.onChange((id) => falls.push(id));
-    const strength = WALL_STRENGTH[WALLS[0].grade];
+    south.onChange((id) => falls.push(id));
+    const strength = WALL_STRENGTH[specOf('south-gallery').walls[0].grade];
     let hits = 0,
       gone = 0;
     while (gone < 1 && hits < 100) {
-      gone = e.hitWall(0, e.ram(30));
+      gone = south.hitWall(0, e.ram(30));
       hits++;
     }
     expect(gone).toBe(1);
     expect(hits).toBe(Math.ceil(strength / e.ram(30)));
-    expect(e.save.walls[0]).toBe(true);
+    expect(south.save.walls[0]).toBe(true);
     expect(falls).toEqual(['wall0']);
     // a wall already down stays down and says so again
-    expect(e.hitWall(0, 1)).toBe(1);
+    expect(south.hitWall(0, 1)).toBe(1);
     expect(falls).toEqual(['wall0']);
   });
 });
 
 describe('the sources', () => {
-  it('put everything in the room it is sealed with', () => {
-    AREAS.forEach((_, a) => expect(SOURCES.area(a)).toBe(a));
-    SECRETS.forEach((s, k) => expect(SOURCES.area(SOURCES.chamber(k))).toBe(s.area));
-    STASHES.forEach((s, k) => expect(SOURCES.area(SOURCES.stash(k))).toBe(s.area));
-    WALLS.forEach((w, k) => expect(SOURCES.area(SOURCES.wall(k))).toBe(w.area));
-    expect(SOURCES.wall(WALLS.length - 1)).toBe(SOURCES.count - 1);
+  it('number the cave first, then its chambers, side rooms and walls', () => {
+    for (const spec of RUN) {
+      const sources = sourcesOf(spec);
+      expect(sources.count, spec.id).toBe(1 + spec.secrets.length + spec.stashes.length + spec.walls.length);
+      spec.secrets.forEach((_, k) => expect(sources.chamber(k)).toBe(1 + k));
+      spec.stashes.forEach((_, k) => expect(sources.stash(k)).toBe(1 + spec.secrets.length + k));
+      spec.walls.forEach((_, k) => expect(sources.wall(k)).toBe(1 + spec.secrets.length + spec.stashes.length + k));
+      if (spec.walls.length) expect(sources.wall(spec.walls.length - 1)).toBe(sources.count - 1);
+    }
   });
 
-  it('value a room at what its heaps hold', () => {
-    for (let a = 0; a < AREAS.length; a++) {
-      const byHand = AREAS[a].heaps.reduce(
+  it('value a cave at what its heaps hold', () => {
+    for (const spec of RUN) {
+      const byHand = spec.heaps.reduce(
         (s, h) => s + h.coins * KIND_VALUE[0] + h.gems.reduce((g, [k, n]) => g + n * KIND_VALUE[k], 0),
         0,
       );
-      expect(roomStock(SPEC, a).value).toBe(byHand);
+      expect(caveStock(spec).value).toBe(byHand);
     }
   });
 });

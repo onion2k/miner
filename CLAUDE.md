@@ -17,8 +17,8 @@ without breaking it.
     npm run determinism    the same seed played twice, hashed, to catch chance not from the seed
     npm run leaks          an hour of play, watching what must stay bounded (20 min of it in check)
     npm run sim:check      the drones held to scripts/sim-baseline.json
-    npm run balance        the whole game played through by the autopilot: room times, purchases, bank
-    npm run balance:check  the first two rooms' pacing held to scripts/balance-baseline.json
+    npm run balance        the whole game played through by the autopilot: cave times, purchases, bank
+    npm run balance:check  the first two caves' pacing held to scripts/balance-baseline.json
     npm run bench          the physics' frame time held to scripts/bench-baseline.json
     npm run smoke          the game in headless Chromium on the real GPU (Playwright, smoke/)
     npm run look           the scenes held to the pictures in smoke/screens
@@ -37,11 +37,18 @@ the game to whatever it happened to draw that day.
   and knows nothing of the renderer, the page or the sound.
 - `src/main.ts` is the page. It turns those events into particles, sound and
   words, and draws the frame. There is no game logic here; if a change needs
-  some, it goes in `game.ts` or a module of its own.
+  some, it goes in `game.ts` or a module of its own. A `Game` is one cave: on
+  `caveLeft` the page swaps (`enter` in `main.ts`) to the next cave's game,
+  static scene, track marks and camera, in the dark, timed and logged as
+  `swap <id> <ms>`. What the arrow points at is `src/aim.ts`'s.
 - `src/debug.ts` is `window.pushminer`, the test API. `src/invariants.ts` lists
   the rules that must always hold.
-- Content (rooms, heaps, walls, barrels, lamps) lives in `cave.ts`. Prices
-  and the save live in `economy.ts`.
+- Content (heaps, walls, barrels, lamps, the way in and the way out) is
+  built from a `CaveSpec` by `cave.ts`; the five specs, the run, are in
+  `caves.ts`. Prices and the save live in `economy.ts`. A cave is cleared at
+  `CLEAR_SHARE` banked, which opens its way out: a cutting of rock at the far
+  end, solid until then, through which the dozer drives into the next cave.
+  The page fades to black by `game.darkness()`, which is by position.
 
 ## Model features
 
@@ -57,7 +64,7 @@ What to copy the shape of, when building something new:
 - **Gate tolerances:** the drone gate allows a quarter of the figure, or a
   slack of one or two; the balance gate a fifth on minutes and purchases and
   15% on the bank; the bench a fifth and 0.05 ms. A swing on 8 seeds is
-  checked on another 8 with `npm run sim -- --room N --seeds 9-16`.
+  checked on another 8 with `npm run sim -- --cave <id> --seeds 9-16`.
 
 ## Rules for the code
 
@@ -113,13 +120,13 @@ says so point by point:
 For anything new in the cave, check what it does:
 
 - **the hole:** pushed down it, lit or moving
-- **sealing:** its room sealed with it in it; the next room opening in its place
+- **leaving:** the cave left with it in it (lit, moving, on the way out's tiles when it opens): counted as lost, never carried over
 - **save:** saved, reloaded, and loaded from an old save without the field
 - **drones:** pushed by one, or targeted by the foreman
 - **other features:** blasts, the horn, belts, the magnet, brick walls and rubble,
   hidden chambers, lamps
 - **rock:** against walls and in corridors; never left in rock
-- **rooms:** in every room and biome, the hollow included
+- **caves:** in every cave and biome, the hollow included, and the last, which has no way out
 - **scale:** many at once, chains, at capacity (`KIND_CAPACITY`)
 - **phone:** touch controls, narrow screen
 - **the end:** after the cave is done, with the vein running

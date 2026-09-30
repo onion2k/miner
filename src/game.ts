@@ -1,8 +1,9 @@
 /**
  * The game itself, without the picture, the page or the sound: the cave it
- * is handed and what is in it, the dozer and the drones, the bank and the rooms, walls,
- * chambers, lamps, barrels, the vein, and what each does to the others, a
- * step at a time.
+ * is handed and what is in it, the dozer and the drones, the bank and the way
+ * out, walls, chambers, lamps, barrels, the vein, and what each does to the
+ * others, a step at a time. One `Game` is one cave: driving out through its
+ * way out ends it, and whoever owns it builds the next.
  *
  * What happens is told to `events`, for whoever shows it: the browser turns
  * it into sparkle, dust, sound and words on the screen; the fuzzer and the
@@ -10,16 +11,25 @@
  * there, so the same game runs in the page and in Node, and what the tests
  * try is what is played.
  */
-import { BODY_CAPACITY, SECRET, behindGate, nearestHole, tileCentre, type Cave } from './cave';
+import {
+  BODY_CAPACITY,
+  SECRET,
+  arrival,
+  darkness,
+  exitFaces,
+  nearestHole,
+  pastLeavingLine,
+  tileCentre,
+  type Cave,
+} from './cave';
 import { Barrels, type Blast } from './barrels';
 import { BLADE_AT, Dozer, separate } from './dozer';
-import { Economy, WALL_STRENGTH } from './economy';
+import { CLEAR_SHARE, Economy, WALL_STRENGTH } from './economy';
 import { Impacts } from './impacts';
 import type { Drive } from './input';
 import { lampOn, lampsHit } from './lamps';
 import { Nav } from './nav';
 import { BARREL_KIND, BRICK_KIND, KIND_RADIUS, makeWorld, type Pusher, type World } from './physics';
-import { atNextGate, readyToOpen } from './progress';
 import { NO_SOURCE, Stock, lootHeap } from './stock';
 import { Tally } from './tally';
 import { BOT_SCALE, BOT_SPEC, Bot, Foreman, Fountain, beltOf } from './tools';
@@ -38,10 +48,10 @@ export type Heading = [number, number];
 export interface GameEvents {
   /** Something banked, worth `value`, at (x, y), with the run this hot (0 to 1). */
   banked?(kind: number, value: number, x: number, y: number, heat: number): void;
-  /** A room opened: its heaps are in the cave, and the rock at its gate is down. */
-  roomOpened?(area: number): void;
-  /** A room sealed behind the player, with `lost` in coins still in it, and where each thing in it was. */
-  roomSealed?(area: number, lost: number, where: readonly [number, number, number][]): void;
+  /** The cave cleared and its way out opened: the rock at its mouth, at `faces`, is down. */
+  exitOpened?(faces: readonly [number, number][], heading: Heading): void;
+  /** The player has driven out through the way out of the cave `from`, leaving `lost` in coins still in it. The game is finished with. */
+  caveLeft?(from: string, lost: number): void;
   /** A hidden chamber smashed open, the rock in front of it at `faces`. */
   chamberOpened?(chamber: number, faces: readonly [number, number][], heading: Heading): void;
   /** A brick wall hit and still standing, at the tile (x, y): how much of it is gone, and how many hits like it are left in it. */
@@ -56,9 +66,9 @@ export interface GameEvents {
   fuseLit?(barrel: number): void;
   /** A barrel gone off. */
   blast?(blast: Blast): void;
-  /** A crack in the last room's floor, before it sprays. */
+  /** A crack in the last cave's floor, before it sprays. */
   crack?(): void;
-  /** The last room cleared: the cave is done. */
+  /** The last cave cleared: the game is done. */
   done?(): void;
   /** Something bought, by its id in the workshop. */
   bought?(id: string): void;
@@ -83,12 +93,10 @@ export class Game {
   readonly stock: Stock;
   readonly barrels: Barrels;
   readonly tally: Tally;
-  /** The last room: once the cave is cleared its vein runs and its floor cracks, so there is still something to push. */
-  readonly last: number;
   /** Game time, in seconds. */
   t = 0;
-  /** The player is at the next room's gate, and going further seals the one being cleared. */
-  warning = false;
+  /** Driven out through the way out: this game is finished with, and stands still. */
+  left = false;
   private readonly impacts: Impacts;
   private readonly vein: VeinTrickle;
   private readonly foreman: Foreman;
@@ -96,63 +104,73 @@ export class Game {
   private readonly botPushers: Pusher[] = [];
   private lastBank = -1;
   private recordAt = 0;
+  private readonly unlisten: () => void;
 
-  /** `cave` is the one being played, and `economy` holds the save of it. */
+  /**
+   * `cave` is the one being played, and `economy` holds the save of it. `arrival` is how the machine comes
+   * in: the speed it had in the cave it left.
+   */
   constructor(
     readonly economy: Economy,
     cave: Cave,
     private readonly events: GameEvents = {},
+    arrived?: { speed: number },
   ) {
     const save = economy.save;
-    const { areas, order } = cave.spec;
     this.cave = cave;
-    this.last = order[order.length - 1];
     this.tally = new Tally(cave.holes.length);
-    this.world = makeWorld(BODY_CAPACITY, cave.solid(save.areas, save.secrets, save.walls), cave.grid, cave.holes);
+    this.world = makeWorld(BODY_CAPACITY, cave.solid(save.open, save.secrets, save.walls), cave.grid, cave.holes);
     this.dozer = new Dozer(this.world.solid, cave.grid);
+    const at = arrival(cave);
+    Object.assign(this.dozer, { x: at.x, y: at.y, yaw: at.yaw, speed: arrived?.speed ?? 0 });
     this.nav = new Nav(this.world.solid, cave.grid, cave.holes);
-    if (save.done) this.fountains.push(new Fountain(areas[this.last]));
-    this.vein = new VeinTrickle(areas[this.last].vein);
+    if (save.done) this.fountains.push(new Fountain(cave.spec));
+    this.vein = new VeinTrickle(cave.spec.vein);
     for (let i = 0; i < save.drones; i++)
       this.bots.push(new Bot(this.world.solid, cave.grid, i + 1, ...botHome(cave, i)));
     this.runBelts();
 
-    this.stock = new Stock(cave, this.world, KIND_CAPACITY, () => economy.current(), cave.barrels);
+    this.stock = new Stock(cave, this.world, KIND_CAPACITY, cave.barrels);
     this.barrels = new Barrels(this.world);
     const saved = { ...save, left: save.left };
     // the save keeps the live counts from here on, so it is never behind
     save.left = this.stock.left;
-    this.stock.restore(saved, economy);
+    this.stock.restore(saved);
     // a moment of settling before anyone sees it, so the heaps are heaps
     for (let i = 0; i < 90; i++) this.world.step(1 / 60, () => {});
     economy.persist();
 
     this.impacts = new Impacts(cave.cells, cave.grid, cave.spec);
     this.dozer.onRock = (tx, ty, square) => this.onRock(tx, ty, square);
-    // what the drones go for: the room being cleared, and any chamber broken into off it
-    this.foreman = new Foreman(
-      this.world,
-      this.nav,
-      this.bots,
-      this.stock.origin,
-      (from) => from !== NO_SOURCE && economy.sources.area(from) === economy.current(),
-    );
-    economy.onChange((id) => this.changed(id));
+    // what the drones go for: the cave being cleared, and any chamber broken into off it
+    this.foreman = new Foreman(this.world, this.nav, this.bots, this.stock.origin, (from) => from !== NO_SOURCE);
+    this.unlisten = economy.onChange((id) => this.changed(id));
   }
 
-  /** The rooms whose belts run: bought, for rooms not sealed. */
+  /** Let go of the economy: a game that is finished with no longer hears of what is bought. */
+  dispose() {
+    this.unlisten();
+  }
+
+  /** The belts of this cave that run: bought, by their place in its list. */
   running(): number[] {
-    const save = this.economy.save;
-    const { areas } = this.cave.spec;
-    return areas.map((_, a) => a).filter((a) => areas[a].belt && save.belts[a] && !this.economy.sealed(a));
+    const { belts } = this.cave.spec;
+    return belts.map((_, b) => b).filter((b) => this.economy.save.belts.includes(belts[b].id));
+  }
+
+  /** How dark it is where the dozer is, 0 to 1: down the way out it goes to black, for the swap to the next cave. */
+  darkness(): number {
+    return darkness(this.cave, this.economy.save.open, this.dozer.x, this.dozer.y);
   }
 
   /**
    * A step of `dt` seconds with the player driving as `drive` says: the
    * machines, the drones, the barrels' fuses, the vein and the cracking
-   * floors, the coins, the bank, and getting on through the cave.
+   * floors, the coins, the bank, and driving out through the way out. A game
+   * that has been left stands still.
    */
   step(dt: number, drive: Drive, controls: Controls = {}) {
+    if (this.left) return;
     const { world, dozer, economy } = this;
     const save = economy.save;
     this.t += dt;
@@ -199,9 +217,9 @@ export class Game {
     world.magnet = { x: mx, y: my, radius: spec.magnetRadius, strength: spec.magnetStrength };
     world.wakeNear(mx, my, spec.magnetRadius);
 
-    // the vein and the cracking floors, once the cave is done
+    // the vein and the cracking floors, once the game is done
     if (save.done && world.live <= BODY_CAPACITY - 60)
-      this.vein.update(dt, (kind, x, y, z, vx, vy, vz) => this.stock.spawn(kind, x, y, z, vx, vy, vz, this.last));
+      this.vein.update(dt, (kind, x, y, z, vx, vy, vz) => this.stock.spawn(kind, x, y, z, vx, vy, vz));
     for (const f of this.fountains) {
       f.update(
         dt,
@@ -215,20 +233,32 @@ export class Game {
     this.tally.fade(dt);
     for (const blast of this.barrels.update(dt, (i) => this.stock.removeBarrel(i))) this.events.blast?.(blast);
 
-    // enough of the room banked, the next opens; through the next room's gate, the room behind is sealed
+    // enough of the cave banked, its way out opens; through the way out, the cave is left behind
     if (economy.bank !== this.lastBank) {
       this.lastBank = economy.bank;
-      if (readyToOpen(economy, this.stock.banked(economy.current()))) economy.open();
+      if (!save.done && !save.open && this.stock.banked() >= CLEAR_SHARE) economy.open();
     }
-    this.warning = false;
-    const where = atNextGate(this.cave.spec, economy, dozer.x, dozer.y);
-    if (where === 'through') economy.moveOn();
-    else if (where === 'at') this.warning = true;
+    if (save.open && pastLeavingLine(this.cave, dozer.x, dozer.y)) {
+      this.leave();
+      return;
+    }
 
     if (this.t >= this.recordAt) {
       this.recordAt = this.t + RECORD_EVERY;
       this.record();
     }
+  }
+
+  /**
+   * Driven out through the way out: the economy moves on to the next cave, and whatever is left in this
+   * one is lost with it. The owner is told, and builds the next game; this one stands still from now.
+   */
+  private leave() {
+    const from = this.economy.save.cave;
+    const lost = this.stock.lyingAll();
+    this.left = true;
+    this.economy.moveOn();
+    this.events.caveLeft?.(from, lost);
   }
 
   /** The horn: everything near enough the dozer hops, which is what a horn is for. */
@@ -248,14 +278,15 @@ export class Game {
 
   /** Where every brick and barrel lies, into the save; it goes out with the next thing banked, or `persist`. */
   record() {
+    if (this.left) return;
     const save = this.economy.save;
     save.rubble = this.stock.rubble();
     save.barrels = this.stock.barrelRecord();
   }
 
-  /** The save written now, with everything where it is. */
+  /** The save written now, with everything where it is: not from a game that has been left, whose bodies are of a cave the save is no longer in. */
   persist() {
-    this.record();
+    if (!this.left) this.record();
     this.economy.persist();
   }
 
@@ -276,11 +307,11 @@ export class Game {
     return [Math.cos(this.dozer.yaw), Math.sin(this.dozer.yaw)];
   }
 
-  /** The rock where it stands now: gates, chambers and walls as they are. Everything that goes by the rock is told. */
+  /** The rock where it stands now: the way out, chambers and walls as they are. Everything that goes by the rock is told. */
   private reshape() {
     const { world, economy } = this;
     const save = economy.save;
-    world.solid = this.cave.solid(save.areas, save.secrets, save.walls);
+    world.solid = this.cave.solid(save.open, save.secrets, save.walls);
     this.dozer.solid = world.solid;
     for (const b of this.bots) {
       b.dozer.solid = world.solid;
@@ -292,7 +323,7 @@ export class Game {
   }
 
   private runBelts() {
-    this.world.belts = this.running().map((a) => beltOf(this.cave.spec.areas[a].belt!.spec));
+    this.world.belts = this.running().map((b) => beltOf(this.cave.spec.belts[b].spec));
     this.nav.setBelts(this.world.belts);
   }
 
@@ -331,35 +362,15 @@ export class Game {
     }
   }
 
-  /** Something in the economy changed: a room, a chamber, a wall, the end, or something bought. */
+  /** Something in the economy changed: the way out, a chamber, a wall, the end, or something bought. A game that has been left hears nothing. */
   private changed(id: string) {
+    if (this.left) return;
     const { stock, world } = this;
-    if (id.startsWith('area')) {
-      const a = +id.slice(4);
-      stock.openRoom(a);
-      // the heaps are in the save now, or a reload before the next coin would find the room empty
+    if (id === 'exit') {
+      // nothing lies in the rock, so nothing is in the way of its coming down
       this.persist();
       this.reshape();
-      this.events.roomOpened?.(a);
-    } else if (id.startsWith('sealed')) {
-      const old = +id.slice(6);
-      // what is left of the room behind goes, and what is left in any chamber, side room or wall off
-      // it: bars not got out before going on are lost with the room
-      const lost = stock.lying(old);
-      const where: [number, number, number][] = [];
-      stock.seal(old, (x, y, z, i) => {
-        where.push([x, y, z]);
-        this.barrels.forget(i);
-      });
-      // no machine is shut in with the rock, or in it
-      this.bots.forEach((b, j) => {
-        if (!behindGate(this.cave.spec, old, b.x, b.y)) return;
-        [b.dozer.x, b.dozer.y] = botHome(this.cave, j);
-        b.dozer.speed = 0;
-      });
-      this.persist();
-      this.reshape();
-      this.events.roomSealed?.(old, lost, where);
+      this.events.exitOpened?.(exitFaces(this.cave), this.heading());
     } else if (id.startsWith('secret')) {
       const k = +id.slice(6);
       stock.spawnHeap(this.economy.sources.chamber(k), lootHeap(this.cave, k));
@@ -373,10 +384,10 @@ export class Game {
       this.reshape();
       this.events.wallDown?.(w, this.heading());
     } else if (id === 'done') {
-      this.fountains.push(new Fountain(this.cave.spec.areas[this.last]));
+      this.fountains.push(new Fountain(this.cave.spec));
       this.events.done?.();
     } else {
-      if (id.startsWith('belt')) {
+      if (id.startsWith('belt:')) {
         this.runBelts();
         this.events.staticChanged?.();
       } else if (id === 'drone') {

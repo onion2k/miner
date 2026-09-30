@@ -12,7 +12,8 @@ describe('the drone simulation', () => {
   });
 
   it('gets something down the hole', () => {
-    const r = simulate({ ...SIM_DEFAULTS, seconds: 25 }, 1);
+    // in the Hollow, whose heaps are a short push from the hole
+    const r = simulate({ ...SIM_DEFAULTS, cave: 'hollow', seconds: 14 }, 1);
     expect(r.banked).toBeGreaterThan(0);
     expect(r.hole).toBeGreaterThan(0);
   });

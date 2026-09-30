@@ -6,14 +6,14 @@
  * tell a better drone from a worse one, and eight seeds of this take seconds.
  *
  *   npm run sim                                   the south gallery, three drones, two minutes, seeds 1-8
- *   npm run sim -- --room 3 --belt                the east gallery, with its belt running
- *   npm run sim -- --room 1 --player patrol       the player driving in and out through the drones
- *   npm run sim -- --room 2 --secret                the north vault with its hidden chamber broken into
+ *   npm run sim -- --cave east-gallery --belt     the east gallery, with its belt running
+ *   npm run sim -- --cave south-gallery --player patrol   the player driving in and out through the drones
+ *   npm run sim -- --cave north-vault --secret    the north vault with its hidden chamber broken into
  *   npm run sim -- --drones 1 --seconds 300 --seeds 1-3 --each
  *
  * What it reports, per seed with --each and as a mean:
  *
- *   banked     what went down the hole, and the share of the room's value that is
+ *   banked     what went down the hole, and the share of the cave's value that is
  *   pushes     how each push ended: at the hole, on a belt, the load lost, backing up to try again
  *   touching   how often two drones were in each other, sampled ten times a second
  *   held       how much of the time a loaded drone was held up by another drone in front of it
@@ -21,9 +21,7 @@
  *   player     with --player patrol: its mean speed, trips made, and how often a drone blocked it
  *   chamber    with --secret: what came out of the hidden chamber, and how many of its gold bars
  */
-import { FIVE_ROOMS } from '../src/caves';
-
-const AREAS = FIVE_ROOMS.areas;
+import { RUN } from '../src/caves';
 import { SIM_DEFAULTS, meanOf, simulate, type SimRow } from './simulate';
 
 function options() {
@@ -39,17 +37,13 @@ function options() {
         (_, k) => +seedSpec.split('-')[0] + k,
       )
     : seedSpec.split(',').map(Number);
-  const room = +value('room', '1');
-  if (!(room >= 1 && room < AREAS.length)) {
-    console.error(
-      `--room is 1 to ${AREAS.length - 1}: ${AREAS.slice(1)
-        .map((a, k) => `${k + 1} ${a.name}`)
-        .join(', ')}`,
-    );
+  const cave = value('cave', SIM_DEFAULTS.cave);
+  if (!RUN.some((c) => c.id === cave)) {
+    console.error(`--cave is one of: ${RUN.map((c) => c.id).join(', ')}`);
     process.exit(1);
   }
   return {
-    room,
+    cave,
     seeds,
     drones: +value('drones', String(SIM_DEFAULTS.drones)),
     seconds: +value('seconds', String(SIM_DEFAULTS.seconds)),
@@ -73,7 +67,7 @@ function line(r: Omit<SimRow, 'seed'>, patrol: boolean) {
 const opts = options();
 const started = performance.now();
 console.log(
-  `${AREAS[opts.room].name}${opts.belt ? ' with its belt' : ''}${opts.secret ? ' and its chamber open' : ''}, ${opts.drones} drone${opts.drones === 1 ? '' : 's'}, ${opts.seconds} s, seeds ${opts.seeds.join(',')}${opts.patrol ? ', player patrolling' : ''}`,
+  `${RUN.find((c) => c.id === opts.cave)!.name}${opts.belt ? ' with its belt' : ''}${opts.secret ? ' and its chamber open' : ''}, ${opts.drones} drone${opts.drones === 1 ? '' : 's'}, ${opts.seconds} s, seeds ${opts.seeds.join(',')}${opts.patrol ? ', player patrolling' : ''}`,
 );
 const rows = opts.seeds.map((seed) => {
   const r = simulate(opts, seed);

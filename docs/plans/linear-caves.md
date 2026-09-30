@@ -71,7 +71,7 @@ Taken on judgement, as asked; each can be put back to the user.
 | Phase | What                                            | Changes play? | State   |
 | ----- | ----------------------------------------------- | ------------- | ------- |
 | 1     | The cave as a value, holes as a list (refactor) | no            | landed  |
-| 2     | One cave after another                          | yes           | planned |
+| 2     | One cave after another                          | yes           | landed  |
 | 3     | Several holes and belts in a cave, in content   | yes           | planned |
 | 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | planned |
 | 5     | Bigger caves, measured first                    | yes           | planned |
@@ -489,7 +489,435 @@ called done.
   baseline is written again, looked at on 16 seeds. `npm run leaks` plays
   through the caves.
 - **Before the build:** one quick in-engine mock of the tunnel mouth
-  opening and of the tunnel from inside, put to the user.
+  opening and of the tunnel from inside, put to the user. Done: the user
+  chose to keep the tunnel an open cutting.
+
+### How it is built
+
+Written on Opus 5.5 against `89001d3`, for Sonnet 5.5 builders working one
+after another in this worktree, each checked before the next starts. The
+two parts land together as one commit: part A changes the content, so the
+pictures are red until part B has redrawn the page. Nothing is committed
+between them.
+
+**One refinement to the agreed spec,** agreed by the user: the fade is
+worked out from where the dozer is, not from a clock. It is dark by how
+far down the way out's cutting the dozer has gone, black at the leaving
+line, where the swap happens. It is still dark at the far end of the next
+cave's entry cutting, where the dozer arrives, and lightens as the dozer
+drives out. This is stepped with the game, so a test sees the same thing
+every time. Backing out of the dark lightens it again, and nothing waits on
+a timer. So the dozer arrives at the dark outer end of the entry cutting
+(criterion 3), and the fade is by position (criterion 8).
+
+#### The shapes
+
+In `src/cave.ts`, replacing `HollowShape`, `Wing`, `Area`, `order` and
+`barrelsIn`. A tile rectangle is `[x0, y0, x1, y1]`, inclusive, in tiles
+from the grid's corner, as the chambers and walls are now. Everything
+else is in world units.
+
+```ts
+type Shape =
+  | { kind: 'ellipse'; cx: number; cy: number; rx: number; ry: number; seed: number; rock?: true }
+  | { kind: 'rect'; tiles: [number, number, number, number]; rock?: true };
+
+/** A cutting through the rock at the cave's edge: the way out, or the way in. */
+interface Cutting {
+  /** The tiles of the cutting, from the cave's floor out to near the grid's edge. */
+  tiles: [number, number, number, number];
+  /** Which way is out of the cave along it, as a unit step: [1, 0], [0, -1] and so on. */
+  out: [number, number];
+}
+
+interface CaveSpec {
+  id: string; // 'hollow', 'south-gallery', 'east-gallery', 'north-vault', 'west-gallery'
+  name: string; // 'The Hollow', 'South Gallery', …
+  blurb: string;
+  biome: 'jungle' | 'ice' | 'lava' | 'future' | null;
+  cols: number;
+  rows: number;
+  shapes: Shape[]; // carved in order; `rock: true` puts rock back (pillars, the lava ring's island)
+  holes: HoleSpec[];
+  heaps: Heap[];
+  vein: Vein;
+  cracks: [number, number][];
+  belts: { id: string; spec: BeltSpec; cost: number }[];
+  entry: Cutting; // always open
+  exit: Cutting | null; // null in the last cave
+  secrets: Secret[]; // `area` goes
+  walls: Wall[]; // `area` goes
+  stashes: Stash[]; // `area` goes
+  barrels: number;
+}
+```
+
+- The grid's corner is where Phase 1 put it, with tile `(cols / 2, rows / 2)`
+  at the world's origin. Each cave's first hole is at the origin, so a cave
+  is laid out from its hole as the five rooms were.
+- `EXIT = 64` is a new cell value for the way out's tiles. It is solid until
+  the way out is open, and it is checked before `BRICK` in `solid()`.
+- `solid(open, revealed, broken)` loses `unlocked` and gains `open`.
+- No lamp, barrel or dressing is placed on or beside a cutting's tiles.
+  `decorate` skips them, which the mock showed is what keeps a cutting dark.
+- `darkness(cave, open, x, y): number` (0 to 1) is how dark it is at a point:
+  - 0 outside the cuttings;
+  - down the way out, rising from 0 at the cave's floor to 1 at the leaving
+    line, three tiles short of the cutting's outer end;
+  - down the way in, 0.85 at the outer end, falling to 0 at the cave's floor.
+- `pastLeavingLine(cave, x, y): boolean` says whether a point is past that
+  line.
+- The biome comes from `spec.biome`: `biomeAt` gives that biome, at full
+  strength, everywhere in the cave.
+
+#### The run and the save
+
+- `src/caves.ts` exports `RUN: CaveSpec[]`, the five caves in order: the
+  Hollow, South Gallery, East Gallery, North Vault, West Gallery.
+  `FIVE_ROOMS` goes. Only `main.ts`, the scripts and the tests import it.
+- `new Economy(store, run)`.
+  - `economy.cave()` is the spec of the cave the player is in.
+  - `economy.isLast()` says whether it is the last cave.
+  - `economy.open()` is called when the cave is cleared. It opens the way
+    out and tells listeners `'exit'`; in the last cave it sets `done` and
+    tells `'done'`.
+  - `economy.moveOn()` moves to the next cave's id, sets the per-cave fields
+    to the new cave's fresh defaults, persists, and tells `'left:<old id>'`.
+  - `economy.sources` is worked out from the current cave. With no areas,
+    source 0 is the cave, then its chambers, stashes and walls, and
+    `sources.area` goes.
+- `Save` (in `economy.ts`):
+  - It loses `room` and `areas`.
+  - It gains `cave: string`, the current cave's id, and `open: boolean`, its
+    way out is open.
+  - `belts` becomes `string[]`: the ids bought in this cave.
+  - `secrets`, `walls`, `wallDamage`, `rubble`, `barrels`, `lampsBroken` and
+    `left` are the current cave's.
+- **A save without `cave` is an old save**, carried over as follows:
+  - Old room `r` becomes the cave `['hollow', 'south-gallery', 'north-vault', 'east-gallery', 'west-gallery'][r]`.
+  - Old `left[r]` becomes the new cave's source 0.
+  - The old chamber, stash and wall whose `area` was `r` (each room had at
+    most one of each) become index 0 of the new cave's, and so does their
+    `left`.
+  - `belts[r]` becomes that cave's belt id.
+  - The next room's gate being open becomes `open: true`, and `done` stays
+    `done`.
+  - `rubble`, `barrels` and `lampsBroken` start fresh, with `barrels: null`.
+  - Every file in `test/saves/` gets a test saying which cave it lands in
+    and what it keeps. A save of the new shape is added as
+    `test/saves/11-linear.json`.
+
+#### The game
+
+- `new Game(economy, cave, events = {}, arrival?: { speed: number })`,
+  where `cave` is `buildCave(economy.cave())`.
+  - The dozer starts at the entry cutting's outer end, three tiles in from
+    the grid's edge, facing into the cave (against `entry.out`), at
+    `arrival.speed` if given.
+  - Drones stand by the first hole.
+- A cave is clear when `stock.banked(0) >= CLEAR_SHARE`, and then
+  `economy.open()` is called.
+  - On `'exit'` the way out's tiles open. Whatever lies on them is pushed
+    out to the nearest open floor, as a chamber's opening does.
+  - Then comes the event `exitOpened(faces, heading)`, where `faces` is
+    the mouth's tiles against the cave floor, for the rock burst.
+- Each step, if the way out is open and the dozer is past the leaving line,
+  the game calls `economy.moveOn()`, then sends the event
+  `caveLeft(fromId, lost)`, where `lost` is the coins' worth still in the
+  cave. After that the `Game` is finished with. Its owner builds the next
+  one, passing on the dozer's speed.
+- `game.darkness()` is `darkness(...)` at the dozer, for the page.
+- **These go:** gates, sealing, `roomOpened`, `roomSealed`, `warning`,
+  `pastGate`, `atGate`, `behindGate`, `sealPoint`, `gateTiles`,
+  `gateCentre`, `areaAt`, `order`, wings, `Area`, and in `progress.ts`
+  everything but the progress line. The progress line reads like this:
+  - `South Gallery: 42% banked · 90% opens the way out`
+  - `… · the way out is open`
+  - `the cave is cleared`
+- **What the owner does on `caveLeft`**: build the next cave and game.
+  Every owner does the same, so the scripts share a helper in
+  `scripts/run.ts`: `onward(game, economy, run, events) => Game`. The page
+  does its own, since it has to swap the scene too (part B).
+
+#### The five caves
+
+To the sketch maps in "The agreed spec", with hauls held so that no heap
+is more than about 1.5 times its room's old distance from its hole: 45 in
+the Hollow, 80 in the South Gallery and North Vault, 160 in the East and
+West. Belts carry the far heaps as the sketches show them. Heaps, gems,
+loot, wall grades, belt prices and barrel counts are as they are today.
+Each cave keeps its old vein and cracks, moved to suit the new layout.
+
+`test/caves.test.ts` gains a checker, run over every cave in `RUN`:
+
+- every heap, chamber mouth, stash and the way out can be reached by the
+  dozer from the entry, with the walls down and the way out open;
+- every heap's middle is within its cave's haul limit of the nearest hole,
+  measured along the floor (the nav's `toHole`), or within 12 of a belt's
+  start;
+- no heap, belt, lamp or barrel stands on rock or a cutting;
+- each cave fits its grid, with two tiles of rock round the edge.
+
+A failure names the cave and what is cut off or too far.
+
+`scripts/cave-map.ts` writes each cave as a PNG top-down map: floor, rock,
+holes, heaps, belts, walls, chambers and cuttings. It goes to a folder given
+on the command line, so the caves can be looked at against the sketches.
+It is written with no image library: a tiny PNG writer using zlib from
+Node, in the script.
+
+#### The tools
+
+- **Autopilot:** it learns to drive to the way out once it is open, and on
+  through the cutting.
+- **Fuzzer:** it gains "drive to the way out" (by the autopilot's route)
+  and rebuilds its game on `caveLeft` through `onward`.
+- **Invariants:** the save's cave is in the run; every per-cave list is its
+  cave's size; nothing alive lies outside the grid or inside rock; the way
+  out is open exactly when enough is banked, or the cave is done.
+- **Balancer:** it plays the run cave by cave, and reports minutes per cave,
+  purchases and bank.
+- **`balance:check`:** it holds the first two caves, as it held the first
+  two rooms.
+- **`sim`:** it takes `--cave <id>` in place of `--room`.
+- **`leaks`:** it plays through caves, rebuilding on `caveLeft`.
+- **`determinism`:** it plays through at least one cave change on each seed.
+- **`physics-bench`:** it uses the East Gallery, whose belt runs through a
+  heap as the old bench's did.
+
+#### Part A: the game without the page
+
+Everything above, and `main.ts` changed only as far as it must be to
+compile and run the first cave, with no swap, fade or new words: part B
+does those. Done when:
+
+- the acceptance criteria 1 to 7, 9 (the game and world side) and the
+  checker are unit tests, seen failing first;
+- `check:quick` is green;
+- `npm run fuzz -- --seeds 1-24` is clean, with at least one cave change
+  on most seeds (counted and reported);
+- `npm run determinism` is green;
+- `npm run leaks` is green;
+- the five caves' PNG maps are written, for the checker of part A to look
+  at against the sketches;
+- `npm run balance` has been run on seeds 1 to 12, with its figures reported,
+  and the baselines not yet written.
+
+The pictures, the smoke test and the two baselines are expected red, and are
+part B's.
+
+#### What part A showed, and part A2
+
+Part A was checked on Opus 5.5. The five maps match the sketches. Four
+findings sent it round again before the page is touched.
+
+**Pacing, measured on seeds 1 to 12**, the thorough and rushed autopilots,
+each capped at 90 minutes. The old game was run on the unchanged base,
+`8b8d0f6`, with its full balance run. Minutes per cave are medians:
+
+| Profile  | Build    | Finished | Run  | Hollow | South | East | North | West |
+| -------- | -------- | -------- | ---- | ------ | ----- | ---- | ----- | ---- |
+| thorough | old game | 11/12    | 71.5 | 16.5   | 19.4  | 19.0 | 10.2  | 5.8  |
+| thorough | part A   | 7/12     | 80.4 | 14.9   | 22.3  | 27.8 | 12.8  | 7.5  |
+| rusher   | old game | 12/12    | 38.2 | 11.1   | 8.8   | 6.3  | 9.1   | 2.9  |
+| rusher   | part A   | 12/12    | 30.0 | 10.4   | 4.5   | 5.7  | 4.4   | 4.6  |
+| thorough | part A2  | 12/12    | 59.2 | 11.5   | 12.2  | 15.3 | 11.7  | 5.6  |
+| rusher   | part A2  | 12/12    | 28.0 | 10.4   | 4.6   | 6.1  | 4.1   | 2.4  |
+
+**What part A2 found and did.** None of the five thorough runs that did not
+finish was stuck: each went on sweeping for loot it could not fetch until
+the cap came. A thorough player now leaves once the last 75 s have banked
+less than 1.2% of the cave's worth (`DWINDLE_OVER`, `DWINDLE_BELOW` in
+`autopilot.ts`). That is a change to the instrument, so the old game's row
+was measured with a weaker thorough player than the new rows. The targets
+were ceilings, and every cave is under its own, North the closest at 11.7
+against 12.2 (it moves about a minute between runs). The worst hauls, against
+their limits: Hollow 31/45, South 75/80, East 151/160, North 71/80, West
+150/160. The leaks ceiling for `patches swept` is 523, worked out from the
+largest cave (the real peak was 62). `check:quick` takes 20.8 s on an idle
+machine, and 34 to 39 s with a balance run alongside.
+
+**The user's decisions on it (2026-09-30):**
+
+1. **The haul limit holds for every heap, with no exception for a belt.**
+   The plan had let a heap past the limit count if a belt carried it, and
+   read "a West hall of about 110 tiles" beside "1.5 times today's
+   distance", which cannot both hold. That was the plan's fault. The West
+   hall had heaps about 380 from the hole against 160. The user chose to
+   **shorten it to the limit**: about 45 to 50 tiles long, keeping the
+   pillars and the belt. The South Gallery's far heap (145 against 80) and
+   the East Gallery's top heap (165 against 160) come in too. The checker
+   loses its belt clause: every heap's middle is within its cave's limit of
+   the nearest hole, along the floor.
+2. **The thorough player is brought to no more than about 1.2 times the
+   old game in each cave,** by tuning the layouts, the East ring and the
+   South lobes above all. The targets, in median minutes on seeds 1 to 12,
+   are: Hollow 19.8, South 23.3, East 22.8, North 12.2, West 7.0. At least
+   as many seeds finish as did before (11 of 12). That comes first; the
+   pacing baseline is written only after it holds (part B).
+
+**Also found, and put right under the house rules:**
+
+3. **The leaks gate's `patches swept` was loosened** from "must not still
+   be climbing" to a flat ceiling of 400. A looser rule is not allowed. The
+   map is the autopilot's, rebuilt with each cave, so it is bounded by the
+   floor it can sweep. The ceiling becomes that figure, worked out from the
+   largest cave in `RUN` in the script, with the reason beside it, and
+   `test/leaks.test.ts` holds the figure to the caves. The ceiling
+   explains the bound; it does not make room for a leak.
+4. **Four tests failed under load and passed alone:**
+   - the autopilot's full-size dozer;
+   - "holds together played at random" in `game.test.ts`;
+   - "hold of a game just begun" in `invariants.test.ts`;
+   - "works in each of the caves" in `run.test.ts`.
+
+   Each takes 3 to 4 s, and they went over vitest's 5 s limit while another
+   run was using the machine. Each is made cheaper, or moved from
+   `check:quick` into the full check (as a script or a separate vitest
+   project). A test is not given a longer timeout to hide it. The hook stays
+   under half a minute, and its time is reported.
+
+5. **The five thorough runs that did not finish are looked into first.** For
+   each, find what the autopilot was doing when the cap came: stuck, looping,
+   chasing something it cannot reach, or simply slow. If it is the
+   autopilot, fix it with a unit test for the case, and measure again,
+   before tuning any layout against its figures.
+
+**Part A2 is done when:**
+
+- the checker, without its belt clause, passes on every cave;
+- the maps are written again and looked at against the sketches;
+- the thorough autopilot is shown competent on the seeds that failed;
+- a balance run on seeds 1 to 12 meets the targets in 2, with the table
+  above filled in for the new build;
+- the leaks gate and the tests in 3 and 4 are put right;
+- `check:quick` is green three times running with the machine busy (a
+  balance run alongside it);
+- fuzz 1 to 24, `determinism` and `leaks` are green.
+
+#### Part B: the page, the pictures and the gates
+
+- **The swap in `main.ts`:**
+  - `let game`, and nothing destructured from it once;
+  - on `caveLeft`, build the next cave and game, `renderer.setStatic` its
+    static scene, forget the track marks, clear the effects and blasts,
+    move the camera to the dozer, and hand the API the new game;
+  - the swap is timed in the page and logged.
+- **The fade:** a black layer over the page, with its opacity set from
+  `game.darkness()` every frame.
+- **The arrow** points at the way out once it is open, and at the nearest
+  hole while it is off screen and the way out is shut.
+- **The note** says "the way out is open", and on arrival says the cave's
+  name and blurb, with what was left behind.
+- **The rock burst and dust** on `exitOpened`, from the chamber's effects.
+- **The workshop** lists this cave's belts.
+- **`window.pushminer`:**
+  - `openExit()` in place of `openNext()`;
+  - `content()` gives the current cave's id, name, holes, heaps, belts and
+    cuttings;
+  - `state()` gives the cave id, `open` and `darkness`;
+  - the smoke tests' `SaveSetup` takes `cave` and `open`.
+- **Smoke test:** `smoke/progress.spec.ts` clears the Hollow through the
+  API, then drives the controls into the cutting and out into the South
+  Gallery. It checks the cave's id and the darkness on the way, and a
+  reload after arriving.
+- **Pictures:**
+  - `look.spec.ts` gets a scene for each cave, the way out opening, inside
+    the cutting, and arriving, plus the phone scenes;
+  - the room scenes become cave scenes, and the gate pictures go;
+  - `npm run look:update` writes them again, and every one is looked at.
+- **Gates:**
+  - `balance:check --update` after 12 seeds, with the swing explained;
+  - `sim:check --update` after a 16-seed look at each cave;
+  - `bench` held to its tolerance, or written again if the scene changed,
+    with the reason given.
+- **Performance:**
+  - `measureFrame` in each cave, and in the cutting, against the old rooms'
+    figures (hollow 3.1 ms, room 1 4.4 ms);
+  - the swap under 1 s;
+  - the West hall's frame, the nav rebuild time and the camera's reach.
+- **The full check** is green: `npm run check`, look, fuzz 1 to 24, and
+  leaks.
+- **Mutation checks** on the new tests, as the definition of done asks.
+- **CLAUDE.md and the README** are updated: rooms become caves, gates and
+  sealing go, the way out is described, and the edge-case checklist's
+  "sealing" and "rooms" lines are rewritten.
+
+#### Status
+
+- [x] Part A built and checked
+- [x] Part A2: hauls, pacing, leaks gate and slow tests put right
+- [x] Part B built and checked
+- [x] Committed
+
+**Settled at the commit (2026-09-30):** every start, a new game or a
+reload as well as an arrival, begins at the dark outer end of the way in
+and lightens as the dozer drives in. The user chose this, as built, over
+starting a new game on the lit floor.
+
+#### Handover, 2026-09-30: paused for quota
+
+The user paused the session here, to pick up after a quota reset. What
+stands, and how to go on:
+
+- **Commits on `linear-caves`:** `a68df5b` is the plan, and `89001d3` is
+  Phase 1. Nothing of Phase 2 is committed. Nothing is pushed.
+- **The working tree** holds Parts A and A2, built and checked, and Part B
+  half begun. It is 75 files changed from `89001d3`. The whole tree is
+  snapshotted, without touching the index or the files, at
+  `refs/snapshots/phase2-paused` (`93756e9`). `git diff 89001d3 93756e9`
+  shows it all. The snapshot is only a record: clear it once Phase 2 has
+  landed.
+- **One staged change is the A2 builder's own:** `git mv test/balance.test.ts
+test/slow/balance.test.ts`, which moved a slow test out of the quick
+  check. Keep it.
+- **Part B's partial work is unverified and unreviewed.** It is the files
+  changed after A2 was recorded:
+  - new: `src/aim.ts`, `test/aim.test.ts`, `smoke/swap.spec.ts`;
+  - changed: `index.html`, `src/progress.ts`, `src/hud.ts`, `src/debug.ts`,
+    `src/camera.ts`, `src/cave.ts`, `src/scene-dynamic.ts`,
+    `smoke/progress.spec.ts`, `smoke/pushminer.ts`,
+    `test/progress.test.ts`, `test/cave.test.ts`, `test/scene.test.ts` and
+    `test/machine.test.ts`.
+
+  The builder was writing tests first when it was stopped. **`check:quick`
+  is red** on the typecheck: `debug.ts` now takes the game and cave as
+  getters (`() => Game`, `() => Cave`), which is right for a game that is
+  swapped, and `main.ts` (lines 636 to 637) still hands it values. On A2
+  alone it was green, with 343 tests.
+
+- **To go on:**
+  1. Start a Sonnet 5.5 builder on Part B with the same brief as before.
+     The brief was: read Phase 2 of this plan, build "Part B" to its
+     done-list, test-first, look at every picture, write the gates on the
+     wider seeds, measure performance, update CLAUDE.md and the README,
+     report through the normal hand-back.
+  2. Tell it the partial files above are a start that it must review, not
+     trust.
+  3. Check what it hands back on Opus against the files, as Phase 1 and
+     A2 were checked. A report can go astray: A2's did, sent to a name that
+     does not exist, and was read from the end of its transcript.
+  4. Ask the user before committing. Phase 2 lands as one feature commit,
+     with the balance and sim baselines and the pictures written in it, and
+     said so.
+- **Worth knowing:**
+  - Old-game figures to compare against are in the pacing table above.
+  - `check:quick` takes 20.8 s idle and 34 to 39 s with a balance run
+    alongside. The house bar is half a minute. The user settled it: the
+    half-minute bar holds on an idle machine only.
+  - The thorough autopilot's new rule for leaving (`DWINDLE_OVER`,
+    `DWINDLE_BELOW`) makes it a stronger player than the one the old
+    figures were measured with.
+- **A builder left two shell loops running** after A2, found and killed at
+  the pause. Each waited on `until ! pgrep -f "mutate.py"`, which matches its
+  own command line and so never ends. Tell a builder to wait on a process id,
+  and check for leftovers (`ps` for `sleep` and `pgrep` loops, not only node)
+  when it hands back.
+- **Outside this worktree:** the main checkout
+  (`~/projects/pushminer`, on `8b8d0f6`) has another session's uncommitted
+  work: physics 0.8.0, render 0.22.0, a `TUNING` line in `makeWorld`, and
+  pictures written again. It is not ours. Merging `linear-caves` into main
+  will conflict in `src/physics.ts`: keep their `tuning` line.
 
 ---
 

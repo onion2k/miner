@@ -1,46 +1,36 @@
 /**
- * The bank and what it buys: engine, blade, magnet, a belt for each room,
- * and drones. The rooms are not bought: the next opens when most of the one
- * being cleared is banked, and going on into it seals the one behind, with
- * whatever is still in it. Saved in the browser, so the cave is where you
- * left it.
+ * The bank and what it buys: engine, blade, magnet, a belt for the cave being
+ * cleared, and drones; and where the player has got to in the run. The caves
+ * are not bought: the way out of one opens when most of it is banked, and
+ * driving out through it leaves the cave behind, with whatever is still in it,
+ * for the next. Saved in the browser, so the game is where you left it.
  */
 import type { CaveSpec } from './cave';
 import type { DozerSpec } from './dozer';
 import { KINDS, KIND_VALUE } from './physics';
 
 /**
- * Where a body came from, for what is left of it: a room, by its index; then
- * the hidden chambers; then the stashes behind brick walls, side rooms and
- * pens; then the walls, for the treasure set in them. Everything after the
- * rooms is kept apart from its room's so it never counts toward clearing it.
+ * Where a body came from, for what is left of it: the cave itself, by 0; then
+ * its hidden chambers; then the stashes behind brick walls, side rooms
+ * and pens; then the walls, for the treasure set in them. Everything after
+ * the cave is kept apart from it so it never counts toward clearing it.
  */
 export interface Sources {
-  /** How many sources a cave has: every room, chamber, side room and wall. */
+  /** How many sources a cave has: the cave, and every chamber, side room and wall. */
   readonly count: number;
   chamber(k: number): number;
   stash(k: number): number;
   wall(w: number): number;
-  /** The room a source belongs to, and is sealed with. */
-  area(from: number): number;
 }
 
 /** The sources of a cave, numbered as above. */
 export function sourcesOf(spec: CaveSpec): Sources {
-  const { areas, secrets, stashes, walls } = spec;
+  const { secrets, stashes, walls } = spec;
   return {
-    count: areas.length + secrets.length + stashes.length + walls.length,
-    chamber: (k) => areas.length + k,
-    stash: (k) => areas.length + secrets.length + k,
-    wall: (w) => areas.length + secrets.length + stashes.length + w,
-    area(from) {
-      if (from < areas.length) return from;
-      from -= areas.length;
-      if (from < secrets.length) return secrets[from].area;
-      from -= secrets.length;
-      if (from < stashes.length) return stashes[from].area;
-      return walls[from - stashes.length].area;
-    },
+    count: 1 + secrets.length + stashes.length + walls.length,
+    chamber: (k) => 1 + k,
+    stash: (k) => 1 + secrets.length + k,
+    wall: (w) => 1 + secrets.length + stashes.length + w,
   };
 }
 
@@ -49,8 +39,6 @@ export interface Save {
   banked: number;
   engine: number;
   blade: number;
-  areas: boolean[];
-  belts: boolean[];
   drones: number;
   magnet: number;
   /** Which paint the dozer wears, and which it owns. */
@@ -61,9 +49,16 @@ export interface Save {
   bodies: Body[];
   horn: boolean;
   flag: boolean;
-  /** The room being cleared. */
-  room: number;
-  /** How many of each kind from each room, and each chamber, are still in the cave, so a reload puts back what is left and not the lot. Empty when unknown. */
+  /** The last cave is cleared too. */
+  done: boolean;
+  // What follows is the cave the player is in, and is sized to it and emptied when it is left.
+  /** The id of the cave being cleared. */
+  cave: string;
+  /** Its way out is open. */
+  open: boolean;
+  /** The ids of the belts bought for it. */
+  belts: string[];
+  /** How many of each kind from the cave, and each chamber, side room and wall, are still in it, so a reload puts back what is left and not the lot. Empty when unknown. */
   left: number[][];
   /** Which hidden chambers have been broken into. */
   secrets: boolean[];
@@ -76,22 +71,19 @@ export interface Save {
   /** The lamps knocked over, by their place in the cave's list. */
   lampsBroken: number[];
   /**
-   * The barrels still about, as x, y, z and the room each belongs to, four
-   * numbers a barrel; null in a save from before there were barrels, which
-   * puts each room's back where it started.
+   * The barrels still about, as x, y and z, three numbers a barrel; null for
+   * a cave not yet begun, which puts its barrels where they start.
    */
   barrels: number[] | null;
-  /** The last room is cleared too. */
-  done: boolean;
 }
 
-/** The share of a room's value that has to be banked before the next one opens: the last tenth is the player's to chase or leave. */
+/** The share of a cave's value that has to be banked before its way out opens: the last tenth is the player's to chase or leave. */
 export const CLEAR_SHARE = 0.9;
 
-/** What a room's heaps are worth, and how many of each kind they hold. */
-export function roomStock(spec: CaveSpec, area: number): { value: number; kinds: number[] } {
+/** What a cave's heaps are worth, and how many of each kind they hold. */
+export function caveStock(spec: CaveSpec): { value: number; kinds: number[] } {
   const kinds = new Array<number>(KINDS).fill(0);
-  for (const h of spec.areas[area].heaps) {
+  for (const h of spec.heaps) {
     kinds[0] += h.coins;
     for (const [k, n] of h.gems) kinds[k] += n;
   }
@@ -220,36 +212,60 @@ export function memoryStore(json: string | null = null): SaveStore & { json: str
   };
 }
 
-/** What the whole workshop costs: every engine, blade and magnet, every drone and every room's belt; paint aside. */
-export function workshopTotal(spec: CaveSpec): number {
+/** What the whole workshop costs: every engine, blade and magnet, every drone and every cave's belts; paint aside. */
+export function workshopTotal(run: readonly CaveSpec[]): number {
   const sum = (xs: readonly { cost: number }[]) => xs.reduce((n, x) => n + x.cost, 0);
-  const belts = spec.areas.reduce((n, a) => n + (a.belt?.cost ?? 0), 0);
+  const belts = run.reduce((n, c) => n + sum(c.belts), 0);
   return sum(ENGINE) + sum(BLADE) + sum(MAGNET) + DRONE_COST.reduce((n, c) => n + c, 0) + belts;
 }
 
+/** The caves the old rooms became, by the room's number in the old map: the hollow, south, north, east, west. */
+const OLD_ROOMS = ['hollow', 'south-gallery', 'north-vault', 'east-gallery', 'west-gallery'];
+/** The order the old rooms opened in, and the room each of the old chambers, side rooms and walls was off. */
+const OLD_ORDER = [0, 1, 3, 2, 4];
+const OLD_SECRET_ROOM = [1, 2, 3, 4],
+  OLD_STASH_ROOM = [1, 3, 2, 4],
+  OLD_WALL_ROOM = [1, 3, 2, 4];
+/** Where the old save's `left` rows began for the chambers, side rooms and walls, after its five rooms. */
+const OLD_LEFT_SECRETS = 5,
+  OLD_LEFT_STASHES = 9,
+  OLD_LEFT_WALLS = 13;
+
+const finite = (n: unknown, fallback: number, most = Infinity) =>
+  typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.min(n, most) : fallback;
+const numbers = (xs: unknown): number[] =>
+  Array.isArray(xs) ? xs.filter((n): n is number => typeof n === 'number' && Number.isFinite(n)) : [];
+
 export class Economy {
   save: Save;
-  private listeners: ((id: string) => void)[] = [];
+  private listeners = new Set<(id: string) => void>();
   /** Set by `reset`: nothing is saved again, so a coin banked while the page reloads cannot resurrect the old save. */
   private wiped = false;
+  private current: { spec: CaveSpec; sources: Sources };
 
-  /** Where each body is from, in this cave's numbering. */
-  readonly sources: Sources;
-
-  /** `content` is the cave the save is of: its rooms, chambers, walls and belts are what the save has a place for. */
+  /** `run` is the caves in order: the save has a place for what is in the one the player is in. */
   constructor(
     private readonly saves: SaveStore,
-    readonly content: CaveSpec,
+    readonly run: readonly CaveSpec[],
   ) {
-    const { areas, order, secrets, walls } = content;
-    this.sources = sourcesOf(content);
-    this.save = {
+    this.save = this.fresh(run[0]);
+    this.current = { spec: run[0], sources: sourcesOf(run[0]) };
+    try {
+      const raw = saves.load();
+      if (raw) this.load(JSON.parse(raw) as Record<string, unknown>);
+    } catch {
+      /* a browser with no storage plays from the start */
+    }
+    this.current = { spec: this.savedCave(), sources: sourcesOf(this.savedCave()) };
+  }
+
+  /** What a cave starts with: nothing done in it, and no word on what is left. The run-wide things as a new game has them. */
+  private fresh(cave: CaveSpec): Save {
+    return {
       bank: 0,
       banked: 0,
       engine: 0,
       blade: 0,
-      areas: areas.map((_, a) => a === 0),
-      belts: areas.map(() => false),
       drones: 0,
       magnet: 0,
       paint: 'yellow',
@@ -258,50 +274,124 @@ export class Economy {
       bodies: ['dozer'],
       horn: false,
       flag: false,
-      room: order[0],
-      left: Array.from({ length: this.sources.count }, () => []),
-      secrets: secrets.map(() => false),
-      walls: walls.map(() => false),
-      wallDamage: walls.map(() => 0),
-      rubble: [],
-      barrels: null,
-      lampsBroken: [],
       done: false,
+      ...this.perCave(cave),
     };
-    try {
-      const raw = saves.load();
-      if (raw) {
-        const s = JSON.parse(raw) as Omit<Partial<Save>, 'left'> & { left?: number[] | number[][] };
-        this.save = {
-          ...this.save,
-          ...s,
-          areas: [true, ...(s.areas ?? []).slice(1)],
-          belts: s.belts ?? this.save.belts,
-          left: this.save.left,
-          secrets: secrets.map((_, k) => s.secrets?.[k] ?? false),
-          walls: walls.map((_, w) => s.walls?.[w] ?? false),
-          wallDamage: walls.map((_, w) => s.wallDamage?.[w] ?? 0),
-        };
-        // a save from before an area existed has it shut
-        while (this.save.areas.length < areas.length) this.save.areas.push(false);
-        while (this.save.belts.length < areas.length) this.save.belts.push(false);
-        if (s.room === undefined) {
-          // A save from before rooms were sealed, or from when they were bought in any
-          // order: the furthest room it had is the one being cleared, the ones before
-          // it are sealed, and what it had left of the room is that room's.
-          const furthest = order.reduce((f, a, n) => (this.save.areas[a] ? n : f), 0);
-          this.save.room = order[furthest];
-          order.forEach((a, n) => {
-            this.save.areas[a] = n === 0 || n === furthest;
-          });
-          if (s.left?.length === 5 && typeof s.left[0] === 'number')
-            this.save.left[this.save.room] = s.left as number[];
-        } else if (Array.isArray(s.left)) {
-          this.save.left = Array.from({ length: this.sources.count }, (_, a) => (s.left as number[][])[a] ?? []);
-        }
-      }
-    } catch {
-      /* a browser with no storage plays from the start */
+  }
+
+  /** The fields that belong to the cave being played, as they begin. */
+  private perCave(cave: CaveSpec) {
+    return {
+      cave: cave.id,
+      open: false,
+      belts: [] as string[],
+      left: Array.from({ length: sourcesOf(cave).count }, () => [] as number[]),
+      secrets: cave.secrets.map(() => false),
+      walls: cave.walls.map(() => false),
+      wallDamage: cave.walls.map(() => 0),
+      rubble: [] as number[],
+      lampsBroken: [] as number[],
+      barrels: null as number[] | null,
+    };
+  }
+
+  /** The spec of the cave the save is in. */
+  private savedCave(): CaveSpec {
+    return this.run.find((c) => c.id === this.save.cave) ?? this.run[0];
+  }
+
+  /**
+   * Put a save read from outside over a new one. What is run-wide is checked, each value kept to what
+   * it could be; a save of the old shape, from when the caves were rooms of one, is carried over; and
+   * the lists of the cave are sized to the cave, whatever the save had.
+   */
+  private load(s: Record<string, unknown>) {
+    const save = this.save;
+    save.bank = finite(s.bank, 0);
+    save.banked = finite(s.banked, 0);
+    save.engine = Math.floor(finite(s.engine, 0, ENGINE.length - 1));
+    save.blade = Math.floor(finite(s.blade, 0, BLADE.length - 1));
+    save.magnet = Math.floor(finite(s.magnet, 0, MAGNET.length - 1));
+    save.drones = Math.floor(finite(s.drones, 0, MAX_DRONES));
+    const paints = Array.isArray(s.paints) ? s.paints.filter((p) => PAINTS.some((q) => q.id === p)) : [];
+    save.paints = paints.length ? (paints as string[]) : ['yellow'];
+    save.paint = PAINTS.some((p) => p.id === s.paint) ? (s.paint as string) : 'yellow';
+    const bodies = Array.isArray(s.bodies) ? s.bodies.filter((b) => b === 'dozer' || b === 'spider') : [];
+    save.bodies = bodies.length ? (bodies as Body[]) : ['dozer'];
+    save.body = s.body === 'spider' ? 'spider' : 'dozer';
+    save.horn = s.horn === true;
+    save.flag = s.flag === true;
+    save.done = s.done === true;
+    if (s.cave === undefined) return this.carryOver(s);
+    const cave = this.run.find((c) => c.id === s.cave);
+    // a cave that is not in the run is refused by name, and the run begins again from its first
+    if (!cave) return;
+    const fresh = this.perCave(cave);
+    const sources = fresh.left.length;
+    Object.assign(save, fresh, {
+      open: s.open === true && cave !== this.run[this.run.length - 1],
+      belts: (Array.isArray(s.belts) ? s.belts : []).filter((id) => cave.belts.some((b) => b.id === id)),
+      left: fresh.left.map((_, k) => numbers((Array.isArray(s.left) ? s.left : [])[k])),
+      secrets: cave.secrets.map((_, k) => (s.secrets as unknown[] | undefined)?.[k] === true),
+      walls: cave.walls.map((_, w) => (s.walls as unknown[] | undefined)?.[w] === true),
+      wallDamage: cave.walls.map((_, w) => finite((s.wallDamage as unknown[] | undefined)?.[w], 0)),
+      rubble: numbers(s.rubble).slice(0, numbers(s.rubble).length - (numbers(s.rubble).length % 4)),
+      lampsBroken: numbers(s.lampsBroken),
+      barrels: s.barrels === null || s.barrels === undefined ? null : numbers(s.barrels),
+    });
+    if (save.barrels) save.barrels = save.barrels.slice(0, save.barrels.length - (save.barrels.length % 3));
+    if (save.left.length !== sources) save.left = fresh.left;
+  }
+
+  /**
+   * A save from when the caves were five rooms of one: the room being cleared becomes the cave of the
+   * same name, with what was left of it and of its chamber, side room and wall, and its belt. Where the
+   * rubble and the barrels lay was in the old map's coordinates, and which lamps were broken was by the
+   * old map's list, so those start afresh. The next room's gate being open is the way out being open.
+   */
+  private carryOver(s: Record<string, unknown>) {
+    const save = this.save;
+    const areas = Array.isArray(s.areas) ? (s.areas as unknown[]).map((a) => a === true) : [true];
+    areas[0] = true;
+    while (areas.length < OLD_ROOMS.length) areas.push(false);
+    // a save from before rooms were sealed, or from when they were bought in any order: the furthest
+    // room it had is the one being cleared
+    const furthest = OLD_ORDER.reduce((f, a, n) => (areas[a] ? n : f), 0);
+    const room = typeof s.room === 'number' && OLD_ORDER.includes(s.room) ? s.room : OLD_ORDER[furthest];
+    const cave = this.run.find((c) => c.id === OLD_ROOMS[room]) ?? this.run[0];
+    const fresh = this.perCave(cave);
+    Object.assign(save, fresh);
+    const last = cave === this.run[this.run.length - 1];
+    const after = OLD_ORDER.indexOf(room) + 1;
+    save.open = !last && after < OLD_ORDER.length && areas[OLD_ORDER[after]];
+    const belts = Array.isArray(s.belts) ? (s.belts as unknown[]) : [];
+    if (belts[room] === true && cave.belts.length) save.belts = [cave.belts[0].id];
+    // what was left: a flat row of kinds, for the oldest, or a row a source
+    const left = s.left;
+    const sources = sourcesOf(cave);
+    if (Array.isArray(left) && left.length === 5 && typeof left[0] === 'number') save.left[0] = numbers(left);
+    else if (Array.isArray(left)) {
+      save.left[0] = numbers(left[room]);
+      cave.secrets.forEach((_, k) => {
+        const old = OLD_SECRET_ROOM.indexOf(room);
+        if (old >= 0) save.left[sources.chamber(k)] = numbers(left[OLD_LEFT_SECRETS + old]);
+      });
+      cave.stashes.forEach((_, k) => {
+        const old = OLD_STASH_ROOM.indexOf(room);
+        if (old >= 0) save.left[sources.stash(k)] = numbers(left[OLD_LEFT_STASHES + old]);
+      });
+      cave.walls.forEach((_, w) => {
+        const old = OLD_WALL_ROOM.indexOf(room);
+        if (old >= 0) save.left[sources.wall(w)] = numbers(left[OLD_LEFT_WALLS + old]);
+      });
+    }
+    // the one chamber and the one wall off the room
+    const secret = OLD_SECRET_ROOM.indexOf(room),
+      wall = OLD_WALL_ROOM.indexOf(room);
+    if (cave.secrets.length && secret >= 0) save.secrets[0] = (s.secrets as unknown[] | undefined)?.[secret] === true;
+    if (cave.walls.length && wall >= 0) {
+      save.walls[0] = (s.walls as unknown[] | undefined)?.[wall] === true;
+      save.wallDamage[0] = finite((s.wallDamage as unknown[] | undefined)?.[wall], 0);
     }
   }
 
@@ -309,49 +399,48 @@ export class Economy {
     return this.save.bank;
   }
 
-  /** The room being cleared. */
-  current(): number {
-    return this.save.room;
+  /** The cave being cleared. */
+  cave(): CaveSpec {
+    return this.current.spec;
   }
 
-  /** The room after the current one, or null at the last. */
-  next(): number | null {
-    const { order } = this.content;
-    const n = order.indexOf(this.save.room) + 1;
-    return n < order.length ? order[n] : null;
+  /** Where each body in it is from, in this cave's numbering. */
+  get sources(): Sources {
+    return this.current.sources;
   }
 
-  /** Whether the next room's gate is open, and it is waiting to be gone on into. */
-  nextOpen(): boolean {
-    const next = this.next();
-    return next !== null && this.save.areas[next];
+  /** The place of the cave being cleared in the run, from 0. */
+  index(): number {
+    return this.run.indexOf(this.current.spec);
   }
 
-  /** A room the player has gone on from: its gate is shut, and what was in it is gone. */
-  sealed(area: number): boolean {
-    const { order } = this.content;
-    return order.indexOf(area) < order.indexOf(this.save.room);
+  /** Whether the cave being cleared is the last of the run. */
+  isLast(): boolean {
+    return this.index() === this.run.length - 1;
   }
 
-  /** Enough of the current room is banked: the next one opens, or at the last the cave is done. */
+  /** Enough of the cave is banked: its way out opens, or at the last the game is done. */
   open() {
-    if (this.save.done || this.nextOpen()) return;
-    const next = this.next();
-    if (next === null) this.save.done = true;
-    else this.save.areas[next] = true;
+    if (this.save.done || this.save.open) return;
+    const last = this.isLast();
+    if (last) this.save.done = true;
+    else this.save.open = true;
     this.persist();
-    for (const fn of this.listeners) fn(next === null ? 'done' : `area${next}`);
+    for (const fn of [...this.listeners]) fn(last ? 'done' : 'exit');
   }
 
-  /** The player has gone on into the next room: the one behind is sealed. The hollow has no gate to shut. */
+  /**
+   * The player has driven out through the way out: the next cave, and everything of the one behind
+   * that belongs to it left behind. What is run-wide goes on.
+   */
   moveOn() {
-    const old = this.save.room,
-      next = this.next();
-    if (next === null || !this.nextOpen()) return;
-    if (old !== this.content.order[0]) this.save.areas[old] = false;
-    this.save.room = next;
+    if (!this.save.open || this.isLast()) return;
+    const old = this.current.spec;
+    const next = this.run[this.index() + 1];
+    Object.assign(this.save, this.perCave(next));
+    this.current = { spec: next, sources: sourcesOf(next) };
     this.persist();
-    for (const fn of this.listeners) fn(`sealed${old}`);
+    for (const fn of [...this.listeners]) fn(`left:${old.id}`);
   }
 
   deposit(value: number) {
@@ -385,12 +474,12 @@ export class Economy {
    */
   hitWall(w: number, damage: number): number {
     if (this.save.walls[w]) return 1;
-    const strength = WALL_STRENGTH[this.content.walls[w].grade];
+    const strength = WALL_STRENGTH[this.cave().walls[w].grade];
     this.save.wallDamage[w] = Math.min(strength, this.save.wallDamage[w] + damage);
     if (this.save.wallDamage[w] >= strength) {
       this.save.walls[w] = true;
       this.persist();
-      for (const fn of this.listeners) fn(`wall${w}`);
+      for (const fn of [...this.listeners]) fn(`wall${w}`);
       return 1;
     }
     this.persist();
@@ -409,12 +498,21 @@ export class Economy {
     if (this.save.secrets[k]) return;
     this.save.secrets[k] = true;
     this.persist();
-    for (const fn of this.listeners) fn(`secret${k}`);
+    for (const fn of [...this.listeners]) fn(`secret${k}`);
   }
 
-  /** Something to do when a purchase lands or a room opens: the game rebuilds what changed. */
-  onChange(fn: (id: string) => void) {
-    this.listeners.push(fn);
+  /**
+   * Something to do when a purchase lands or the way out opens: the game rebuilds what changed. Gives
+   * back what stops it, for a game that is finished with.
+   */
+  onChange(fn: (id: string) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** How many are listening for changes, for what must not grow. */
+  get listening(): number {
+    return this.listeners.size;
   }
 
   offers(): Offer[] {
@@ -451,17 +549,16 @@ export class Economy {
       owned: !m,
       available: !!m,
     });
-    // a belt for each room still to be cleared; a sealed room's belt runs into rock
-    for (const a of this.content.order) {
-      const belt = this.content.areas[a].belt;
-      if (!belt || this.sealed(a)) continue;
+    // the belts that can be bought for the cave being cleared: one left in a cave behind runs into rock
+    const cave = this.cave();
+    for (const belt of cave.belts) {
       out.push({
-        id: `belt${a}`,
-        title: `Conveyor to the ${this.content.areas[a].name}`,
-        sub: s.areas[a] ? 'push coins onto it and it carries them to the hole' : 'once the room is open',
+        id: `belt:${belt.id}`,
+        title: `Conveyor to the ${cave.name.replace(/^The /, '')}`,
+        sub: 'push coins onto it and it carries them to the hole',
         cost: belt.cost,
-        owned: s.belts[a],
-        available: s.areas[a],
+        owned: s.belts.includes(belt.id),
+        available: true,
       });
     }
     const d = s.drones < MAX_DRONES ? DRONE_COST[s.drones] : null;
@@ -550,13 +647,13 @@ export class Economy {
       if (id.startsWith('paint:') && !offer.active) {
         this.save.paint = id.slice(6);
         this.persist();
-        for (const fn of this.listeners) fn(id);
+        for (const fn of [...this.listeners]) fn(id);
         return true;
       }
       if (id.startsWith('body:') && !offer.active) {
         this.save.body = id.slice(5) as Body;
         this.persist();
-        for (const fn of this.listeners) fn(id);
+        for (const fn of [...this.listeners]) fn(id);
         return true;
       }
       return false;
@@ -576,9 +673,9 @@ export class Economy {
     } else if (id === 'body:spider') {
       s.bodies.push('spider');
       s.body = 'spider';
-    } else if (id.startsWith('belt')) s.belts[+id.slice(4)] = true;
+    } else if (id.startsWith('belt:')) s.belts.push(id.slice(5));
     this.persist();
-    for (const fn of this.listeners) fn(id);
+    for (const fn of [...this.listeners]) fn(id);
     return true;
   }
 

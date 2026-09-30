@@ -6,8 +6,11 @@
  * when it is, and holds its tongue when it is not.
  */
 import { describe, expect, it } from 'vitest';
-import { WATCH, grew, sizes, trouble } from '../scripts/leaks';
-import { newGame, withSeed } from './helpers';
+import { PATCH } from '../src/autopilot';
+import { TILE } from '../src/cave';
+import { WATCH, grew, sizes, sweptCeiling, trouble } from '../scripts/leaks';
+import { Autopilot } from '../src/autopilot';
+import { RUN, caveOf, gameIn, newGame, withSeed } from './helpers';
 
 describe('what must stay bounded', () => {
   it('reads the sizes off a game, and they move with it', () => {
@@ -40,7 +43,7 @@ describe('what must stay bounded', () => {
         Object.entries(WATCH)
           .filter(([, w]) => w?.steady)
           .map(([k]) => k),
-      ).toEqual(['patches swept', 'heap MB']);
+      ).toEqual(['heap MB']);
     });
   });
 
@@ -59,10 +62,42 @@ describe('what must stay bounded', () => {
   it('reports a size over its ceiling, and one that keeps growing', () => {
     const flat = new Array<number>(12).fill(10);
     const creeping = [10, 12, 15, 18, 22, 27, 33, 40, 49, 60, 73, 89];
-    expect(trouble({ bodies: flat, 'patches swept': flat })).toEqual([]);
-    expect(trouble({ 'patches swept': creeping }).join()).toMatch(/patches swept.*grew/);
+    expect(trouble({ bodies: flat, 'heap MB': flat })).toEqual([]);
+    expect(trouble({ 'heap MB': creeping.map((n) => n * 5) }).join()).toMatch(/heap MB.*grew/);
     expect(trouble({ bodies: [1, 99_999] }).join()).toMatch(/bodies.*over its ceiling/);
-    // what rises and falls with the rooms is held by its ceiling alone, so a room opened at the end is not a leak
+    // what rises and falls with the caves is held by its ceiling alone, so a cave entered at the end is not a leak
     expect(trouble({ bodies: creeping })).toEqual([]);
+  });
+
+  it('holds the patches swept to the floor of the biggest cave, worked out from the run', () => {
+    // counted here by another road: the patches each cave's open floor touches, tile by tile
+    const count = (id: string) => {
+      const cave = caveOf(id);
+      const { cols, originX, originY } = cave.grid;
+      const solid = cave.solid(
+        true,
+        cave.spec.secrets.map(() => true),
+        cave.spec.walls.map(() => true),
+      );
+      const cells = new Set<string>();
+      solid.forEach((s, t) => {
+        if (s) return;
+        const x = originX + ((t % cols) + 0.5) * TILE,
+          y = originY + (Math.floor(t / cols) + 0.5) * TILE;
+        cells.add(`${Math.floor(x / PATCH)},${Math.floor(y / PATCH)}`);
+      });
+      return cells.size;
+    };
+    const most = Math.max(...RUN.map((c) => count(c.id)));
+    expect(sweptCeiling(RUN)).toBe(most);
+    expect(WATCH['patches swept']!.ceiling).toBe(most);
+    expect(WATCH['patches swept']!.ceiling, 'not a round guess').not.toBe(400);
+    // and an autopilot at work for a minute stays under it, in the cave it was built for
+    withSeed(3, () => {
+      const game = gameIn('south-gallery', { engine: 3, blade: 2 });
+      const pilot = new Autopilot(game, 'thorough', { shop: false });
+      for (let f = 0; f < 60 * 60; f++) pilot.step(1 / 60);
+      expect(pilot.sweptPatches).toBeLessThanOrEqual(count('south-gallery'));
+    });
   });
 });
