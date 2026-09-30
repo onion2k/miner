@@ -68,14 +68,14 @@ Taken on judgement, as asked; each can be put back to the user.
 
 ## Phases
 
-| Phase | What                                            | Changes play? | State              |
-| ----- | ----------------------------------------------- | ------------- | ------------------ |
-| 1     | The cave as a value, holes as a list (refactor) | no            | built, uncommitted |
-| 2     | One cave after another                          | yes           | planned            |
-| 3     | Several holes and belts in a cave, in content   | yes           | planned            |
-| 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | planned            |
-| 5     | Bigger caves, measured first                    | yes           | planned            |
-| 6     | New biomes, one feature each                    | yes           | planned            |
+| Phase | What                                            | Changes play? | State   |
+| ----- | ----------------------------------------------- | ------------- | ------- |
+| 1     | The cave as a value, holes as a list (refactor) | no            | landed  |
+| 2     | One cave after another                          | yes           | planned |
+| 3     | Several holes and belts in a cave, in content   | yes           | planned |
+| 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | planned |
+| 5     | Bigger caves, measured first                    | yes           | planned |
+| 6     | New biomes, one feature each                    | yes           | planned |
 
 Phase 1 is the foundation, built now. Phases 2 to 6 are each put through
 `/feature`, with their spec agreed before they are built; what follows for

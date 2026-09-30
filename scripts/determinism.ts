@@ -17,6 +17,8 @@
  * game, and it does it from the seed alone.
  */
 import { Autopilot } from '../src/autopilot';
+import { buildCave } from '../src/cave';
+import { FIVE_ROOMS } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
 
@@ -106,7 +108,7 @@ export function playTwice({ seed, frames, every = 300, meddle }: TwiceOptions): 
     const passes: string[][] = [];
     for (let pass = 0; pass < 2; pass++) {
       Math.random = seeded(seed);
-      const game = new Game(new Economy(memoryStore()));
+      const game = new Game(new Economy(memoryStore(), FIVE_ROOMS), buildCave(FIVE_ROOMS));
       const pilot = new Autopilot(game, 'thorough');
       const hashes: string[] = [];
       for (let f = 1; f <= frames; f++) {

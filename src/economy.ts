@@ -5,7 +5,7 @@
  * whatever is still in it. Saved in the browser, so the cave is where you
  * left it.
  */
-import { AREAS, ORDER, SECRETS, STASHES, WALLS } from './cave';
+import type { CaveSpec } from './cave';
 import type { DozerSpec } from './dozer';
 import { KINDS, KIND_VALUE } from './physics';
 
@@ -15,18 +15,33 @@ import { KINDS, KIND_VALUE } from './physics';
  * pens; then the walls, for the treasure set in them. Everything after the
  * rooms is kept apart from its room's so it never counts toward clearing it.
  */
-export const SOURCES = AREAS.length + SECRETS.length + STASHES.length + WALLS.length;
-export const chamberSource = (k: number) => AREAS.length + k;
-export const stashSource = (k: number) => AREAS.length + SECRETS.length + k;
-export const wallSource = (w: number) => AREAS.length + SECRETS.length + STASHES.length + w;
-/** The room a source belongs to, and is sealed with. */
-export function areaOfSource(from: number): number {
-  if (from < AREAS.length) return from;
-  from -= AREAS.length;
-  if (from < SECRETS.length) return SECRETS[from].area;
-  from -= SECRETS.length;
-  if (from < STASHES.length) return STASHES[from].area;
-  return WALLS[from - STASHES.length].area;
+export interface Sources {
+  /** How many sources a cave has: every room, chamber, side room and wall. */
+  readonly count: number;
+  chamber(k: number): number;
+  stash(k: number): number;
+  wall(w: number): number;
+  /** The room a source belongs to, and is sealed with. */
+  area(from: number): number;
+}
+
+/** The sources of a cave, numbered as above. */
+export function sourcesOf(spec: CaveSpec): Sources {
+  const { areas, secrets, stashes, walls } = spec;
+  return {
+    count: areas.length + secrets.length + stashes.length + walls.length,
+    chamber: (k) => areas.length + k,
+    stash: (k) => areas.length + secrets.length + k,
+    wall: (w) => areas.length + secrets.length + stashes.length + w,
+    area(from) {
+      if (from < areas.length) return from;
+      from -= areas.length;
+      if (from < secrets.length) return secrets[from].area;
+      from -= secrets.length;
+      if (from < stashes.length) return stashes[from].area;
+      return walls[from - stashes.length].area;
+    },
+  };
 }
 
 export interface Save {
@@ -74,9 +89,9 @@ export interface Save {
 export const CLEAR_SHARE = 0.9;
 
 /** What a room's heaps are worth, and how many of each kind they hold. */
-export function roomStock(area: number): { value: number; kinds: number[] } {
+export function roomStock(spec: CaveSpec, area: number): { value: number; kinds: number[] } {
   const kinds = new Array<number>(KINDS).fill(0);
-  for (const h of AREAS[area].heaps) {
+  for (const h of spec.areas[area].heaps) {
     kinds[0] += h.coins;
     for (const [k, n] of h.gems) kinds[k] += n;
   }
@@ -206,9 +221,9 @@ export function memoryStore(json: string | null = null): SaveStore & { json: str
 }
 
 /** What the whole workshop costs: every engine, blade and magnet, every drone and every room's belt; paint aside. */
-export function workshopTotal(): number {
+export function workshopTotal(spec: CaveSpec): number {
   const sum = (xs: readonly { cost: number }[]) => xs.reduce((n, x) => n + x.cost, 0);
-  const belts = AREAS.reduce((n, a) => n + (a.belt?.cost ?? 0), 0);
+  const belts = spec.areas.reduce((n, a) => n + (a.belt?.cost ?? 0), 0);
   return sum(ENGINE) + sum(BLADE) + sum(MAGNET) + DRONE_COST.reduce((n, c) => n + c, 0) + belts;
 }
 
@@ -218,14 +233,23 @@ export class Economy {
   /** Set by `reset`: nothing is saved again, so a coin banked while the page reloads cannot resurrect the old save. */
   private wiped = false;
 
-  constructor(private readonly saves: SaveStore = browserStore) {
+  /** Where each body is from, in this cave's numbering. */
+  readonly sources: Sources;
+
+  /** `content` is the cave the save is of: its rooms, chambers, walls and belts are what the save has a place for. */
+  constructor(
+    private readonly saves: SaveStore,
+    readonly content: CaveSpec,
+  ) {
+    const { areas, order, secrets, walls } = content;
+    this.sources = sourcesOf(content);
     this.save = {
       bank: 0,
       banked: 0,
       engine: 0,
       blade: 0,
-      areas: AREAS.map((_, a) => a === 0),
-      belts: AREAS.map(() => false),
+      areas: areas.map((_, a) => a === 0),
+      belts: areas.map(() => false),
       drones: 0,
       magnet: 0,
       paint: 'yellow',
@@ -234,11 +258,11 @@ export class Economy {
       bodies: ['dozer'],
       horn: false,
       flag: false,
-      room: ORDER[0],
-      left: Array.from({ length: SOURCES }, () => []),
-      secrets: SECRETS.map(() => false),
-      walls: WALLS.map(() => false),
-      wallDamage: WALLS.map(() => 0),
+      room: order[0],
+      left: Array.from({ length: this.sources.count }, () => []),
+      secrets: secrets.map(() => false),
+      walls: walls.map(() => false),
+      wallDamage: walls.map(() => 0),
       rubble: [],
       barrels: null,
       lampsBroken: [],
@@ -254,26 +278,26 @@ export class Economy {
           areas: [true, ...(s.areas ?? []).slice(1)],
           belts: s.belts ?? this.save.belts,
           left: this.save.left,
-          secrets: SECRETS.map((_, k) => s.secrets?.[k] ?? false),
-          walls: WALLS.map((_, w) => s.walls?.[w] ?? false),
-          wallDamage: WALLS.map((_, w) => s.wallDamage?.[w] ?? 0),
+          secrets: secrets.map((_, k) => s.secrets?.[k] ?? false),
+          walls: walls.map((_, w) => s.walls?.[w] ?? false),
+          wallDamage: walls.map((_, w) => s.wallDamage?.[w] ?? 0),
         };
         // a save from before an area existed has it shut
-        while (this.save.areas.length < AREAS.length) this.save.areas.push(false);
-        while (this.save.belts.length < AREAS.length) this.save.belts.push(false);
+        while (this.save.areas.length < areas.length) this.save.areas.push(false);
+        while (this.save.belts.length < areas.length) this.save.belts.push(false);
         if (s.room === undefined) {
           // A save from before rooms were sealed, or from when they were bought in any
           // order: the furthest room it had is the one being cleared, the ones before
           // it are sealed, and what it had left of the room is that room's.
-          const furthest = ORDER.reduce((f, a, n) => (this.save.areas[a] ? n : f), 0);
-          this.save.room = ORDER[furthest];
-          ORDER.forEach((a, n) => {
+          const furthest = order.reduce((f, a, n) => (this.save.areas[a] ? n : f), 0);
+          this.save.room = order[furthest];
+          order.forEach((a, n) => {
             this.save.areas[a] = n === 0 || n === furthest;
           });
           if (s.left?.length === 5 && typeof s.left[0] === 'number')
             this.save.left[this.save.room] = s.left as number[];
         } else if (Array.isArray(s.left)) {
-          this.save.left = Array.from({ length: SOURCES }, (_, a) => (s.left as number[][])[a] ?? []);
+          this.save.left = Array.from({ length: this.sources.count }, (_, a) => (s.left as number[][])[a] ?? []);
         }
       }
     } catch {
@@ -292,8 +316,9 @@ export class Economy {
 
   /** The room after the current one, or null at the last. */
   next(): number | null {
-    const n = ORDER.indexOf(this.save.room) + 1;
-    return n < ORDER.length ? ORDER[n] : null;
+    const { order } = this.content;
+    const n = order.indexOf(this.save.room) + 1;
+    return n < order.length ? order[n] : null;
   }
 
   /** Whether the next room's gate is open, and it is waiting to be gone on into. */
@@ -304,7 +329,8 @@ export class Economy {
 
   /** A room the player has gone on from: its gate is shut, and what was in it is gone. */
   sealed(area: number): boolean {
-    return ORDER.indexOf(area) < ORDER.indexOf(this.save.room);
+    const { order } = this.content;
+    return order.indexOf(area) < order.indexOf(this.save.room);
   }
 
   /** Enough of the current room is banked: the next one opens, or at the last the cave is done. */
@@ -322,7 +348,7 @@ export class Economy {
     const old = this.save.room,
       next = this.next();
     if (next === null || !this.nextOpen()) return;
-    if (old !== ORDER[0]) this.save.areas[old] = false;
+    if (old !== this.content.order[0]) this.save.areas[old] = false;
     this.save.room = next;
     this.persist();
     for (const fn of this.listeners) fn(`sealed${old}`);
@@ -359,7 +385,7 @@ export class Economy {
    */
   hitWall(w: number, damage: number): number {
     if (this.save.walls[w]) return 1;
-    const strength = WALL_STRENGTH[WALLS[w].grade];
+    const strength = WALL_STRENGTH[this.content.walls[w].grade];
     this.save.wallDamage[w] = Math.min(strength, this.save.wallDamage[w] + damage);
     if (this.save.wallDamage[w] >= strength) {
       this.save.walls[w] = true;
@@ -426,12 +452,12 @@ export class Economy {
       available: !!m,
     });
     // a belt for each room still to be cleared; a sealed room's belt runs into rock
-    for (const a of ORDER) {
-      const belt = AREAS[a].belt;
+    for (const a of this.content.order) {
+      const belt = this.content.areas[a].belt;
       if (!belt || this.sealed(a)) continue;
       out.push({
         id: `belt${a}`,
-        title: `Conveyor to the ${AREAS[a].name}`,
+        title: `Conveyor to the ${this.content.areas[a].name}`,
         sub: s.areas[a] ? 'push coins onto it and it carries them to the hole' : 'once the room is open',
         cost: belt.cost,
         owned: s.belts[a],

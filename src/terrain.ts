@@ -19,7 +19,7 @@
  * All of it hangs on the tiles and which chambers have been broken into, so
  * it is built again only when one is.
  */
-import { COLS, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, TILE, areaAt, hash, rockish, tileCentre, type Cave } from './cave';
+import { TILE, areaAt, hash, rockish, tileCentre, type Cave, type HoleSpec } from './cave';
 import type { Mesh } from 'artshape-render/mesh/types';
 import { fbm, noise } from './noise';
 
@@ -30,7 +30,7 @@ const STEP = TILE / SUB;
 const REACH = TILE * 3;
 /** How far a jutting corner of rock is rounded back. */
 const ROUND = 1.8;
-/** The half-width of the square the hole's collar covers. */
+/** The half-width of the square each hole's collar covers. */
 const COLLAR = TILE * 1.5;
 /**
  * Shades of each: floor by its lie, and rock by steepness (steep and dark,
@@ -51,10 +51,16 @@ const AREAS_MAX = 16;
 /** How thick the beds of rock are, about. */
 const STRATA = 1.7;
 
-/** The height of the floor at a point: a shallow unevenness below zero, level round the hole. */
-export function floorHeight(x: number, y: number): number {
-  const rim = Math.max(Math.abs(x - HOLE.x), Math.abs(y - HOLE.y));
-  const level = Math.min(1, Math.max(0, (rim - COLLAR) / 6));
+/** How far a point is from the nearest hole's middle, by the larger of its two distances: what the collar's square is measured in. */
+function rimOf(holes: readonly HoleSpec[], x: number, y: number): number {
+  let rim = Infinity;
+  for (const h of holes) rim = Math.min(rim, Math.max(Math.abs(x - h.x), Math.abs(y - h.y)));
+  return rim;
+}
+
+/** The height of the floor at a point: a shallow unevenness below zero, level round each hole. */
+export function floorHeight(holes: readonly HoleSpec[], x: number, y: number): number {
+  const level = Math.min(1, Math.max(0, (rimOf(holes, x, y) - COLLAR) / 6));
   return -(noise(x * 0.3, y * 0.3, 41) * 0.12 + noise(x * 1.1, y * 1.1, 43) * 0.05) * level;
 }
 
@@ -173,21 +179,22 @@ export interface Terrain {
  * Infinity past REACH; and the open tile nearest it, -1 with none.
  */
 function depths(cave: Cave, revealed: boolean[]): [Float32Array, Int32Array] {
-  const GX = COLS * SUB + 1,
-    GY = ROWS * SUB + 1;
+  const { cols, rows } = cave.grid;
+  const GX = cols * SUB + 1,
+    GY = rows * SUB + 1;
   const out = new Float32Array(GX * GY),
     nearest = new Int32Array(GX * GY);
-  const mask = new Uint8Array(COLS * ROWS);
+  const mask = new Uint8Array(cols * rows);
   for (let t = 0; t < mask.length; t++) mask[t] = rockish(cave.cells[t], revealed) ? 0 : 1;
-  const open = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS && mask[ty * COLS + tx] === 1;
+  const open = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < cols && ty < rows && mask[ty * cols + tx] === 1;
   const span = Math.ceil(REACH / TILE) + 1;
   // which tiles have an open tile within `span` of them, so the rest of the rock is passed over at once
-  const near = new Uint8Array(COLS * ROWS);
-  for (let ty = 0; ty < ROWS; ty++) {
-    for (let tx = 0; tx < COLS; tx++) {
+  const near = new Uint8Array(cols * rows);
+  for (let ty = 0; ty < rows; ty++) {
+    for (let tx = 0; tx < cols; tx++) {
       if (!open(tx, ty)) continue;
-      for (let oy = Math.max(0, ty - span); oy <= Math.min(ROWS - 1, ty + span); oy++) {
-        near.fill(1, oy * COLS + Math.max(0, tx - span), oy * COLS + Math.min(COLS - 1, tx + span) + 1);
+      for (let oy = Math.max(0, ty - span); oy <= Math.min(rows - 1, ty + span); oy++) {
+        near.fill(1, oy * cols + Math.max(0, tx - span), oy * cols + Math.min(cols - 1, tx + span) + 1);
       }
     }
   }
@@ -199,20 +206,20 @@ function depths(cave: Cave, revealed: boolean[]): [Float32Array, Int32Array] {
         ty = Math.floor(j / SUB);
       let best = Infinity,
         tile = -1;
-      if (!near[Math.min(ROWS - 1, ty) * COLS + Math.min(COLS - 1, tx)]) {
+      if (!near[Math.min(rows - 1, ty) * cols + Math.min(cols - 1, tx)]) {
         out[j * GX + i] = Infinity;
         nearest[j * GX + i] = -1;
         continue;
       }
-      for (let ny = Math.max(0, ty - span); ny <= Math.min(ROWS - 1, ty + span); ny++) {
+      for (let ny = Math.max(0, ty - span); ny <= Math.min(rows - 1, ty + span); ny++) {
         const dy = Math.max(0, ny * TILE - py, py - (ny + 1) * TILE);
-        for (let nx = Math.max(0, tx - span); nx <= Math.min(COLS - 1, tx + span); nx++) {
-          if (!mask[ny * COLS + nx]) continue;
+        for (let nx = Math.max(0, tx - span); nx <= Math.min(cols - 1, tx + span); nx++) {
+          if (!mask[ny * cols + nx]) continue;
           const dx = Math.max(0, nx * TILE - px, px - (nx + 1) * TILE);
           const d = dx * dx + dy * dy;
           if (d < best) {
             best = d;
-            tile = ny * COLS + nx;
+            tile = ny * cols + nx;
           }
         }
       }
@@ -280,9 +287,10 @@ class Builder {
 }
 
 export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainStyle): Terrain {
+  const { cols, rows, originX, originY } = cave.grid;
   const shapeAt = (x: number, y: number) => (style ? style.shape(x, y) : PLAIN_ROCK);
-  const GX = COLS * SUB + 1,
-    GY = ROWS * SUB + 1;
+  const GX = cols * SUB + 1,
+    GY = rows * SUB + 1;
   const [depth, nearest] = depths(cave, revealed);
   // Every sample point, where it is: nudged off the grid, and at its height. Past REACH the rock is a
   // plain plateau, a quad a tile, and a point there lies straight between its tile's corners, so the
@@ -290,37 +298,37 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
   const px = new Float32Array(GX * GY),
     py = new Float32Array(GX * GY),
     pz = new Float32Array(GX * GY);
-  const corners = new Float32Array((COLS + 1) * (ROWS + 1));
-  for (let ty = 0; ty <= ROWS; ty++) {
-    for (let tx = 0; tx <= COLS; tx++) {
-      const x = ORIGIN_X + tx * TILE,
-        y = ORIGIN_Y + ty * TILE;
-      corners[ty * (COLS + 1) + tx] = rockHeight(x, y, REACH, shapeAt(x, y));
+  const corners = new Float32Array((cols + 1) * (rows + 1));
+  for (let ty = 0; ty <= rows; ty++) {
+    for (let tx = 0; tx <= cols; tx++) {
+      const x = originX + tx * TILE,
+        y = originY + ty * TILE;
+      corners[ty * (cols + 1) + tx] = rockHeight(x, y, REACH, shapeAt(x, y));
     }
   }
-  const corner = (tx: number, ty: number) => corners[ty * (COLS + 1) + tx];
+  const corner = (tx: number, ty: number) => corners[ty * (cols + 1) + tx];
   for (let j = 0; j < GY; j++) {
     for (let i = 0; i < GX; i++) {
       const k = j * GX + i,
         d = depth[k];
       if (!Number.isFinite(d)) {
-        const tx = Math.min(COLS - 1, Math.floor(i / SUB)),
-          ty = Math.min(ROWS - 1, Math.floor(j / SUB));
+        const tx = Math.min(cols - 1, Math.floor(i / SUB)),
+          ty = Math.min(rows - 1, Math.floor(j / SUB));
         const fx = i / SUB - tx,
           fy = j / SUB - ty;
         const h0 = corner(tx, ty) + (corner(tx + 1, ty) - corner(tx, ty)) * fx;
         const h1 = corner(tx, ty + 1) + (corner(tx + 1, ty + 1) - corner(tx, ty + 1)) * fx;
-        px[k] = ORIGIN_X + i * STEP;
-        py[k] = ORIGIN_Y + j * STEP;
+        px[k] = originX + i * STEP;
+        py[k] = originY + j * STEP;
         pz[k] = h0 + (h1 - h0) * fy;
         continue;
       }
       const nudge = STEP * 0.32;
-      const x = ORIGIN_X + i * STEP + (hash(i, j, 1) - 0.5) * nudge;
-      const y = ORIGIN_Y + j * STEP + (hash(i, j, 2) - 0.5) * nudge;
+      const x = originX + i * STEP + (hash(i, j, 1) - 0.5) * nudge;
+      const y = originY + j * STEP + (hash(i, j, 2) - 0.5) * nudge;
       px[k] = x;
       py[k] = y;
-      pz[k] = d === 0 ? floorHeight(x, y) : rockHeight(x, y, d, shapeAt(x, y));
+      pz[k] = d === 0 ? floorHeight(cave.holes, x, y) : rockHeight(x, y, d, shapeAt(x, y));
     }
   }
 
@@ -329,8 +337,9 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
   for (let k = 0; k < GX * GY; k++) if (depth[k] === 0) edge[k] = depthToRock(cave, revealed, px[k], py[k]);
 
   // the room each tile is drawn with
-  const tileArea = new Uint8Array(COLS * ROWS);
-  for (let t = 0; t < tileArea.length; t++) tileArea[t] = areaAt(...tileCentre(t % COLS, (t / COLS) | 0));
+  const tileArea = new Uint8Array(cols * rows);
+  for (let t = 0; t < tileArea.length; t++)
+    tileArea[t] = areaAt(cave.spec, ...tileCentre(cave.grid, t % cols, (t / cols) | 0));
   const builders = new Map<number, Builder>();
   const PALETTES = 8;
   const key = (area: number, rock: boolean, tone: number, palette = 0) =>
@@ -359,8 +368,8 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
       cy = (py[a] + py[b] + py[c]) / 3,
       cz = (pz[a] + pz[b] + pz[c]) / 3;
     const rock = cz > 0.3;
-    // the hole's collar is the floor there
-    if (!rock && Math.abs(cx - HOLE.x) < COLLAR && Math.abs(cy - HOLE.y) < COLLAR) return;
+    // each hole's collar is the floor there
+    if (!rock && rimOf(cave.holes, cx, cy) < COLLAR) return;
     const salt = hash(Math.round(cx * 7), Math.round(cy * 7), 23);
     // the foot: floor within the band of the rock, its edge ragged by a little noise, and the
     // triangles that climb from the floor into the fillet with it
@@ -382,7 +391,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
     // for being nearer the next; floor is the room of the tile it is on.
     let t = -1;
     if (rock) t = nearest[a] >= 0 ? nearest[a] : nearest[b] >= 0 ? nearest[b] : nearest[c];
-    if (t < 0) t = Math.floor((cy - ORIGIN_Y) / TILE) * COLS + Math.floor((cx - ORIGIN_X) / TILE);
+    if (t < 0) t = Math.floor((cy - originY) / TILE) * cols + Math.floor((cx - originX) / TILE);
     const area = t >= 0 && t < tileArea.length ? tileArea[t] : 0;
     const k = key(area, rock, tone, palette);
     let bld = builders.get(k);
@@ -391,8 +400,8 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
     bld.vertex(px[b], py[b], pz[b], nx, ny, nz);
     bld.vertex(px[c], py[c], pz[c], nx, ny, nz);
   };
-  for (let ty = 0; ty < ROWS; ty++) {
-    for (let tx = 0; tx < COLS; tx++) {
+  for (let ty = 0; ty < rows; ty++) {
+    for (let tx = 0; tx < cols; tx++) {
       let fine = false;
       for (let j = ty * SUB; j <= (ty + 1) * SUB && !fine; j++) {
         for (let i = tx * SUB; i <= (tx + 1) * SUB; i++)
@@ -498,7 +507,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
           shade: hash(i, j, 74),
           area: areaOf(k),
         });
-      } else if (d === 0 && Math.max(Math.abs(x - HOLE.x), Math.abs(y - HOLE.y)) > COLLAR + 1) {
+      } else if (d === 0 && rimOf(cave.holes, x, y) > COLLAR + 1) {
         // The skirt of scree: what the rock has shed, thick against its foot and thinning out over
         // SCREE_REACH, chunks against the wall and grit further out, coloured as the rock it fell
         // from and half sunk in the floor; and past it the odd bit of grit about the floor.
@@ -513,7 +522,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
           stones.push({
             x,
             y,
-            z: floorHeight(x, y) - size * (0.2 + grade * 0.2),
+            z: floorHeight(cave.holes, x, y) - size * (0.2 + grade * 0.2),
             yaw,
             tilt: (hash(i, j, 67) - 0.5) * 0.8,
             size: [size, size * (0.6 + hash(i, j, 68) * 0.6), size * 0.6],
@@ -538,17 +547,18 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
 
 /** How far a floor point is from the nearest rock, up to two tiles; further counts as two tiles. */
 function depthToRock(cave: Cave, revealed: boolean[], x: number, y: number): number {
-  const tx = Math.floor((x - ORIGIN_X) / TILE),
-    ty = Math.floor((y - ORIGIN_Y) / TILE);
+  const { cols, rows, originX, originY } = cave.grid;
+  const tx = Math.floor((x - originX) / TILE),
+    ty = Math.floor((y - originY) / TILE);
   let best = TILE * 2;
   for (let oy = -2; oy <= 2; oy++) {
     for (let ox = -2; ox <= 2; ox++) {
       const nx = tx + ox,
         ny = ty + oy;
-      const rock = nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || rockish(cave.cells[ny * COLS + nx], revealed);
+      const rock = nx < 0 || ny < 0 || nx >= cols || ny >= rows || rockish(cave.cells[ny * cols + nx], revealed);
       if (!rock) continue;
-      const x0 = ORIGIN_X + nx * TILE,
-        y0 = ORIGIN_Y + ny * TILE;
+      const x0 = originX + nx * TILE,
+        y0 = originY + ny * TILE;
       const d = Math.hypot(Math.max(0, x0 - x, x - x0 - TILE), Math.max(0, y0 - y, y - y0 - TILE));
       if (d < best) best = d;
     }

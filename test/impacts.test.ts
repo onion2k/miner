@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { BRICK, COLS, ROWS, SECRET, SECRETS, WALLS } from '../src/cave';
+import { BRICK, SECRET } from '../src/cave';
 import { Impacts, SMASH_SPEED, type ImpactState } from '../src/impacts';
+import { COLS, GRID, ROWS, SECRETS, SPEC, WALLS } from './helpers';
 
 /** A grid with a wall tile at (10, 10) and a chamber's rock at (20, 20). */
 const cells = new Uint8Array(COLS * ROWS);
@@ -15,7 +16,7 @@ const state = (over: Partial<ImpactState> = {}): ImpactState => ({
 
 describe('driving into the rock', () => {
   it('hurts a brick wall driven square into fast enough, once a run at it', () => {
-    const impacts = new Impacts(cells);
+    const impacts = new Impacts(cells, GRID, SPEC);
     expect(impacts.hit(10, 10, 1, 8, 0, state())).toMatchObject({ type: 'wall', wall: 0, damage: 40 });
     // the blade held against it is not another hit
     expect(impacts.hit(10, 10, 1, 8, 0.2, state())).toBeNull();
@@ -27,7 +28,7 @@ describe('driving into the rock', () => {
   });
 
   it('smashes a chamber open square on and fast, and otherwise sounds hollow, now and then', () => {
-    const impacts = new Impacts(cells);
+    const impacts = new Impacts(cells, GRID, SPEC);
     expect(impacts.hit(20, 20, 1, SMASH_SPEED, 0, state())).toEqual({ type: 'reveal', chamber: 0 });
     expect(impacts.hit(20, 20, 0.5, 3, 0, state())).toEqual({ type: 'knock', chamber: 0 });
     expect(impacts.hit(20, 20, 0.5, 3, 0.3, state())).toBeNull();
@@ -36,7 +37,7 @@ describe('driving into the rock', () => {
   });
 
   it('is only rock anywhere else, backing into it or not', () => {
-    const impacts = new Impacts(cells);
+    const impacts = new Impacts(cells, GRID, SPEC);
     expect(impacts.hit(30, 30, 1, 20, 0, state())).toBeNull();
     expect(impacts.hit(20, 20, 1, -SMASH_SPEED, 0, state())).toEqual({ type: 'reveal', chamber: 0 });
   });

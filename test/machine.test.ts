@@ -17,6 +17,8 @@ import { DynamicScene } from '../src/scene-dynamic';
 import { PAINTS } from '../src/economy';
 import { KIND_CAPACITY } from '../src/game';
 import { BODY_CAPACITY, buildCave } from '../src/cave';
+import { holeLamps } from '../src/lamps';
+import { AREAS, SPEC } from './helpers';
 
 const machine = machineMeshes();
 const tris = (m: Mesh) => m.indices.length / 3;
@@ -83,7 +85,7 @@ describe('the machine as drawn', () => {
 
   it('is lit from its own headlamps and cab light, where the mesh puts them', () => {
     const dozer = { x: 5, y: -14, yaw: 1.1 };
-    const cave = buildCave();
+    const cave = buildCave(SPEC);
     const eye: [number, number, number] = [5, -14 - 78 * Math.sin(0.62), 78 * Math.cos(0.62)];
     const v = new Float32Array(16),
       p = new Float32Array(16),
@@ -107,7 +109,9 @@ describe('the machine as drawn', () => {
       vein: null,
       sealing: null,
       magnet: null,
-      holePulse: 0,
+      holes: SPEC.holes,
+      holeLamps: holeLamps(SPEC.holes),
+      holePulse: [0],
     });
     const c = Math.cos(dozer.yaw),
       s = Math.sin(dozer.yaw);
@@ -149,6 +153,7 @@ describe('the dynamic scene’s machines', () => {
     const scene = new DynamicScene(target, {
       bodyCapacity: BODY_CAPACITY,
       kindCapacity: KIND_CAPACITY,
+      belts: AREAS.map((a) => a.belt?.spec ?? null),
       bots: 3,
       botScale: BOT_SCALE,
       botBladeWidth: BOT_SPEC.bladeWidth,
@@ -194,6 +199,7 @@ describe('the Spiderdozer as drawn', () => {
     const scene = new DynamicScene(target, {
       bodyCapacity: BODY_CAPACITY,
       kindCapacity: KIND_CAPACITY,
+      belts: AREAS.map((a) => a.belt?.spec ?? null),
       bots: 3,
       botScale: BOT_SCALE,
       botBladeWidth: BOT_SPEC.bladeWidth,

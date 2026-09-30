@@ -1,6 +1,42 @@
-/** What the tests share: a seeded Math.random, a flood over the tiles, and the player's machine as it starts. */
-import { COLS, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from '../src/cave';
+/**
+ * What the tests share: the game's cave by the names its content used to
+ * have, a game made on it, a seeded Math.random, a flood over the tiles, and
+ * the player's machine as it starts.
+ */
+import { TILE, buildCave, gridOf } from '../src/cave';
+import { FIVE_ROOMS } from '../src/caves';
 import type { DozerSpec } from '../src/dozer';
+import { Economy, memoryStore, sourcesOf } from '../src/economy';
+import { Game, type GameEvents } from '../src/game';
+
+/** The cave the game plays, and the parts of it most tests reach for. */
+export const SPEC = FIVE_ROOMS;
+export const {
+  areas: AREAS,
+  order: ORDER,
+  wings: WINGS,
+  secrets: SECRETS,
+  walls: WALLS,
+  stashes: STASHES,
+  hollow: HOLLOW,
+} = SPEC;
+export const SOURCES = sourcesOf(SPEC);
+export const HOLE = SPEC.holes[0];
+export const GRID = gridOf(SPEC);
+export const { cols: COLS, rows: ROWS, originX: ORIGIN_X, originY: ORIGIN_Y } = GRID;
+
+/** The cave carved from it, built the once for the tests that only read it. */
+export const FIVE = buildCave(SPEC);
+
+/** An economy for the game's cave, over a save kept in memory, from `json` if given. */
+export function newEconomy(json: string | null = null) {
+  return new Economy(memoryStore(json), SPEC);
+}
+
+/** A game on the game's cave, from a save in memory, told of what happens if `events` says. */
+export function newGame(json: string | null = null, events: GameEvents = {}) {
+  return new Game(newEconomy(json), FIVE, events);
+}
 
 export const PLAYER_SPEC: DozerSpec = {
   maxSpeed: 11,

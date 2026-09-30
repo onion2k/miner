@@ -1,6 +1,6 @@
 /**
- * The game itself, without the picture, the page or the sound: the cave and
- * what is in it, the dozer and the drones, the bank and the rooms, walls,
+ * The game itself, without the picture, the page or the sound: the cave it
+ * is handed and what is in it, the dozer and the drones, the bank and the rooms, walls,
  * chambers, lamps, barrels, the vein, and what each does to the others, a
  * step at a time.
  *
@@ -10,23 +10,10 @@
  * there, so the same game runs in the page and in Node, and what the tests
  * try is what is played.
  */
-import {
-  AREAS,
-  BODY_CAPACITY,
-  COLS,
-  HOLE,
-  ORDER,
-  SECRET,
-  SECRETS,
-  WALLS,
-  behindGate,
-  buildCave,
-  tileCentre,
-  type Cave,
-} from './cave';
+import { BODY_CAPACITY, SECRET, behindGate, nearestHole, tileCentre, type Cave } from './cave';
 import { Barrels, type Blast } from './barrels';
 import { BLADE_AT, Dozer, separate } from './dozer';
-import { Economy, WALL_STRENGTH, areaOfSource, chamberSource, wallSource } from './economy';
+import { Economy, WALL_STRENGTH } from './economy';
 import { Impacts } from './impacts';
 import type { Drive } from './input';
 import { lampOn, lampsHit } from './lamps';
@@ -95,9 +82,9 @@ export class Game {
   readonly fountains: Fountain[] = [];
   readonly stock: Stock;
   readonly barrels: Barrels;
-  readonly tally = new Tally();
+  readonly tally: Tally;
   /** The last room: once the cave is cleared its vein runs and its floor cracks, so there is still something to push. */
-  readonly last = ORDER[ORDER.length - 1];
+  readonly last: number;
   /** Game time, in seconds. */
   t = 0;
   /** The player is at the next room's gate, and going further seals the one being cleared. */
@@ -110,22 +97,27 @@ export class Game {
   private lastBank = -1;
   private recordAt = 0;
 
+  /** `cave` is the one being played, and `economy` holds the save of it. */
   constructor(
     readonly economy: Economy,
+    cave: Cave,
     private readonly events: GameEvents = {},
-    cave: Cave = buildCave(),
   ) {
     const save = economy.save;
+    const { areas, order } = cave.spec;
     this.cave = cave;
-    this.world = makeWorld(BODY_CAPACITY, cave.solid(save.areas, save.secrets, save.walls));
-    this.dozer = new Dozer(this.world.solid);
-    this.nav = new Nav(this.world.solid);
-    if (save.done) this.fountains.push(new Fountain(AREAS[this.last]));
-    this.vein = new VeinTrickle(AREAS[this.last].vein);
-    for (let i = 0; i < save.drones; i++) this.bots.push(new Bot(this.world.solid, i + 1, ...botHome(i)));
+    this.last = order[order.length - 1];
+    this.tally = new Tally(cave.holes.length);
+    this.world = makeWorld(BODY_CAPACITY, cave.solid(save.areas, save.secrets, save.walls), cave.grid, cave.holes);
+    this.dozer = new Dozer(this.world.solid, cave.grid);
+    this.nav = new Nav(this.world.solid, cave.grid, cave.holes);
+    if (save.done) this.fountains.push(new Fountain(areas[this.last]));
+    this.vein = new VeinTrickle(areas[this.last].vein);
+    for (let i = 0; i < save.drones; i++)
+      this.bots.push(new Bot(this.world.solid, cave.grid, i + 1, ...botHome(cave, i)));
     this.runBelts();
 
-    this.stock = new Stock(this.world, KIND_CAPACITY, () => economy.current(), cave.barrels);
+    this.stock = new Stock(cave, this.world, KIND_CAPACITY, () => economy.current(), cave.barrels);
     this.barrels = new Barrels(this.world);
     const saved = { ...save, left: save.left };
     // the save keeps the live counts from here on, so it is never behind
@@ -135,7 +127,7 @@ export class Game {
     for (let i = 0; i < 90; i++) this.world.step(1 / 60, () => {});
     economy.persist();
 
-    this.impacts = new Impacts(cave.cells);
+    this.impacts = new Impacts(cave.cells, cave.grid, cave.spec);
     this.dozer.onRock = (tx, ty, square) => this.onRock(tx, ty, square);
     // what the drones go for: the room being cleared, and any chamber broken into off it
     this.foreman = new Foreman(
@@ -143,7 +135,7 @@ export class Game {
       this.nav,
       this.bots,
       this.stock.origin,
-      (from) => from !== NO_SOURCE && areaOfSource(from) === economy.current(),
+      (from) => from !== NO_SOURCE && economy.sources.area(from) === economy.current(),
     );
     economy.onChange((id) => this.changed(id));
   }
@@ -151,7 +143,8 @@ export class Game {
   /** The rooms whose belts run: bought, for rooms not sealed. */
   running(): number[] {
     const save = this.economy.save;
-    return AREAS.map((_, a) => a).filter((a) => AREAS[a].belt && save.belts[a] && !this.economy.sealed(a));
+    const { areas } = this.cave.spec;
+    return areas.map((_, a) => a).filter((a) => areas[a].belt && save.belts[a] && !this.economy.sealed(a));
   }
 
   /**
@@ -228,7 +221,7 @@ export class Game {
       if (readyToOpen(economy, this.stock.banked(economy.current()))) economy.open();
     }
     this.warning = false;
-    const where = atNextGate(economy, dozer.x, dozer.y);
+    const where = atNextGate(this.cave.spec, economy, dozer.x, dozer.y);
     if (where === 'through') economy.moveOn();
     else if (where === 'at') this.warning = true;
 
@@ -274,7 +267,8 @@ export class Game {
     // a brick or a barrel down the hole is only gone: nothing banked, and nothing to show for it
     if (kind === BRICK_KIND || kind === BARREL_KIND) return;
     this.economy.deposit(value);
-    const heat = this.tally.add(kind);
+    const hole = this.cave.holes.indexOf(nearestHole(this.cave.holes, x, y));
+    const heat = this.tally.add(kind, hole);
     this.events.banked?.(kind, value, x, y, heat);
   }
 
@@ -298,7 +292,7 @@ export class Game {
   }
 
   private runBelts() {
-    this.world.belts = this.running().map((a) => beltOf(AREAS[a].belt!.spec));
+    this.world.belts = this.running().map((a) => beltOf(this.cave.spec.areas[a].belt!.spec));
     this.nav.setBelts(this.world.belts);
   }
 
@@ -327,7 +321,7 @@ export class Game {
     if (hit.type === 'reveal') economy.reveal(hit.chamber);
     else if (hit.type === 'knock') this.events.knock?.();
     else {
-      const wall = WALLS[hit.wall];
+      const wall = this.cave.spec.walls[hit.wall];
       const gone = economy.hitWall(hit.wall, hit.damage);
       // one that comes down says so itself, through the economy's change
       if (gone >= 1) return;
@@ -359,8 +353,8 @@ export class Game {
       });
       // no machine is shut in with the rock, or in it
       this.bots.forEach((b, j) => {
-        if (!behindGate(old, b.x, b.y)) return;
-        [b.dozer.x, b.dozer.y] = botHome(j);
+        if (!behindGate(this.cave.spec, old, b.x, b.y)) return;
+        [b.dozer.x, b.dozer.y] = botHome(this.cave, j);
         b.dozer.speed = 0;
       });
       this.persist();
@@ -368,7 +362,7 @@ export class Game {
       this.events.roomSealed?.(old, lost, where);
     } else if (id.startsWith('secret')) {
       const k = +id.slice(6);
-      stock.spawnHeap(chamberSource(k), lootHeap(k));
+      stock.spawnHeap(this.economy.sources.chamber(k), lootHeap(this.cave, k));
       this.persist();
       this.reshape();
       this.events.chamberOpened?.(k, this.chamberFaces(k), this.heading());
@@ -379,14 +373,14 @@ export class Game {
       this.reshape();
       this.events.wallDown?.(w, this.heading());
     } else if (id === 'done') {
-      this.fountains.push(new Fountain(AREAS[this.last]));
+      this.fountains.push(new Fountain(this.cave.spec.areas[this.last]));
       this.events.done?.();
     } else {
       if (id.startsWith('belt')) {
         this.runBelts();
         this.events.staticChanged?.();
       } else if (id === 'drone') {
-        this.bots.push(new Bot(world.solid, this.bots.length + 1, ...botHome(0)));
+        this.bots.push(new Bot(world.solid, this.cave.grid, this.bots.length + 1, ...botHome(this.cave, 0)));
       }
       this.events.bought?.(id);
     }
@@ -395,25 +389,25 @@ export class Game {
 
   /** The rock in front of a hidden chamber, as the world centres of its tiles. */
   private chamberFaces(k: number): [number, number][] {
-    const { cells } = this.cave;
-    const [w0x, w0y, w1x, w1y] = SECRETS[k].wall;
+    const { cells, grid } = this.cave;
+    const [w0x, w0y, w1x, w1y] = this.cave.spec.secrets[k].wall;
     const out: [number, number][] = [];
     for (let i = 0; i < cells.length; i++) {
       if (cells[i] !== SECRET + k) continue;
-      const tx = i % COLS,
-        ty = (i / COLS) | 0;
-      if (tx >= w0x && tx <= w1x && ty >= w0y && ty <= w1y) out.push(tileCentre(tx, ty));
+      const tx = i % grid.cols,
+        ty = (i / grid.cols) | 0;
+      if (tx >= w0x && tx <= w1x && ty >= w0y && ty <= w1y) out.push(tileCentre(grid, tx, ty));
     }
     return out;
   }
 
   /** A brick wall knocked down: every brick in it loose and tumbling, and what was set in it with them. */
   private knockOver(w: number) {
-    const { grade } = WALLS[w];
-    for (const piece of looseBricks(w, this.dozer, KIND_RADIUS[BRICK_KIND])) {
+    const { grade } = this.cave.spec.walls[w];
+    for (const piece of looseBricks(this.cave, w, this.dozer, KIND_RADIUS[BRICK_KIND])) {
       const { x, y, z, vx, vy, vz } = piece;
       if (piece.treasure !== undefined) {
-        this.stock.spawn(piece.treasure, x, y, z, vx, vy, vz, wallSource(w));
+        this.stock.spawn(piece.treasure, x, y, z, vx, vy, vz, this.economy.sources.wall(w));
         continue;
       }
       const i = this.stock.spawnBrick(grade, x, y, z, vx, vy, vz);
@@ -422,7 +416,8 @@ export class Game {
   }
 }
 
-/** Where a drone is put back to, out of the way by the hole. */
-export function botHome(j: number): [number, number] {
-  return [HOLE.x + 14 + j * 6, HOLE.y + 10];
+/** Where a drone is put back to, out of the way by the first hole. */
+export function botHome(cave: Cave, j: number): [number, number] {
+  const hole = cave.holes[0];
+  return [hole.x + 14 + j * 6, hole.y + 10];
 }

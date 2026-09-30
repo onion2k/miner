@@ -15,7 +15,8 @@
  * alone, and one that creeps all the way through is not.
  */
 import { Autopilot, type Profile } from '../src/autopilot';
-import { BODY_CAPACITY } from '../src/cave';
+import { BODY_CAPACITY, buildCave } from '../src/cave';
+import { FIVE_ROOMS } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
 import { KIND_CAPACITY, Game } from '../src/game';
 
@@ -144,7 +145,7 @@ export function leakRun({ seed, minutes, profile = 'thorough' }: LeakOptions): L
   Math.random = seeded(seed);
   const samples: Record<string, number[]> = {};
   try {
-    const game = new Game(new Economy(memoryStore()));
+    const game = new Game(new Economy(memoryStore(), FIVE_ROOMS), buildCave(FIVE_ROOMS));
     const pilot = new Autopilot(game, profile);
     const take = () => {
       for (const [key, n] of Object.entries(sizes(game, pilot))) (samples[key] ??= []).push(n);

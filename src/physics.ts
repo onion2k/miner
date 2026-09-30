@@ -3,14 +3,14 @@
  * nothing of coins or caves: a body is a ball of some radius, the rock is a
  * grid of tiles, and what falls into a hole is reported back. What is here
  * is the game's side of it — the kinds of thing there are to push, what each
- * is worth and is called, and a world made from this cave: its grid, its
- * rock, its one hole and the radius of each kind.
+ * is worth and is called, and a world made from a cave: its grid, its
+ * rock, its holes and the radius of each kind.
  *
  * Everything in the game that steps or reads bodies still imports from here,
  * so the package stays behind one door.
  */
 import { World, type WorldOptions } from 'artshape-physics/world';
-import { COLS, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from './cave';
+import { TILE, type Grid, type HoleSpec } from './cave';
 
 export { World, type Belt, type Pusher } from 'artshape-physics/world';
 
@@ -28,18 +28,24 @@ export const BRICK_KIND = 6;
 export const BARREL_KIND = 7;
 
 /**
- * A world for this cave: the tile grid and the hole as `cave.ts` has them,
- * the radius of each kind, and `solid` for which tiles are rock, which the
- * game rewrites in place as gates open and walls come down. Chance is
- * Math.random unless told otherwise, so a seeded run is the same twice.
+ * A world for a cave: its tile grid and its holes, the radius of each kind,
+ * and `solid` for which tiles are rock, which the game rewrites in place as
+ * gates open and walls come down. Chance is Math.random unless told
+ * otherwise, so a seeded run is the same twice.
  */
-export function makeWorld(capacity: number, solid: Uint8Array, random?: () => number): World {
+export function makeWorld(
+  capacity: number,
+  solid: Uint8Array,
+  grid: Grid,
+  holes: readonly HoleSpec[],
+  random?: () => number,
+): World {
   const options: WorldOptions = {
     capacity,
-    grid: { cols: COLS, rows: ROWS, originX: ORIGIN_X, originY: ORIGIN_Y, tile: TILE },
+    grid: { cols: grid.cols, rows: grid.rows, originX: grid.originX, originY: grid.originY, tile: TILE },
     solid,
     radii: KIND_RADIUS,
-    holes: [{ x: HOLE.x, y: HOLE.y, radius: HOLE.radius, depth: HOLE.depth }],
+    holes: holes.map((h) => ({ x: h.x, y: h.y, radius: h.radius, depth: h.depth })),
     random,
   };
   return new World(options);

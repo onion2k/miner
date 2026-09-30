@@ -13,11 +13,10 @@
  * The types are shared with the smoke tests, so a test that calls something
  * that is not here does not compile.
  */
-import { AREAS, HOLE, SECRETS, WALLS, WINGS, gateCentre, sealPoint, type Cave } from './cave';
+import { gateCentre, sealPoint, type Cave } from './cave';
 import type { Game } from './game';
 import { checkInvariants } from './invariants';
 import { BARREL_KIND, KIND_NAME } from './physics';
-import { areaOfSource } from './economy';
 import { NO_SOURCE } from './stock';
 import { wallTiles } from './walls';
 
@@ -74,7 +73,9 @@ export interface Body {
 
 /** Where things are in the cave, for setting a scene without importing the game's source. */
 export interface Content {
+  /** The first hole, which is the only one in a cave with one; and all of them. */
   hole: Point & { radius: number };
+  holes: (Point & { radius: number })[];
   rooms: {
     area: number;
     name: string;
@@ -232,19 +233,23 @@ export function createApi(host: DebugHost): PushminerApi {
           y: world.y[i],
           z: world.z[i],
           asleep: !!world.asleep[i],
-          room: world.kind[i] === BARREL_KIND ? game.stock.home[i] : from === NO_SOURCE ? null : areaOfSource(from),
+          room:
+            world.kind[i] === BARREL_KIND ? game.stock.home[i] : from === NO_SOURCE ? null : economy.sources.area(from),
         });
       }
       return out;
     },
     content() {
+      const { areas, wings, secrets, walls } = cave.spec;
+      const holes = cave.holes.map((h) => ({ x: h.x, y: h.y, radius: h.radius }));
       return {
-        hole: { x: HOLE.x, y: HOLE.y, radius: HOLE.radius },
-        rooms: AREAS.map((area, a) => {
+        hole: holes[0],
+        holes,
+        rooms: areas.map((area, a) => {
           let pastSeal: Point | null = null;
           if (a > 0) {
             const [sx, sy] = sealPoint(cave, a);
-            const [dx, dy] = WINGS[a].dir;
+            const [dx, dy] = wings[a].dir;
             pastSeal = { x: sx + dx * 4, y: sy + dy * 4 };
           }
           const gate = a > 0 ? gateCentre(cave, a) : null;
@@ -258,8 +263,8 @@ export function createApi(host: DebugHost): PushminerApi {
           };
         }),
         lamps: cave.lamps.map((l) => ({ x: l.x, y: l.y, area: l.area })),
-        chambers: SECRETS.map((s) => ({ area: s.area })),
-        walls: WALLS.map((w, k) => ({ area: w.area, tiles: wallTiles(k).map(([x, y]) => ({ x, y })) })),
+        chambers: secrets.map((s) => ({ area: s.area })),
+        walls: walls.map((w, k) => ({ area: w.area, tiles: wallTiles(cave, k).map(([x, y]) => ({ x, y })) })),
       };
     },
     events() {

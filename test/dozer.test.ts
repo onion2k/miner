@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, COLS, ORIGIN_X, ORIGIN_Y, ROWS, TILE, buildCave, tileCentre } from '../src/cave';
+import { TILE, buildCave, tileCentre } from '../src/cave';
 import { Dozer, separate } from '../src/dozer';
-import { PLAYER_SPEC, grid, tileAt, withSeed } from './helpers';
+import { AREAS, COLS, GRID, ORIGIN_X, ORIGIN_Y, PLAYER_SPEC, ROWS, SPEC, grid, tileAt, withSeed } from './helpers';
 
 const DT = 1 / 60;
 
@@ -24,7 +24,7 @@ const middleY = ORIGIN_Y + (ROWS / 2) * TILE;
 
 describe('the dozer', () => {
   it('drives at its top speed on open floor', () => {
-    const d = new Dozer(grid());
+    const d = new Dozer(grid(), GRID);
     d.x = 0;
     d.y = middleY;
     d.yaw = 0;
@@ -36,7 +36,7 @@ describe('the dozer', () => {
 
   it('slides along a wall it meets at a slant rather than sticking', () => {
     for (const into of [5, 20, 35]) {
-      const d = new Dozer(walled);
+      const d = new Dozer(walled, GRID);
       d.x = wallFace + 3.7;
       d.y = middleY - 40;
       d.yaw = Math.PI / 2 + (into * Math.PI) / 180;
@@ -47,7 +47,7 @@ describe('the dozer', () => {
   });
 
   it('is stopped by a wall it drives square into, and backs off it again', () => {
-    const d = new Dozer(walled);
+    const d = new Dozer(walled, GRID);
     d.x = wallFace + 12;
     d.y = middleY;
     d.yaw = Math.PI;
@@ -58,7 +58,7 @@ describe('the dozer', () => {
   });
 
   it('is got out of rock it finds itself inside', () => {
-    const d = new Dozer(walled);
+    const d = new Dozer(walled, GRID);
     d.x = wallFace - 10;
     d.y = middleY;
     d.yaw = 0;
@@ -67,15 +67,15 @@ describe('the dozer', () => {
   });
 
   it('never ends up in the rock, driven about the whole cave at random', () => {
-    const cave = buildCave();
+    const cave = buildCave(SPEC);
     const solid = cave.solid(AREAS.map(() => true));
     const open: number[] = [];
     for (let t = 0; t < COLS * ROWS; t++) if (!solid[t]) open.push(t);
     withSeed(3, () => {
       for (let run = 0; run < 12; run++) {
-        const d = new Dozer(solid);
+        const d = new Dozer(solid, GRID);
         const t = open[Math.floor(Math.random() * open.length)];
-        [d.x, d.y] = tileCentre(t % COLS, (t / COLS) | 0);
+        [d.x, d.y] = tileCentre(GRID, t % COLS, (t / COLS) | 0);
         d.yaw = Math.random() * Math.PI * 2;
         let throttle = 1,
           steer = 0;
@@ -93,8 +93,8 @@ describe('the dozer', () => {
   });
 
   it('keeps two machines out of each other', () => {
-    const a = new Dozer(grid()),
-      b = new Dozer(grid());
+    const a = new Dozer(grid(), GRID),
+      b = new Dozer(grid(), GRID);
     a.x = 0;
     a.y = middleY;
     a.yaw = 0;

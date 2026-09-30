@@ -14,11 +14,12 @@ import { Orbit } from 'artshape-render/gpu/camera';
 import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import type { Emit } from 'artshape-render/game/particles';
-import { AREAS, BODY_CAPACITY, HOLE, ORDER, WALLS, gateCentre, gateTiles, sealPoint } from './cave';
+import { BODY_CAPACITY, buildCave, gateCentre, gateTiles, nearHole, sealPoint } from './cave';
+import { FIVE_ROOMS } from './caves';
 import { TRACK_GAUGE } from './dozer';
 import { Input } from './input';
 import { TouchControls, isTouchDevice } from './touch';
-import { Economy, MAX_DRONES, WALL_NAME, renderShop } from './economy';
+import { Economy, MAX_DRONES, WALL_NAME, browserStore, renderShop } from './economy';
 import { BOT_SCALE, BOT_SPEC } from './tools';
 import { Sound } from './audio';
 import { COIN_LADDER } from './meshes';
@@ -27,7 +28,7 @@ import { TrackMarks } from './tracks';
 import { SpiderGait } from './spider';
 import { FUSE } from './barrels';
 import { progressText, the } from './progress';
-import { lampOn } from './lamps';
+import { holeLamps, lampOn } from './lamps';
 import { stashBehind, wallTiles } from './walls';
 import { StaticScene } from './scene-static';
 import { DynamicScene, TREAD_PITCH } from './scene-dynamic';
@@ -136,7 +137,10 @@ async function main() {
 
   // ---- the game, and what it says has happened ----
 
-  const economy = new Economy();
+  // the cave the game plays, carved from its content and handed to everything that needs it
+  const spec = FIVE_ROOMS;
+  const cave = buildCave(spec);
+  const economy = new Economy(browserStore, spec);
   const save = economy.save;
   const input = new Input();
   const sound = new Sound();
@@ -160,7 +164,7 @@ async function main() {
     roomOpened(a) {
       log(`roomOpened ${a}`);
       sound.chime();
-      hud.note(`${the(a)} is open: ${AREAS[a].blurb} · go on in when you are done here`, 5);
+      hud.note(`${the(spec, a)} is open: ${spec.areas[a].blurb} · go on in when you are done here`, 5);
       gateCloud(a);
     },
     roomSealed(old, lost, where) {
@@ -168,10 +172,12 @@ async function main() {
       sound.chime();
       // a puff where each thing left in the room was
       for (const [x, y, z] of where.slice(0, SEAL_PUFFS)) emit(fx.puff(x, y, z));
-      if (old !== ORDER[0]) gateCloud(old);
+      if (old !== spec.order[0]) gateCloud(old);
       const gone = lost > 0 ? ` · ${lost} left behind` : '';
       hud.note(
-        old === ORDER[0] ? `on into ${the(economy.current())}${gone}` : `${the(old)} is sealed behind you${gone}`,
+        old === spec.order[0]
+          ? `on into ${the(spec, economy.current())}${gone}`
+          : `${the(spec, old)} is sealed behind you${gone}`,
         4,
       );
     },
@@ -184,7 +190,7 @@ async function main() {
     },
     wallHit(w, x, y, gone, left, [c, s]) {
       log(`wallHit ${w} ${gone.toFixed(2)}`);
-      const { grade } = WALLS[w];
+      const { grade } = spec.walls[w];
       sound.clunk();
       if (gone > 0.5) sound.crack();
       emit(fx.wallHit(x, y, c, s, gone, WALL_COLOUR[grade].slice(0, 3) as Rgb));
@@ -195,12 +201,12 @@ async function main() {
     },
     wallDown(w, [c, s]) {
       log(`wallDown ${w}`);
-      const { grade, treasure } = WALLS[w];
+      const { grade, treasure } = spec.walls[w];
       sound.chime();
       const brick = WALL_COLOUR[grade].slice(0, 3) as Rgb;
-      emit(wallTiles(w).map(([x, y]) => fx.wallDust(x, y, c, s, brick)));
+      emit(wallTiles(cave, w).map(([x, y]) => fx.wallDust(x, y, c, s, brick)));
       sound.smash();
-      const behind = stashBehind(w);
+      const behind = stashBehind(cave, w);
       hud.note(
         `${WALL_NAME[grade]} wall down${treasure.length ? ' · something glints in the rubble' : behind ? ` · ${behind.name}` : ''}`,
         3,
@@ -212,7 +218,7 @@ async function main() {
     },
     lampBroken(k, lit, [c, s]) {
       log(`lampBroken ${k}`);
-      const l = game.cave.lamps[k];
+      const l = cave.lamps[k];
       sound.shatter();
       emit(fx.glass(l.x, l.y, l.height, c, s, lit));
     },
@@ -233,7 +239,7 @@ async function main() {
     done() {
       log('done');
       sound.chime();
-      hud.note(`the cave is cleared · ${the(game.last)}'s vein runs on`, 6);
+      hud.note(`the cave is cleared · ${the(spec, game.last)}'s vein runs on`, 6);
     },
     bought(id) {
       log(`bought ${id}`);
@@ -250,8 +256,8 @@ async function main() {
       for (const b of game.bots) tracks.update(b, b.dozer);
     },
   };
-  const game = new Game(economy, events);
-  const { cave, world, dozer, bots, stock, barrels, tally } = game;
+  const game = new Game(economy, cave, events);
+  const { world, dozer, bots, stock, barrels, tally } = game;
   addEventListener('pagehide', () => game.persist());
   addEventListener('visibilitychange', () => {
     if (document.hidden) game.persist();
@@ -276,14 +282,15 @@ async function main() {
     length: 0.32,
     width: 1.6,
     ground: (x, y) => {
-      if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 0.6) return null;
+      if (nearHole(cave.holes, x, y, 0.6)) return null;
       const tile = game.nav.tileOf(x, y);
-      return tile < 0 || world.solid[tile] ? null : floorHeight(x, y);
+      return tile < 0 || world.solid[tile] ? null : floorHeight(cave.holes, x, y);
     },
   });
   const scene = new DynamicScene(renderer, {
     bodyCapacity: BODY_CAPACITY,
     kindCapacity: KIND_CAPACITY,
+    belts: spec.areas.map((a) => a.belt?.spec ?? null),
     bots: MAX_DRONES,
     botScale: BOT_SCALE,
     botBladeWidth: BOT_SPEC.bladeWidth,
@@ -375,7 +382,8 @@ async function main() {
   // ---- each frame's lights and placements ----
 
   const lights = new SceneLights(LIGHT_CAPACITY, EFFECT_CAPACITY);
-  const lampColours = cave.lamps.map((l) => lampColour(l.x, l.y));
+  const lampColours = cave.lamps.map((l) => lampColour(spec, l.x, l.y));
+  const overHoles = holeLamps(cave.holes);
   function lightUp() {
     lights.build({
       t: game.t,
@@ -388,11 +396,13 @@ async function main() {
       features: staticScene.features,
       featureOn: (k) => save.areas[staticScene.features[k].area],
       fountains: game.fountains.map((f) => ({ x: f.x, y: f.y, glow: f.glow, warning: f.state === 'warn' })),
-      vein: save.done ? AREAS[game.last].vein : null,
+      vein: save.done ? spec.areas[game.last].vein : null,
       sealing: game.warning ? sealPoint(cave, economy.next()!) : null,
       magnet: world.magnet,
       fuses: barrels.lit.map((i) => ({ x: world.x[i], y: world.y[i], z: world.z[i], flash: barrels.flashing(i) })),
       blasts,
+      holes: cave.holes,
+      holeLamps: overHoles,
       holePulse: tally.holePulse,
     });
     renderer.setLights(lights.lights, lights.shadowed);
@@ -494,9 +504,9 @@ async function main() {
         out = Math.sqrt(Math.random()) * 50;
       const x = cx + Math.cos(a) * out,
         y = cy + Math.sin(a) * out;
-      const { area, weight } = biomeAt(x, y);
+      const { area, weight } = biomeAt(spec, x, y);
       if (!weight || !save.areas[area] || Math.random() > weight) continue;
-      const e = airParticle(area, x, y, Math.random);
+      const e = airParticle(spec, area, x, y, Math.random);
       if (e) renderer.emit(e);
     }
     const lit = lights.featuresLit;
@@ -585,19 +595,19 @@ async function main() {
       lastBank = economy.bank;
       lastRoom = economy.current();
       hud.bank(economy.bank);
-      hud.progress(progressText(economy, stock.banked(economy.current())));
+      hud.progress(progressText(spec, economy, stock.banked(economy.current())));
     }
     if (game.warning) {
       const room = economy.current(),
         still = stock.lying(room);
-      hud.note(`further in seals ${the(room)}${still > 0 ? ` · ${still} still in it` : ''}`, 0.4);
+      hud.note(`further in seals ${the(spec, room)}${still > 0 ? ` · ${still} still in it` : ''}`, 0.4);
     }
     // the arrow to the next room's gate, while it is open
     if (game.t >= aimAt) {
       aimAt = game.t + 0.4;
       const next = economy.next();
       const at = next !== null && !save.done && economy.nextOpen() ? gateCentre(cave, next) : null;
-      gate = at && next !== null ? { x: at[0], y: at[1], label: AREAS[next].name } : null;
+      gate = at && next !== null ? { x: at[0], y: at[1], label: spec.areas[next].name } : null;
     }
     hud.tick(dt);
     smoothed += (dt * 1000 - smoothed) * 0.08;

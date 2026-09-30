@@ -17,8 +17,8 @@
 import { ANCHORS } from './machine';
 import { EFFECT_STRIDE } from 'artshape-render/game/renderer';
 import { LightPool } from 'artshape-render/game/lights';
-import { HOLE, type Lamp } from './cave';
-import { HOLE_LAMPS, HOLE_LAMP_HEIGHT, LAMP_BRIGHT, LAMP_LIGHTS, LAMP_REACH, lampsInView, type View } from './lamps';
+import type { HoleSpec, Lamp } from './cave';
+import { HOLE_LAMP_HEIGHT, LAMP_BRIGHT, LAMP_LIGHTS, LAMP_REACH, lampsInView, type View } from './lamps';
 import { project } from './matrix';
 import { beat, type FeatureLight } from './biomes';
 import type { Rgb } from './palette';
@@ -69,8 +69,11 @@ export interface LightState {
   fuses: readonly { x: number; y: number; z: number; flash: boolean }[];
   /** Blasts still lighting the cave, and how much of their light is left, 1 to 0. */
   blasts: readonly { x: number; y: number; z: number; left: number }[];
-  /** How bright the hole glows, 0 to 3. */
-  holePulse: number;
+  /** The holes, and the lamps hanging over each (`holeLamps`), in the same order. */
+  holes: readonly HoleSpec[];
+  holeLamps: readonly (readonly [number, number][])[];
+  /** How bright each hole glows, 0 to 3. */
+  holePulse: readonly number[];
 }
 
 /** A point in a machine's frame, in the world: turned to its heading, at its scale, from where it stands. */
@@ -159,12 +162,13 @@ export class SceneLights {
         intensity: LAMP_BRIGHT * flicker,
       });
     }
-    // The lamps hanging over the hole, green-white: they light the hole, its rim and what goes down
+    // The lamps hanging over each hole, green-white: they light the hole, its rim and what goes down
     // it from above, so it can be found in the dark. Only while the hole is near enough the screen
     // for their light to show.
-    const hole = project(s.view.viewProjection, HOLE.x, HOLE.y, 0);
-    if (hole && Math.abs(hole[0]) < 1.5 && Math.abs(hole[1]) < 1.5) {
-      for (const [x, y] of HOLE_LAMPS)
+    for (let k = 0; k < s.holes.length; k++) {
+      const hole = project(s.view.viewProjection, s.holes[k].x, s.holes[k].y, 0);
+      if (!hole || Math.abs(hole[0]) >= 1.5 || Math.abs(hole[1]) >= 1.5) continue;
+      for (const [x, y] of s.holeLamps[k])
         lights.add({ position: [x, y, HOLE_LAMP_HEIGHT - 0.6], radius: 36, colour: [0.7, 1.0, 0.6], intensity: 14 });
     }
     if (s.vein)
@@ -243,11 +247,14 @@ export class SceneLights {
       quads.set(values, n * EFFECT_STRIDE);
       n++;
     };
-    const p = s.holePulse > 0.02 ? project(vp, HOLE.x, HOLE.y, 0) : null;
-    if (p) {
-      // the hole is dark like the rest, and flares only as something goes down it
-      const size = ((HOLE.radius * 2.2) / p[2]) * (1 + s.holePulse * 0.5);
-      put([p[0], p[1], size * 0.9, s.holePulse * 0.9, 0.5, 1.0, 0.35, 1.8]);
+    for (let k = 0; k < s.holes.length; k++) {
+      const h = s.holes[k],
+        pulse = s.holePulse[k];
+      const p = pulse > 0.02 ? project(vp, h.x, h.y, 0) : null;
+      if (!p) continue;
+      // a hole is dark like the rest, and flares only as something goes down it
+      const size = ((h.radius * 2.2) / p[2]) * (1 + pulse * 0.5);
+      put([p[0], p[1], size * 0.9, pulse * 0.9, 0.5, 1.0, 0.35, 1.8]);
     }
     for (const f of s.fountains) {
       if (f.glow <= 0) continue;
@@ -285,11 +292,13 @@ export class SceneLights {
       const b = beat(f, t);
       put([q[0], q[1], (f.glow / q[2]) * (0.7 + 0.3 * b), 0.6 * b, f.colour[0], f.colour[1], f.colour[2], 1.8]);
     }
-    for (const [x, y] of HOLE_LAMPS) {
-      if (n >= effectCapacity - 1) break;
-      const q = project(vp, x, y, HOLE_LAMP_HEIGHT - 0.6);
-      if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
-      put([q[0], q[1], 5 / q[2], 0.9, 0.7, 1.0, 0.6, 2.0]);
+    for (const round of s.holeLamps) {
+      for (const [x, y] of round) {
+        if (n >= effectCapacity - 1) break;
+        const q = project(vp, x, y, HOLE_LAMP_HEIGHT - 0.6);
+        if (!q || Math.abs(q[0]) > 1.2 || Math.abs(q[1]) > 1.2) continue;
+        put([q[0], q[1], 5 / q[2], 0.9, 0.7, 1.0, 0.6, 2.0]);
+      }
     }
     for (const f of s.fuses) {
       if (!f.flash || n >= effectCapacity) continue;

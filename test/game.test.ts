@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, ORDER, WINGS, sealPoint } from '../src/cave';
+import { sealPoint } from '../src/cave';
 import { Economy, memoryStore } from '../src/economy';
 import { Game, type GameEvents } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { BARREL_KIND } from '../src/physics';
 import { fuzz } from '../scripts/fuzzer';
-import { withSeed } from './helpers';
+import { AREAS, FIVE, ORDER, SPEC, WINGS, withSeed } from './helpers';
 
 const DT = 1 / 60;
 const still = { throttle: 0, steer: 0 };
@@ -23,7 +23,7 @@ function newGame(json: string | null = null) {
           told.push(`${name} ${args.filter((a) => typeof a === 'number').join(' ')}`.trim()),
     },
   );
-  const game = new Game(new Economy(store), events);
+  const game = new Game(new Economy(store, SPEC), FIVE, events);
   return { game, store, told };
 }
 

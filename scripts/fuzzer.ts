@@ -14,7 +14,8 @@
  * From a seed, so a failure can be played again exactly: `npm run fuzz --
  * --seed N` does, and prints what was done before it went wrong.
  */
-import { AREAS, SECRETS, WALLS, WINGS, sealPoint, tileCentre, type Cave } from '../src/cave';
+import { buildCave, sealPoint, tileCentre } from '../src/cave';
+import { FIVE_ROOMS } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
 import { Game, KIND_CAPACITY, type GameEvents } from '../src/game';
 import { checkInvariants } from '../src/invariants';
@@ -78,8 +79,9 @@ export function fuzz(seed: number, frames: number): FuzzResult {
 
   try {
     let store = memoryStore();
-    let game = new Game(new Economy(store), events);
-    const cave: Cave = game.cave;
+    const cave = buildCave(FIVE_ROOMS);
+    const { areas, wings, secrets, walls } = cave.spec;
+    let game = new Game(new Economy(store, FIVE_ROOMS), cave, events);
     let drive = { throttle: 0, steer: 0 };
     let busy = 0;
     const pick = <T>(xs: readonly T[]): T | undefined => (xs.length ? xs[Math.floor(random() * xs.length)] : undefined);
@@ -95,10 +97,10 @@ export function fuzz(seed: number, frames: number): FuzzResult {
     const somewhere = (): [number, number] | undefined => {
       const { world } = game;
       const places: [number, number][] = [];
-      for (const a of reachable()) for (const h of AREAS[a].heaps) places.push([h.x, h.y]);
+      for (const a of reachable()) for (const h of areas[a].heaps) places.push([h.x, h.y]);
       for (const b of cave.barrels) if (inReach(b.area)) places.push([b.x, b.y]);
       cave.lamps.forEach((l) => inReach(l.area) && places.push([l.x, l.y]));
-      WALLS.forEach((w, k) => inReach(w.area) && places.push(...wallTiles(k)));
+      walls.forEach((w, k) => inReach(w.area) && places.push(...wallTiles(cave, k)));
       for (let n = 0; n < 8 && world.live; n++) {
         const i = Math.floor(random() * world.count);
         if (world.alive[i]) places.push([world.x[i], world.y[i]]);
@@ -117,7 +119,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           if (t >= 0 && !solid[t]) return [px, py];
         }
       }
-      return tileCentre(52, 32);
+      return tileCentre(cave.grid, cave.grid.cols / 2, cave.grid.rows / 2);
     };
     const act = (name: string, detail: string) => {
       count(done, name);
@@ -220,15 +222,15 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const next = e.next();
           if (next === null || !e.nextOpen()) return;
           const [sx, sy] = sealPoint(cave, next);
-          const [dx, dy] = WINGS[next].dir;
+          const [dx, dy] = wings[next].dir;
           Object.assign(game.dozer, { x: sx + dx * 4, y: sy + dy * 4, speed: 0 });
-          act('go on', `into ${AREAS[next].name}`);
+          act('go on', `into ${areas[next].name}`);
         },
       ],
       [
         2,
         () => {
-          const k = pick(SECRETS.map((s, k) => (inReach(s.area) ? k : -1)).filter((k) => k >= 0));
+          const k = pick(secrets.map((s, k) => (inReach(s.area) ? k : -1)).filter((k) => k >= 0));
           if (k === undefined) return;
           game.economy.reveal(k);
           act('reveal', `chamber ${k}`);
@@ -237,7 +239,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
       [
         3,
         () => {
-          const w = pick(WALLS.map((wall, w) => (inReach(wall.area) ? w : -1)).filter((w) => w >= 0));
+          const w = pick(walls.map((wall, w) => (inReach(wall.area) ? w : -1)).filter((w) => w >= 0));
           if (w === undefined) return;
           const damage = Math.floor(between(1, 300));
           game.economy.hitWall(w, damage);
@@ -270,7 +272,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const live = game.world.live;
           const barrels = game.stock.kinds[BARREL_KIND];
           store = memoryStore(json);
-          game = new Game(new Economy(store), events, cave);
+          game = new Game(new Economy(store, FIVE_ROOMS), cave, events);
           const after = game.economy.save;
           const same = (['bank', 'room', 'done', 'drones', 'body'] as const).filter((k) => before[k] !== after[k]);
           const sameLists = (['areas', 'secrets', 'walls', 'lampsBroken', 'belts'] as const).filter(

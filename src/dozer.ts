@@ -4,7 +4,7 @@
  * heading. It is kinematic — it is not pushed back by coins — and what it
  * hands the physics is two boxes that shove: the blade and the hull.
  */
-import { COLS, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from './cave';
+import { TILE, type Grid } from './cave';
 import type { Drive } from './input';
 import type { Pusher } from './physics';
 
@@ -98,12 +98,14 @@ export class Dozer {
   onRock: ((tx: number, ty: number, square: number) => void) | null = null;
 
   /**
-   * `scale` is the whole machine's size against the player's: the robo-dozers
-   * are the same shape, smaller. `owner` names its boxes to the physics, so
-   * each machine is slowed by its own load and not another's.
+   * `grid` is the cave's tiles, which `solid` is over. `scale` is the whole
+   * machine's size against the player's: the robo-dozers are the same shape,
+   * smaller. `owner` names its boxes to the physics, so each machine is
+   * slowed by its own load and not another's.
    */
   constructor(
     solid: Uint8Array,
+    private readonly grid: Grid,
     readonly scale = 1,
     readonly owner = 0,
   ) {
@@ -171,21 +173,22 @@ export class Dozer {
    */
   keepOffRock() {
     const reach = BODY_RADIUS * this.scale;
-    if (this.rockAt(Math.floor((this.x - ORIGIN_X) / TILE), Math.floor((this.y - ORIGIN_Y) / TILE))) this.outOfRock();
+    const { originX, originY } = this.grid;
+    if (this.rockAt(Math.floor((this.x - originX) / TILE), Math.floor((this.y - originY) / TILE))) this.outOfRock();
     for (let pass = 0; pass < 2; pass++) {
       // the push out of every tile it is in, added up: along a wall that steps across the tiles
       // that is the wall's own slant, which no one tile's face is
       let pushX = 0,
         pushY = 0;
-      const tx = Math.floor((this.x - ORIGIN_X) / TILE),
-        ty = Math.floor((this.y - ORIGIN_Y) / TILE);
+      const tx = Math.floor((this.x - originX) / TILE),
+        ty = Math.floor((this.y - originY) / TILE);
       for (let oy = -1; oy <= 1; oy++) {
         for (let ox = -1; ox <= 1; ox++) {
           const nx = tx + ox,
             ny = ty + oy;
           if ((!ox && !oy) || !this.rockAt(nx, ny)) continue;
-          const x0 = ORIGIN_X + nx * TILE,
-            y0 = ORIGIN_Y + ny * TILE;
+          const x0 = originX + nx * TILE,
+            y0 = originY + ny * TILE;
           const cx = Math.max(x0, Math.min(x0 + TILE, this.x)),
             cy = Math.max(y0, Math.min(y0 + TILE, this.y));
           const dx = this.x - cx,
@@ -210,7 +213,8 @@ export class Dozer {
   }
 
   private rockAt(tx: number, ty: number): boolean {
-    return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS || this.solid[ty * COLS + tx] === 1;
+    const { cols, rows } = this.grid;
+    return tx < 0 || ty < 0 || tx >= cols || ty >= rows || this.solid[ty * cols + tx] === 1;
   }
 
   /**
@@ -219,16 +223,17 @@ export class Dozer {
    * thick: it goes to the nearest open tile, in rings out from where it is.
    */
   private outOfRock() {
-    const tx = Math.floor((this.x - ORIGIN_X) / TILE),
-      ty = Math.floor((this.y - ORIGIN_Y) / TILE);
+    const { originX, originY } = this.grid;
+    const tx = Math.floor((this.x - originX) / TILE),
+      ty = Math.floor((this.y - originY) / TILE);
     for (let ring = 1; ring < 8; ring++) {
       let best: [number, number] | null = null,
         bestD = Infinity;
       for (let oy = -ring; oy <= ring; oy++) {
         for (let ox = -ring; ox <= ring; ox++) {
           if (Math.max(Math.abs(ox), Math.abs(oy)) !== ring || this.rockAt(tx + ox, ty + oy)) continue;
-          const cx = ORIGIN_X + (tx + ox + 0.5) * TILE,
-            cy = ORIGIN_Y + (ty + oy + 0.5) * TILE;
+          const cx = originX + (tx + ox + 0.5) * TILE,
+            cy = originY + (ty + oy + 0.5) * TILE;
           const d = Math.hypot(cx - this.x, cy - this.y);
           if (d < bestD) {
             bestD = d;

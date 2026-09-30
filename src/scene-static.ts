@@ -11,15 +11,15 @@
  */
 import { MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import type { Mesh } from 'artshape-render/mesh/types';
-import { AREAS, HOLE, LAMP_HEIGHT, TILE, WALLS, areaAt, gateTiles, hash, type Cave } from './cave';
+import { LAMP_HEIGHT, TILE, areaAt, gateTiles, hash, type Cave } from './cave';
 import { WALL_STRENGTH } from './economy';
-import { HOLE_CORD, HOLE_LAMPS, HOLE_LAMP_HEIGHT, lampPose } from './lamps';
+import { HOLE_CORD, HOLE_LAMP_HEIGHT, holeLamps, lampPose } from './lamps';
 import { box, collar, cone, cylinder, gem, lump, moved, pit } from './meshes';
 import { hide, identity, place, placePart } from './matrix';
 import { BAR_COLOUR, FLOOR_TONES, GEM_ALBEDO, ROCK_TONES, UNSEEN, WALL_COLOUR, type Rgb } from './palette';
 import { BAR } from './physics';
 import { buildTerrain, type Terrain } from './terrain';
-import { BIOME_STYLE, PROP_MESHES, decorate, groundTone, lampColour, tint, type Decor, type PropKind } from './biomes';
+import { PROP_MESHES, biomeStyle, decorate, groundTone, lampColour, tint, type Decor, type PropKind } from './biomes';
 import { BRICK_SIZE, standingBricks } from './walls';
 
 /** What has become of the cave, as the static scene is drawn from it. */
@@ -38,10 +38,6 @@ export class StaticScene {
     stones: [lump(1), lump(2), lump(3)],
     spire: cone(1, 1, 6),
     gate: box(3.4, 3.4, 1, false),
-    // the three tiles each way the floor leaves out, and a little more so no seam shows
-    // between them; see where it is placed for why that overlap does not flicker
-    collar: collar(TILE * 3 + 0.2, HOLE.radius),
-    pit: pit(HOLE.radius, HOLE.depth),
     brick: box(1, 1, 1, true),
     stud: gem(1.05, 2.3),
     lampPost: cylinder(0.14, LAMP_HEIGHT, 6),
@@ -54,9 +50,23 @@ export class StaticScene {
   private readonly propMeshes = Object.fromEntries(
     Object.entries(PROP_MESHES).map(([kind, make]) => [kind, make()]),
   ) as Record<PropKind, Mesh>;
+  /**
+   * The floor round each hole and the pit under it, drawn at the hole. The collar leaves out the
+   * three tiles each way the floor leaves out, and a little more so no seam shows between them; see
+   * where it is placed for why that overlap does not flicker.
+   */
+  private readonly holes: { collar: Mesh; pit: Mesh }[];
+  /** The lamps hanging over the holes, all together. */
+  private readonly overHoles: [number, number][];
   private terrain: (Terrain & { key: string; decor: Decor }) | null = null;
 
-  constructor(private readonly cave: Cave) {}
+  constructor(private readonly cave: Cave) {
+    this.holes = cave.holes.map((h) => ({
+      collar: collar(TILE * 3 + 0.2, h.radius),
+      pit: pit(h.radius, h.depth),
+    }));
+    this.overHoles = holeLamps(cave.holes).flat();
+  }
 
   /** The lights that are part of the biomes, as the terrain last built stands. */
   get features() {
@@ -69,8 +79,13 @@ export class StaticScene {
       ...this.ground(state, shown),
       // A hundredth under the floor: where it overlaps the floor the floor wins the depth test
       // outright, rather than the two fighting over which is drawn.
-      { mesh: this.meshes.collar, matrices: at(HOLE.x, HOLE.y, -0.01), albedo: [0.33, 0.23, 0.145], roughness: 0.95 },
-      { mesh: this.meshes.pit, matrices: identity(), albedo: [0.04, 0.035, 0.05], roughness: 0.95 },
+      ...this.holes.flatMap((hole, k): GameGroup[] => {
+        const h = this.cave.holes[k];
+        return [
+          { mesh: hole.collar, matrices: at(h.x, h.y, -0.01), albedo: [0.33, 0.23, 0.145], roughness: 0.95 },
+          { mesh: hole.pit, matrices: at(h.x, h.y, 0), albedo: [0.04, 0.035, 0.05], roughness: 0.95 },
+        ];
+      }),
       this.gates(state),
       ...this.lamps(state),
       ...this.walls(state, shown),
@@ -82,13 +97,14 @@ export class StaticScene {
   private ground(state: StaticState, shown: (area: number) => number): GameGroup[] {
     const key = state.secrets.map((r) => (r ? 1 : 0)).join('');
     if (this.terrain?.key !== key) {
-      const built = buildTerrain(this.cave, [...state.secrets], BIOME_STYLE);
-      this.terrain = { key, ...built, decor: decorate(built.samples) };
+      const { spec } = this.cave;
+      const built = buildTerrain(this.cave, [...state.secrets], biomeStyle(spec));
+      this.terrain = { key, ...built, decor: decorate(spec, built.samples) };
     }
     const terrain = this.terrain;
     const surface: GameGroup[] = terrain.groups.map((g) => {
       const k = shown(g.area);
-      const c = groundTone(g.palette, g.rock, g.tone);
+      const c = groundTone(this.cave.spec, g.palette, g.rock, g.tone);
       return { mesh: g.mesh, matrices: identity(), materials: new Float32Array([c[0] * k, c[1] * k, c[2] * k, c[3]]) };
     });
     const stones: GameGroup[] = this.meshes.stones.map((mesh, shape) => {
@@ -96,8 +112,12 @@ export class StaticScene {
       const [m, mat] = pool(mine.length);
       mine.forEach((st, i) => {
         placePart(m, i, st.x, st.y, st.z, st.yaw, 0, 0, 0, 0, st.tilt, st.size[0], st.size[1], st.size[2]);
-        const base = tint((st.rock ? ROCK_TONES[1] : FLOOR_TONES[0]).slice(0, 3) as Rgb, st.x, st.y, (b) =>
-          st.rock ? b.stone.rock : b.stone.floor,
+        const base = tint(
+          this.cave.spec,
+          (st.rock ? ROCK_TONES[1] : FLOOR_TONES[0]).slice(0, 3) as Rgb,
+          st.x,
+          st.y,
+          (b) => (st.rock ? b.stone.rock : b.stone.floor),
         );
         const k = (0.75 + st.shade * 0.5) * shown(st.area);
         mat.set([base[0] * k, base[1] * k, base[2] * k, 0.9], i * MATERIAL_STRIDE);
@@ -108,7 +128,13 @@ export class StaticScene {
     terrain.spires.forEach((sp, i) => {
       placePart(spireM, i, sp.x, sp.y, sp.z, sp.yaw, 0, 0, 0, 0, sp.tilt, sp.radius, sp.radius, sp.height);
       const k = (0.8 + sp.shade * 0.4) * shown(sp.area);
-      const top = tint(ROCK_TONES[2].slice(0, 3) as Rgb, sp.x, sp.y, (b) => b.rock[2].slice(0, 3) as Rgb);
+      const top = tint(
+        this.cave.spec,
+        ROCK_TONES[2].slice(0, 3) as Rgb,
+        sp.x,
+        sp.y,
+        (b) => b.rock[2].slice(0, 3) as Rgb,
+      );
       spireMat.set([top[0] * k, top[1] * k, top[2] * k, 0.85], i * MATERIAL_STRIDE);
     });
     return [
@@ -143,7 +169,7 @@ export class StaticScene {
   /** The rock across the gates of the rooms not open, block by block. */
   private gates(state: StaticState): GameGroup {
     const gates: [number, number, number][] = [];
-    for (let a = 1; a < AREAS.length; a++) {
+    for (let a = 1; a < this.cave.spec.areas.length; a++) {
       if (state.areas[a]) continue;
       for (const [x, y] of gateTiles(this.cave, a)) gates.push([x, y, a]);
     }
@@ -165,7 +191,7 @@ export class StaticScene {
       placePart(postM, k, ...pose.post, pose.yaw, 0, 0, 0, 0, pose.pitch, 1, 1, pose.postScale);
       placePart(headM, k, ...pose.head, pose.yaw, 0, 0, 0, 0, pose.pitch, 1, 1, 1);
       // the glass the colour of the lamp's light, which a biome's lamps change
-      const light = lampColour(l.x, l.y),
+      const light = lampColour(this.cave.spec, l.x, l.y),
         bright = Math.max(...light);
       const glass = light.map((c) => c / bright) as Rgb;
       headMat.set(
@@ -174,16 +200,17 @@ export class StaticScene {
       );
     });
     // the lamps over the hole: a cord up into the dark, and a shade on the end of it
-    const cordM = new Float32Array(HOLE_LAMPS.length * 16),
-      shadeM = new Float32Array(HOLE_LAMPS.length * 16);
-    HOLE_LAMPS.forEach(([x, y], i) => {
+    const { overHoles } = this;
+    const cordM = new Float32Array(overHoles.length * 16),
+      shadeM = new Float32Array(overHoles.length * 16);
+    overHoles.forEach(([x, y], i) => {
       placePart(cordM, i, x, y, HOLE_LAMP_HEIGHT, 0, 0, 0, 0, 0, 0, 0.4, 0.4, HOLE_CORD / LAMP_HEIGHT);
       placePart(shadeM, i, x, y, HOLE_LAMP_HEIGHT, 0, 0, 0, 0, 0, 0, 1.3, 1.3, 1.1);
     });
     const { lampPost, lampHead, hanging } = this.meshes;
     return [
-      { mesh: lampPost, matrices: cordM, count: HOLE_LAMPS.length, albedo: [0.15, 0.15, 0.17], roughness: 0.6 },
-      { mesh: hanging, matrices: shadeM, count: HOLE_LAMPS.length, albedo: [0.75, 1.0, 0.7], roughness: 0.3 },
+      { mesh: lampPost, matrices: cordM, count: overHoles.length, albedo: [0.15, 0.15, 0.17], roughness: 0.6 },
+      { mesh: hanging, matrices: shadeM, count: overHoles.length, albedo: [0.75, 1.0, 0.7], roughness: 0.3 },
       { mesh: lampPost, matrices: postM, count: lamps.length, albedo: [0.22, 0.22, 0.25], roughness: 0.5 },
       { mesh: lampHead, matrices: headM, materials: headMat, count: lamps.length },
     ];
@@ -195,16 +222,16 @@ export class StaticScene {
    */
   private walls(state: StaticState, shown: (area: number) => number): GameGroup[] {
     const bricks: { b: ReturnType<typeof standingBricks>[number]; grade: number }[] = [];
-    WALLS.forEach((wall, w) => {
+    this.cave.spec.walls.forEach((wall, w) => {
       if (state.walls[w]) return;
       const hurt = state.wallDamage[w] / WALL_STRENGTH[wall.grade];
-      for (const b of standingBricks(w, hurt)) bricks.push({ b, grade: wall.grade });
+      for (const b of standingBricks(this.cave, w, hurt)) bricks.push({ b, grade: wall.grade });
     });
     const studs = bricks.filter(({ b }) => b.treasure !== undefined && b.treasure !== BAR);
     const [brickM, brickMat] = pool(bricks.length);
     bricks.forEach(({ b, grade }, i) => {
       placePart(brickM, i, b.x, b.y, b.z, b.yaw, 0, 0, 0, 0, b.tilt, b.length, BRICK_SIZE[1], BRICK_SIZE[2]);
-      const k = b.shade * shown(areaAt(b.x, b.y));
+      const k = b.shade * shown(areaAt(this.cave.spec, b.x, b.y));
       const [r, g, bl, rough] = WALL_COLOUR[grade];
       brickMat.set(b.treasure === BAR ? [...BAR_COLOUR, 0.2] : [r * k, g * k, bl * k, rough], i * MATERIAL_STRIDE);
     });
@@ -223,7 +250,7 @@ export class StaticScene {
   private belts(state: StaticState): GameGroup[] {
     const out: GameGroup[] = [];
     for (const a of state.belts) {
-      const s = AREAS[a].belt!.spec;
+      const s = this.cave.spec.areas[a].belt!.spec;
       const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0),
         yaw = Math.atan2(s.y1 - s.y0, s.x1 - s.x0);
       const cx = (s.x0 + s.x1) / 2,

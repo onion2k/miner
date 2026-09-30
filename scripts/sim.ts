@@ -21,7 +21,9 @@
  *   player     with --player patrol: its mean speed, trips made, and how often a drone blocked it
  *   chamber    with --secret: what came out of the hidden chamber, and how many of its gold bars
  */
-import { AREAS } from '../src/cave';
+import { FIVE_ROOMS } from '../src/caves';
+
+const AREAS = FIVE_ROOMS.areas;
 import { SIM_DEFAULTS, meanOf, simulate, type SimRow } from './simulate';
 
 function options() {

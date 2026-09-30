@@ -7,14 +7,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import { WATCH, grew, sizes, trouble } from '../scripts/leaks';
-import { Economy, memoryStore } from '../src/economy';
-import { Game } from '../src/game';
-import { withSeed } from './helpers';
+import { newGame, withSeed } from './helpers';
 
 describe('what must stay bounded', () => {
   it('reads the sizes off a game, and they move with it', () => {
     withSeed(1, () => {
-      const game = new Game(new Economy(memoryStore()));
+      const game = newGame();
       const before = sizes(game);
       for (const key of ['bodies', 'slots', 'fuses lit', 'rubble', 'lamps broken', 'save bytes']) {
         expect(Object.keys(before), `${key} measured`).toContain(key);
@@ -35,7 +33,7 @@ describe('what must stay bounded', () => {
 
   it('has a ceiling for every size it measures, and watches the caches for growth', () => {
     withSeed(1, () => {
-      const game = new Game(new Economy(memoryStore()));
+      const game = newGame();
       for (const key of Object.keys(sizes(game))) expect(Object.keys(WATCH), `a ceiling for ${key}`).toContain(key);
       // the things kept and then forgotten again are the ones a leak lives in
       expect(

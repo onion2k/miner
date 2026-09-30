@@ -8,40 +8,31 @@
  * It keeps its own counts rather than asking the world, and hands the counts
  * of what is left to the save as they are, so the save is never behind.
  */
-import {
-  AREAS,
-  SECRETS,
-  STASHES,
-  WALLS,
-  chamberCentre,
-  stashCentre,
-  tileCentre,
-  type BarrelSpot,
-  type Heap,
-} from './cave';
-import { SOURCES, areaOfSource, chamberSource, roomStock, stashSource, wallSource } from './economy';
+import { chamberCentre, stashCentre, tileCentre, type BarrelSpot, type Cave, type Heap } from './cave';
+import { roomStock, sourcesOf, type Sources } from './economy';
 import { BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, KIND_VALUE, type World } from './physics';
 
 /** Where a body came from when it came from nowhere that counts: a brick. */
 export const NO_SOURCE = 255;
 
 /** A hidden chamber's loot, as a heap in the middle of it. */
-export function lootHeap(k: number): Heap {
-  const [x, y] = chamberCentre(k);
-  return { x, y, ...SECRETS[k].loot };
+export function lootHeap(cave: Cave, k: number): Heap {
+  const [x, y] = chamberCentre(cave, k);
+  return { x, y, ...cave.spec.secrets[k].loot };
 }
 
 /** A side room's loot, likewise. */
-export function stashHeap(k: number): Heap {
-  const [x, y] = stashCentre(k);
-  return { x, y, ...STASHES[k].loot };
+export function stashHeap(cave: Cave, k: number): Heap {
+  const [x, y] = stashCentre(cave, k);
+  return { x, y, ...cave.spec.stashes[k].loot };
 }
 
 /** What was set in a wall now down, put back by where the wall stood. */
-export function treasureHeap(w: number): Heap {
-  const [x0, y0, x1, y1] = WALLS[w].tiles,
-    [x, y] = tileCentre((x0 + x1) / 2, (y0 + y1) / 2);
-  return { x, y, coins: 0, gems: WALLS[w].treasure };
+export function treasureHeap(cave: Cave, w: number): Heap {
+  const wall = cave.spec.walls[w];
+  const [x0, y0, x1, y1] = wall.tiles,
+    [x, y] = tileCentre(cave.grid, (x0 + x1) / 2, (y0 + y1) / 2);
+  return { x, y, coins: 0, gems: wall.treasure };
 }
 
 /** The parts of the game's progress that say what is to be put back. */
@@ -75,22 +66,28 @@ export class Stock {
   /** How many of each kind are in the world. */
   readonly kinds = new Array<number>(KINDS).fill(0);
   /** How many of each kind are left from each source. */
-  readonly left: number[][] = Array.from({ length: SOURCES }, () => new Array<number>(KINDS).fill(0));
-  private readonly stocks = AREAS.map((_, a) => roomStock(a));
+  readonly left: number[][];
+  private readonly sources: Sources;
+  private readonly stocks: { value: number; kinds: number[] }[];
 
   /**
+   * `cave` is what is being kept, for where its chambers and walls are and what is in its rooms.
    * `capacity[kind]` is how many of each kind past the coins may be in the
    * world at once, for drawing; `current` is the room being cleared, which is
    * where anything spawned without a source is counted. `barrels` is where
    * each room's barrels stand when it opens.
    */
   constructor(
+    private readonly cave: Cave,
     private readonly world: World,
     private readonly capacity: readonly number[],
     private readonly current: () => number,
     private readonly barrels: readonly BarrelSpot[] = [],
     private readonly random: () => number = Math.random,
   ) {
+    this.sources = sourcesOf(cave.spec);
+    this.left = Array.from({ length: this.sources.count }, () => new Array<number>(KINDS).fill(0));
+    this.stocks = cave.spec.areas.map((_, a) => roomStock(cave.spec, a));
     this.origin = new Uint8Array(world.capacity);
     this.brickGrade = new Uint8Array(world.capacity);
     this.home = new Uint8Array(world.capacity);
@@ -189,7 +186,7 @@ export class Stock {
       if (!had && saved.done) continue;
       // exactly what was left of each kind, shared out over the room's heaps as they started: a share
       // rounded heap by heap would come back with a few more or fewer than went
-      const heaps = AREAS[a].heaps;
+      const heaps = this.cave.spec.areas[a].heaps;
       const counts = heaps.map(() => new Array<number>(KINDS).fill(0));
       for (let kind = 0; kind < KINDS; kind++) {
         const per = heaps.map((h) =>
@@ -208,15 +205,16 @@ export class Stock {
       }
       heaps.forEach((h, j) => this.spawnCounted(a, h, counts[j]));
     }
-    SECRETS.forEach((secret, k) => {
-      if (saved.secrets[k] && !progress.sealed(secret.area)) spawnSaved(chamberSource(k), lootHeap(k));
+    const { cave, sources } = this;
+    cave.spec.secrets.forEach((secret, k) => {
+      if (saved.secrets[k] && !progress.sealed(secret.area)) spawnSaved(sources.chamber(k), lootHeap(cave, k));
     });
-    STASHES.forEach((stash, k) => {
-      if (inPlay.includes(stash.area)) spawnSaved(stashSource(k), stashHeap(k));
+    cave.spec.stashes.forEach((stash, k) => {
+      if (inPlay.includes(stash.area)) spawnSaved(sources.stash(k), stashHeap(cave, k));
     });
-    WALLS.forEach((wall, w) => {
-      if (saved.walls[w] && wall.treasure.length && inPlay.includes(wall.area) && hadOf(wallSource(w)))
-        spawnSaved(wallSource(w), treasureHeap(w));
+    cave.spec.walls.forEach((wall, w) => {
+      if (saved.walls[w] && wall.treasure.length && inPlay.includes(wall.area) && hadOf(sources.wall(w)))
+        spawnSaved(sources.wall(w), treasureHeap(cave, w));
     });
     for (let k = 0; k + 3 < saved.rubble.length; k += 4) {
       const [x, y, z, grade] = saved.rubble.slice(k, k + 4);
@@ -235,10 +233,11 @@ export class Stock {
 
   /** A room just opened: its heaps, its barrels, and what is in its side rooms, to be seen over their walls. */
   openRoom(area: number) {
-    AREAS[area].heaps.forEach((h) => this.spawnHeap(area, h));
+    const { cave, sources } = this;
+    cave.spec.areas[area].heaps.forEach((h) => this.spawnHeap(area, h));
     for (const b of this.barrels) if (b.area === area) this.spawnBarrel(area, b.x, b.y);
-    STASHES.forEach((stash, k) => {
-      if (stash.area === area) this.spawnHeap(stashSource(k), stashHeap(k));
+    cave.spec.stashes.forEach((stash, k) => {
+      if (stash.area === area) this.spawnHeap(sources.stash(k), stashHeap(cave, k));
     });
   }
 
@@ -268,7 +267,7 @@ export class Stock {
         this.removeBarrel(i);
         continue;
       }
-      if (this.origin[i] === NO_SOURCE || areaOfSource(this.origin[i]) !== area) continue;
+      if (this.origin[i] === NO_SOURCE || this.sources.area(this.origin[i]) !== area) continue;
       gone(world.x[i], world.y[i], world.z[i], i);
       this.kinds[world.kind[i]]--;
       this.left[this.origin[i]][world.kind[i]]--;

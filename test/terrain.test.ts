@@ -1,17 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AREAS,
-  COLS,
-  HOLE,
-  ORIGIN_X,
-  ORIGIN_Y,
-  ROWS,
-  SECRETS,
-  TILE,
-  buildCave,
-  chamberCentre,
-  rockish,
-} from '../src/cave';
+import { TILE, buildCave, chamberCentre, rockish } from '../src/cave';
 import {
   FOOT_BAND,
   FOOT_TONE,
@@ -22,8 +10,9 @@ import {
   floorHeight,
   rockHeight,
 } from '../src/terrain';
+import { AREAS, COLS, FIVE, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, SECRETS, SPEC } from './helpers';
 
-const cave = buildCave();
+const cave = buildCave(SPEC);
 const hidden = SECRETS.map(() => false);
 const terrain = buildTerrain(cave, hidden);
 
@@ -69,9 +58,9 @@ describe('the terrain', () => {
 
   it('keeps the floor under what rests on it', () => {
     for (let x = -60; x <= 60; x += 1.7)
-      for (let y = -40; y <= 40; y += 1.3) expect(floorHeight(x, y)).toBeLessThanOrEqual(0);
+      for (let y = -40; y <= 40; y += 1.3) expect(floorHeight(SPEC.holes, x, y)).toBeLessThanOrEqual(0);
     // level where it meets the collar round the hole
-    expect(floorHeight(HOLE.x + HOLE.radius + 0.4, HOLE.y)).toBeCloseTo(0, 6);
+    expect(floorHeight(SPEC.holes, HOLE.x + HOLE.radius + 0.4, HOLE.y)).toBeCloseTo(0, 6);
   });
 
   it('names a real room, floor or rock, and shade for every group, with whole triangles', () => {
@@ -95,7 +84,7 @@ describe('the terrain', () => {
 
   it('takes the rock away from a chamber once it is broken into', () => {
     const k = 0;
-    const [cx, cy] = chamberCentre(k);
+    const [cx, cy] = chamberCentre(FIVE, k);
     const highest = (t: typeof terrain) => {
       let top = -Infinity;
       for (const g of t.groups) {

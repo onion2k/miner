@@ -17,22 +17,7 @@
  *
  * It is handed the game, and knows nothing of the page.
  */
-import {
-  BRICK,
-  COLS,
-  GATE,
-  HOLE,
-  OPEN,
-  ROWS,
-  SECRET,
-  SECRETS,
-  TILE,
-  WALLS,
-  WINGS,
-  sealPoint,
-  tileCentre,
-} from './cave';
-import { areaOfSource } from './economy';
+import { BRICK, GATE, OPEN, SECRET, TILE, nearHole, nearestHole, sealPoint, tileCentre } from './cave';
 import type { Game } from './game';
 import type { Drive } from './input';
 import { KIND_VALUE } from './physics';
@@ -131,7 +116,7 @@ export class Autopilot {
     readonly profile: Profile,
     private readonly options: AutopilotOptions = {},
   ) {
-    this.machine = new Bot(game.world.solid, 0, game.dozer.x, game.dozer.y, {
+    this.machine = new Bot(game.world.solid, game.cave.grid, 0, game.dozer.x, game.dozer.y, {
       dozer: game.dozer,
       spec: () => game.economy.spec(),
     });
@@ -156,7 +141,7 @@ export class Autopilot {
   /** A point a little past where going on into a room seals the one behind: somewhere to drive to, to go on. */
   pastSeal(area: number): { x: number; y: number } {
     const [sx, sy] = sealPoint(this.game.cave, area);
-    const [dx, dy] = WINGS[area].dir;
+    const [dx, dy] = this.game.cave.spec.wings[area].dir;
     return { x: sx + dx * 4, y: sy + dy * 4 };
   }
 
@@ -250,7 +235,7 @@ export class Autopilot {
     let value = 0;
     for (let i = 0; i < world.count; i++) {
       if (!world.alive[i] || stock.origin[i] === NO_SOURCE) continue;
-      if (areaOfSource(stock.origin[i]) === room) value += KIND_VALUE[world.kind[i]];
+      if (economy.sources.area(stock.origin[i]) === room) value += KIND_VALUE[world.kind[i]];
     }
     return value;
   }
@@ -261,11 +246,12 @@ export class Autopilot {
     const save = game.economy.save;
     const room = game.economy.current();
     const faces: Face[] = [];
-    SECRETS.forEach((s, k) => {
+    const { secrets, walls } = game.cave.spec;
+    secrets.forEach((s, k) => {
       if (s.area !== room || save.secrets[k] || this.givenUp.has(`chamber ${k}`)) return;
       faces.push(...this.faces('chamber', k, SECRET + k, s.wall));
     });
-    WALLS.forEach((w, k) => {
+    walls.forEach((w, k) => {
       if (w.area !== room || save.walls[k] || this.givenUp.has(`wall ${k}`)) return;
       faces.push(...this.faces('wall', k, BRICK + k, w.tiles));
     });
@@ -278,15 +264,16 @@ export class Autopilot {
   /** The faces of a stretch of rock or brick that can be charged: a tile of it with floor in front that the dozer can get to. */
   private faces(kind: Face['kind'], index: number, cell: number, [x0, y0, x1, y1]: readonly number[]): Face[] {
     const { cave, nav, economy } = this.game;
+    const { cols, rows } = cave.grid;
     const out: Face[] = [];
     const openAt = (tx: number, ty: number) => {
-      if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return false;
-      const c = cave.cells[ty * COLS + tx];
+      if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return false;
+      const c = cave.cells[ty * cols + tx];
       return c === OPEN || (c >= GATE && c < SECRET && economy.save.areas[c - GATE]);
     };
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
-        if (cave.cells[ty * COLS + tx] !== cell) continue;
+        if (cave.cells[ty * cols + tx] !== cell) continue;
         for (const [ox, oy] of [
           [1, 0],
           [-1, 0],
@@ -295,9 +282,9 @@ export class Autopilot {
         ]) {
           // the floor in front, and a run-up behind that, both reachable
           if (!openAt(tx + ox, ty + oy) || !openAt(tx + ox * 2, ty + oy * 2)) continue;
-          const [fx, fy] = tileCentre(tx + ox * 3, ty + oy * 3);
+          const [fx, fy] = tileCentre(cave.grid, tx + ox * 3, ty + oy * 3);
           if (!Number.isFinite(nav.distance(nav.toHole, fx, fy))) continue;
-          const [x, y] = tileCentre(tx, ty);
+          const [x, y] = tileCentre(cave.grid, tx, ty);
           out.push({ kind, index, x, y, nx: -ox, ny: -oy });
         }
       }
@@ -354,17 +341,17 @@ export class Autopilot {
 
   /** The best coin in the room to set up for, or -1 for none. */
   private best(bot: Bot): number {
-    const { world, nav, stock, economy, bots } = this.game;
+    const { world, nav, stock, economy, bots, cave } = this.game;
     const room = economy.current();
     let best = -1,
       bestScore = -Infinity;
     for (let i = 0; i < world.count; i++) {
       if (!world.alive[i] || world.z[i] < 0 || bot.shuns(i)) continue;
       const from = stock.origin[i];
-      if (from === NO_SOURCE || areaOfSource(from) !== room) continue;
+      if (from === NO_SOURCE || economy.sources.area(from) !== room) continue;
       const x = world.x[i],
         y = world.y[i];
-      if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 6 || nav.onBelt(x, y)) continue;
+      if (nearHole(cave.holes, x, y, 6) || nav.onBelt(x, y)) continue;
       const toDrop = nav.distance(nav.toDrop, x, y);
       if (!Number.isFinite(toDrop)) continue;
       // what a drone is already after is the drone's
@@ -422,14 +409,15 @@ export class Autopilot {
         return this.along(plan.target[0], plan.target[1]);
       }
       case 'deliver': {
-        const dist = Math.hypot(HOLE.x - dozer.x, HOLE.y - dozer.y);
-        if (dist < HOLE.radius + 5 || plan.timer <= 0) {
+        const hole = nearestHole(nav.holes, dozer.x, dozer.y);
+        const dist = Math.hypot(hole.x - dozer.x, hole.y - dozer.y);
+        if (dist < hole.radius + 5 || plan.timer <= 0) {
           plan.phase = 'back';
           plan.timer = 1;
         }
         const aim =
-          nav.dropIsHole(dozer.x, dozer.y) && nav.clear(dozer.x, dozer.y, HOLE.x, HOLE.y, 3)
-            ? [HOLE.x, HOLE.y]
+          nav.dropIsHole(dozer.x, dozer.y) && nav.clear(dozer.x, dozer.y, hole.x, hole.y, 3)
+            ? [hole.x, hole.y]
             : nav.ahead(nav.toDrop, dozer.x, dozer.y, 3, 5);
         return aim ? this.toward(aim[0], aim[1], 1) : { throttle: -1, steer: 0 };
       }
@@ -441,16 +429,16 @@ export class Autopilot {
 
   /** The best patch of strays to drive over next: worth the most for how far off it is, and not swept lately; null for none. */
   private patch(): [number, number] | null {
-    const { world, nav, stock, economy, dozer, t } = this.game;
+    const { world, nav, stock, economy, dozer, t, cave } = this.game;
     const room = economy.current();
     const value = new Map<number, number>();
     for (let i = 0; i < world.count; i++) {
       if (!world.alive[i] || world.z[i] < 0) continue;
       const from = stock.origin[i];
-      if (from === NO_SOURCE || areaOfSource(from) !== room) continue;
+      if (from === NO_SOURCE || economy.sources.area(from) !== room) continue;
       const x = world.x[i],
         y = world.y[i];
-      if (Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + 6) continue;
+      if (nearHole(cave.holes, x, y, 6)) continue;
       const key = (Math.floor(x / PATCH) + 2048) * 4096 + Math.floor(y / PATCH) + 2048;
       value.set(key, (value.get(key) ?? 0) + KIND_VALUE[world.kind[i]]);
     }

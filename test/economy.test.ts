@@ -1,17 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AREAS, ORDER, SECRETS, STASHES, WALLS } from '../src/cave';
-import {
-  Economy,
-  memoryStore,
-  SOURCES,
-  WALL_STRENGTH,
-  areaOfSource,
-  chamberSource,
-  roomStock,
-  stashSource,
-  wallSource,
-} from '../src/economy';
+import { Economy, WALL_STRENGTH, browserStore, memoryStore, roomStock } from '../src/economy';
 import { KIND_VALUE } from '../src/physics';
+import { AREAS, ORDER, SECRETS, SOURCES, SPEC, STASHES, WALLS } from './helpers';
+
+/** An economy over the browser's storage, which these tests stand in for. */
+const newEconomy = () => new Economy(browserStore, SPEC);
 
 const KEY = 'pushminer-save-v1';
 let store: Map<string, string>;
@@ -28,7 +21,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('the economy', () => {
   it('starts in the hollow with nothing', () => {
-    const e = new Economy();
+    const e = newEconomy();
     expect(e.bank).toBe(0);
     expect(e.current()).toBe(ORDER[0]);
     expect(e.save.areas).toEqual(AREAS.map((_, a) => a === 0));
@@ -37,7 +30,7 @@ describe('the economy', () => {
   });
 
   it('opens the rooms in order, seals each behind the player, and is done after the last', () => {
-    const e = new Economy();
+    const e = newEconomy();
     const events: string[] = [];
     e.onChange((id) => events.push(id));
     for (let n = 1; n < ORDER.length; n++) {
@@ -61,18 +54,18 @@ describe('the economy', () => {
   });
 
   it('will not move on before the next gate is open', () => {
-    const e = new Economy();
+    const e = newEconomy();
     e.moveOn();
     expect(e.current()).toBe(ORDER[0]);
   });
 
   it('keeps its save across a reload', () => {
-    const a = new Economy();
+    const a = newEconomy();
     a.deposit(500);
     a.open();
     a.breakLamp(3);
     a.breakLamp(3);
-    const b = new Economy();
+    const b = newEconomy();
     expect(b.bank).toBe(500);
     expect(b.save.banked).toBe(500);
     expect(b.save.areas[ORDER[1]]).toBe(true);
@@ -81,7 +74,7 @@ describe('the economy', () => {
 
   it('plays from the start when the save is unreadable', () => {
     store.set(KEY, '{not json');
-    expect(new Economy().bank).toBe(0);
+    expect(newEconomy().bank).toBe(0);
   });
 
   it('brings a save from before rooms were sealed forward to the furthest room it had', () => {
@@ -90,16 +83,16 @@ describe('the economy', () => {
       KEY,
       JSON.stringify({ bank: 50, areas: AREAS.map((_, a) => ORDER.indexOf(a) <= 2), left: [1, 2, 3, 4, 5] }),
     );
-    const e = new Economy();
+    const e = newEconomy();
     expect(e.current()).toBe(furthest);
     expect(e.save.areas).toEqual(AREAS.map((_, a) => a === 0 || a === furthest));
-    expect(e.save.left).toHaveLength(SOURCES);
+    expect(e.save.left).toHaveLength(SOURCES.count);
     expect(e.save.left[furthest]).toEqual([1, 2, 3, 4, 5]);
   });
 
   it('fills in what an older save is missing', () => {
     store.set(KEY, JSON.stringify({ bank: 7, room: 0, areas: [true] }));
-    const e = new Economy();
+    const e = newEconomy();
     expect(e.save.areas).toHaveLength(AREAS.length);
     expect(e.save.belts).toHaveLength(AREAS.length);
     expect(e.save.secrets).toHaveLength(SECRETS.length);
@@ -108,7 +101,7 @@ describe('the economy', () => {
   });
 
   it('buys what it can afford and nothing it cannot', () => {
-    const e = new Economy();
+    const e = newEconomy();
     expect(e.buy('engine')).toBe(false);
     const cost = e.offers().find((o) => o.id === 'engine')!.cost;
     e.deposit(cost);
@@ -120,7 +113,7 @@ describe('the economy', () => {
   });
 
   it('sells the Spiderdozer body once, and swaps it for the tracks and back for nothing', () => {
-    const e = new Economy(memoryStore());
+    const e = new Economy(memoryStore(), SPEC);
     expect(e.save.body).toBe('dozer');
     expect(e.save.bodies).toEqual(['dozer']);
     const spider = e.cosmetics().find((o) => o.id === 'body:spider')!;
@@ -143,13 +136,13 @@ describe('the economy', () => {
   });
 
   it('loads a save from before there were bodies on its tracks', () => {
-    const e = new Economy(memoryStore(JSON.stringify({ bank: 5, paint: 'red', paints: ['yellow', 'red'] })));
+    const e = new Economy(memoryStore(JSON.stringify({ bank: 5, paint: 'red', paints: ['yellow', 'red'] })), SPEC);
     expect(e.save.body).toBe('dozer');
     expect(e.save.bodies).toEqual(['dozer']);
   });
 
   it('puts on a paint already owned for nothing', () => {
-    const e = new Economy();
+    const e = newEconomy();
     const paint = e.cosmetics().find((o) => o.id.startsWith('paint:') && !o.owned)!;
     e.deposit(paint.cost);
     expect(e.buy(paint.id)).toBe(true);
@@ -160,7 +153,7 @@ describe('the economy', () => {
   });
 
   it('only sells a belt for a room that is open', () => {
-    const e = new Economy();
+    const e = newEconomy();
     const a = ORDER.find((r) => AREAS[r].belt)!;
     e.deposit(1e6);
     expect(e.buy(`belt${a}`)).toBe(false);
@@ -170,7 +163,7 @@ describe('the economy', () => {
   });
 
   it('hurts a wall more the harder it is hit, and brings it down at its strength', () => {
-    const e = new Economy();
+    const e = newEconomy();
     expect(e.ram(2)).toBe(0);
     expect(e.ram(8)).toBeGreaterThan(e.ram(5));
     expect(e.ram(30)).toBe(e.ram(100));
@@ -196,11 +189,11 @@ describe('the economy', () => {
 
 describe('the sources', () => {
   it('put everything in the room it is sealed with', () => {
-    AREAS.forEach((_, a) => expect(areaOfSource(a)).toBe(a));
-    SECRETS.forEach((s, k) => expect(areaOfSource(chamberSource(k))).toBe(s.area));
-    STASHES.forEach((s, k) => expect(areaOfSource(stashSource(k))).toBe(s.area));
-    WALLS.forEach((w, k) => expect(areaOfSource(wallSource(k))).toBe(w.area));
-    expect(wallSource(WALLS.length - 1)).toBe(SOURCES - 1);
+    AREAS.forEach((_, a) => expect(SOURCES.area(a)).toBe(a));
+    SECRETS.forEach((s, k) => expect(SOURCES.area(SOURCES.chamber(k))).toBe(s.area));
+    STASHES.forEach((s, k) => expect(SOURCES.area(SOURCES.stash(k))).toBe(s.area));
+    WALLS.forEach((w, k) => expect(SOURCES.area(SOURCES.wall(k))).toBe(w.area));
+    expect(SOURCES.wall(WALLS.length - 1)).toBe(SOURCES.count - 1);
   });
 
   it('value a room at what its heaps hold', () => {
@@ -209,7 +202,7 @@ describe('the sources', () => {
         (s, h) => s + h.coins * KIND_VALUE[0] + h.gems.reduce((g, [k, n]) => g + n * KIND_VALUE[k], 0),
         0,
       );
-      expect(roomStock(a).value).toBe(byHand);
+      expect(roomStock(SPEC, a).value).toBe(byHand);
     }
   });
 });

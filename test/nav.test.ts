@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, COLS, HOLE, ROWS, buildCave } from '../src/cave';
+import { buildCave } from '../src/cave';
 import { Nav } from '../src/nav';
 import { beltOf } from '../src/tools';
-import { flood, tileAt } from './helpers';
+import { AREAS, COLS, GRID, HOLE, ROWS, SPEC, flood, tileAt } from './helpers';
 
-const cave = buildCave();
+const cave = buildCave(SPEC);
 const solid = cave.solid(AREAS.map(() => true));
-const nav = new Nav(solid);
+const nav = new Nav(solid, GRID, SPEC.holes);
 const reachable = flood(tileAt(HOLE.x, HOLE.y), (t) => solid[t] === 0);
 
 describe('the way round the rock', () => {

@@ -2,8 +2,7 @@
  * The help you can buy: conveyor belts that carry what lands on them to the
  * hole, and drones that go and fetch things.
  */
-import type { BeltSpec, Area } from './cave';
-import { HOLE, TILE } from './cave';
+import { TILE, nearHole, nearestHole, type Area, type BeltSpec, type Grid, type HoleSpec } from './cave';
 import { KIND_VALUE, type Belt, type World } from './physics';
 
 /** A belt's physics strip, from its spec. */
@@ -36,8 +35,8 @@ export const BOT_SPEC: DozerSpec = {
   magnetRadius: 0,
   magnetStrength: 0,
 };
-/** How far from the hole's centre a bot stops pushing and backs away. */
-export const STOP_AT = HOLE.radius + 5;
+/** How far from a hole's centre a bot stops pushing and backs away. */
+export const stopAt = (hole: HoleSpec) => hole.radius + 5;
 /** Half the machine's width and a little, for whether it fits down a line; and with a load on the blade, wider. */
 const CLEARANCE = 2.2,
   LOADED_CLEARANCE = 3.2;
@@ -109,10 +108,12 @@ export class Bot {
   /**
    * A drone of its own at (x, y); or, given `machine`, the same mind driving
    * another machine that already exists — the player's dozer, for the
-   * autopilot — at that machine's size and to its spec.
+   * autopilot — at that machine's size and to its spec. `grid` is the
+   * cave's tiles, which `solid` is over.
    */
   constructor(
     solid: Uint8Array,
+    grid: Grid,
     owner: number,
     x: number,
     y: number,
@@ -122,7 +123,7 @@ export class Bot {
       this.dozer = machine.dozer;
       this.spec = machine.spec;
     } else {
-      this.dozer = new Dozer(solid, BOT_SCALE, owner);
+      this.dozer = new Dozer(solid, grid, BOT_SCALE, owner);
       this.dozer.x = x;
       this.dozer.y = y;
       this.dozer.yaw = Math.random() * Math.PI * 2;
@@ -235,11 +236,12 @@ export class Bot {
         break;
       }
       case 'push': {
-        const dist = Math.hypot(HOLE.x - d.x, HOLE.y - d.y);
-        // to the hole or a belt, whichever is nearer, as the way goes; aimed from the machine's middle,
+        const hole = nearestHole(nav.holes, d.x, d.y);
+        const dist = Math.hypot(hole.x - d.x, hole.y - d.y);
+        // to the nearest hole or a belt, whichever is nearer, as the way goes; aimed from the machine's middle,
         // clear by the width of a loaded blade, so its corners do not catch a corridor's
-        const toHole = nav.dropIsHole(d.x, d.y) && nav.clear(d.x, d.y, HOLE.x, HOLE.y, loadedClearance);
-        const aim = toHole ? [HOLE.x, HOLE.y] : nav.ahead(nav.toDrop, d.x, d.y, loadedClearance, 5);
+        const toHole = nav.dropIsHole(d.x, d.y) && nav.clear(d.x, d.y, hole.x, hole.y, loadedClearance);
+        const aim = toHole ? [hole.x, hole.y] : nav.ahead(nav.toDrop, d.x, d.y, loadedClearance, 5);
         if (!aim) {
           this.retreat();
           break;
@@ -252,7 +254,7 @@ export class Bot {
           s = Math.sin(d.yaw);
         const onBelt =
           this.timer < 29.2 && nav.onBelt(d.x + c * BLADE_AT * d.scale, d.y + s * BLADE_AT * d.scale, -1) !== null;
-        if (dist < STOP_AT || onBelt || this.timer <= 0 || (this.timer < 28 && this.empty > 1.5)) this.retreat();
+        if (dist < stopAt(hole) || onBelt || this.timer <= 0 || (this.timer < 28 && this.empty > 1.5)) this.retreat();
         else if (this.stalled(dt, nav.distance(nav.toDrop, d.x, d.y))) {
           // caught on a corner, most likely: a little way back and at it again, load and all
           if (this.tries++ < RETRIES) {
@@ -282,9 +284,10 @@ export class Bot {
     const cx = world.x[i],
       cy = world.y[i];
     if (!Number.isFinite(nav.distance(nav.toDrop, cx, cy))) return null;
+    const hole = nearestHole(nav.holes, cx, cy);
     const on =
-      nav.dropIsHole(cx, cy) && nav.clear(cx, cy, HOLE.x, HOLE.y, 0.5)
-        ? [HOLE.x, HOLE.y]
+      nav.dropIsHole(cx, cy) && nav.clear(cx, cy, hole.x, hole.y, 0.5)
+        ? [hole.x, hole.y]
         : nav.ahead(nav.toDrop, cx, cy, 0.5, 3);
     if (!on) return null;
     let ux = on[0] - cx,
@@ -519,7 +522,7 @@ export class Foreman {
       this.workable = [];
       for (let i = 0; i < world.count; i++) {
         if (!world.alive[i] || !this.works(this.origin[i]) || world.z[i] < 0) continue;
-        if (Math.hypot(world.x[i] - HOLE.x, world.y[i] - HOLE.y) < STOP_AT + 4) continue;
+        if (nearHole(nav.holes, world.x[i], world.y[i], 9)) continue;
         // on a belt, and on its way
         if (nav.onBelt(world.x[i], world.y[i])) continue;
         this.workable.push(i);

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { lookAt, multiply, perspective } from 'artshape-render/gpu/camera';
-import { AREAS, LAMP_HEIGHT, buildCave } from '../src/cave';
+import { LAMP_HEIGHT, buildCave } from '../src/cave';
 import { LAMP_KNOCK, LAMP_REACH, fallYaw, lampOn, lampPose, lampsHit, lampsInView, type View } from '../src/lamps';
 import { project } from '../src/matrix';
+import { AREAS, SPEC } from './helpers';
 
-const { lamps } = buildCave();
+const { lamps } = buildCave(SPEC);
 
 /** A camera over a point, from where the game starts it, at a screen shape. */
 function view(x: number, y: number, aspect: number): View {

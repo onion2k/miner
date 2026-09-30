@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import { lookAt, multiply, perspective } from 'artshape-render/gpu/camera';
-import { AREAS, HOLE, SECRETS, WALLS, buildCave, gateTiles } from '../src/cave';
+import { buildCave, gateTiles } from '../src/cave';
 import { CAMERA_HOME, CameraRig } from '../src/camera';
 import { placePointer } from '../src/hud';
 import { SceneLights, type LightState } from '../src/lighting';
 import { StaticScene, type StaticState } from '../src/scene-static';
+import { holeLamps } from '../src/lamps';
 import { layBricks } from '../src/walls';
+import { AREAS, FIVE, HOLE, SECRETS, SPEC, WALLS } from './helpers';
 
-const cave = buildCave();
+const cave = buildCave(SPEC);
 const scene = new StaticScene(cave);
 const state = (over: Partial<StaticState> = {}): StaticState => ({
   areas: AREAS.map((_, a) => a === 0),
@@ -39,7 +41,7 @@ describe('the static scene', () => {
   });
 
   it('draws a wall still standing, brick by brick, and none once it is down', () => {
-    const bricks = WALLS.reduce((n, _, w) => n + layBricks(w).length, 0);
+    const bricks = WALLS.reduce((n, _, w) => n + layBricks(FIVE, w).length, 0);
     const brickGroup = (s: StaticState) => scene.groups(s).find((g) => g.materials && g.count === bricks);
     expect(brickGroup(state())).toBeDefined();
     const down = scene.groups(state({ walls: WALLS.map(() => true) }));
@@ -94,7 +96,9 @@ describe('the lights', () => {
     vein: null,
     sealing: null,
     magnet: null,
-    holePulse: 0,
+    holes: SPEC.holes,
+    holeLamps: holeLamps(SPEC.holes),
+    holePulse: [0],
     ...over,
   });
 
@@ -151,8 +155,8 @@ describe('the lights', () => {
 
   it('glow the hole only while something is going down it, and never past capacity', () => {
     const quiet = new SceneLights(256, 256).build(base()).count;
-    expect(new SceneLights(256, 256).build(base({ holePulse: 1 })).count).toBe(quiet + 1);
-    expect(new SceneLights(256, 4).build(base({ holePulse: 1 })).count).toBeLessThanOrEqual(4);
+    expect(new SceneLights(256, 256).build(base({ holePulse: [1] })).count).toBe(quiet + 1);
+    expect(new SceneLights(256, 4).build(base({ holePulse: [1] })).count).toBeLessThanOrEqual(4);
     expect(HOLE.radius).toBeGreaterThan(0);
   });
 });

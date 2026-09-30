@@ -6,7 +6,7 @@
  * cave's (`cave.ts`); what has become of them is the save's. This is only the
  * rules, handed both.
  */
-import { HOLE, LAMP_HEIGHT, hash, type Lamp } from './cave';
+import { LAMP_HEIGHT, hash, type HoleSpec, type Lamp } from './cave';
 import { project } from './matrix';
 
 /** How many lamps are lit at once near the eye, and how near a machine has to come to knock one over. */
@@ -16,15 +16,21 @@ export const LAMP_LIGHTS = 240,
 export const LAMP_REACH = 40,
   LAMP_BRIGHT = 16;
 /**
- * The lamps over the hole: three, hanging from the dark on cords, high enough to drive under, round
+ * The lamps over a hole: three, hanging from the dark on cords, high enough to drive under, round
  * above its rim. How high they hang, and how far the cord goes up before it is lost in the dark.
  */
 export const HOLE_LAMP_HEIGHT = 15,
   HOLE_CORD = 12;
-export const HOLE_LAMPS: [number, number][] = [90, 210, 330].map((deg) => {
-  const a = (deg * Math.PI) / 180;
-  return [HOLE.x + Math.cos(a) * (HOLE.radius + 1.5), HOLE.y + Math.sin(a) * (HOLE.radius + 1.5)];
-});
+
+/** Where the lamps over each hole hang: three round it, a list for each hole, in the holes' order. */
+export function holeLamps(holes: readonly HoleSpec[]): [number, number][][] {
+  return holes.map((hole) =>
+    [90, 210, 330].map((deg): [number, number] => {
+      const a = (deg * Math.PI) / 180;
+      return [hole.x + Math.cos(a) * (hole.radius + 1.5), hole.y + Math.sin(a) * (hole.radius + 1.5)];
+    }),
+  );
+}
 
 /** What has become of the lamps, and which rooms are open: the parts of the save a lamp's state hangs on. */
 export interface LampState {

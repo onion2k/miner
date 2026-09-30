@@ -10,7 +10,7 @@
  */
 import { mergeMeshes, type Mesh } from 'artshape-render/mesh/types';
 import type { GameGroup } from 'artshape-render/game/renderer';
-import { AREAS } from './cave';
+import type { BeltSpec } from './cave';
 import { TRACK_GAUGE, type Dozer } from './dozer';
 import { ANCHORS, bladeMesh, machineMeshes, type MachineBody, type MachineMeshes } from './machine';
 import { bar, box, coin, cylinder, gem, moved, square } from './meshes';
@@ -32,6 +32,8 @@ export interface DynamicOptions {
   bodyCapacity: number;
   /** How many of each kind past the coins can be drawn at once; the last two are gold bars and bricks. */
   kindCapacity: readonly number[];
+  /** Each room's belt, by the room's index; null for a room with none. */
+  belts: readonly (BeltSpec | null)[];
   bots: number;
   botScale: number;
   botBladeWidth: number;
@@ -378,7 +380,7 @@ export class DynamicScene {
   private stripes(belts: readonly number[], t: number) {
     let n = 0;
     for (const a of belts) {
-      const s = AREAS[a].belt!.spec;
+      const s = this.options.belts[a]!;
       const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0),
         yaw = Math.atan2(s.y1 - s.y0, s.x1 - s.x0);
       const cx = (s.x0 + s.x1) / 2,

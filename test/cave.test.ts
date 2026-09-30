@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  AREAS,
   BRICK,
-  COLS,
   GATE,
-  HOLE,
   OPEN,
-  ORDER,
-  ROWS,
   SECRET,
-  SECRETS,
-  STASHES,
-  WALLS,
   areaAt,
   atGate,
   behindGate,
@@ -21,20 +13,20 @@ import {
   stashCentre,
   tileCentre,
 } from '../src/cave';
-import { flood, tileAt } from './helpers';
+import { AREAS, COLS, FIVE, GRID, HOLE, ORDER, ROWS, SECRETS, SPEC, STASHES, WALLS, flood, tileAt } from './helpers';
 
-const cave = buildCave();
+const cave = buildCave(SPEC);
 const { cells } = cave;
 const at = (tx: number, ty: number) => (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS ? 0 : cells[ty * COLS + tx]);
-const centreOf = (t: number) => tileCentre(t % COLS, (t / COLS) | 0);
+const centreOf = (t: number) => tileCentre(GRID, t % COLS, (t / COLS) | 0);
 const everyGateOpen = AREAS.map(() => true);
 /** The floor joined to the hole with every gate down, walls and chambers still standing. */
 const main = flood(tileAt(HOLE.x, HOLE.y), (t) => cells[t] === OPEN || (cells[t] >= GATE && cells[t] < SECRET));
 
 describe('the cave', () => {
   it('is the same every time it is built', () => {
-    expect(buildCave().cells).toEqual(cells);
-    expect(buildCave().lamps).toEqual(cave.lamps);
+    expect(buildCave(SPEC).cells).toEqual(cells);
+    expect(buildCave(SPEC).lamps).toEqual(cave.lamps);
   });
 
   it('opens its rooms in an order that starts at the hollow and has each room once', () => {
@@ -46,7 +38,7 @@ describe('the cave', () => {
     AREAS.forEach((area, a) => {
       for (const h of area.heaps) {
         expect(main.has(tileAt(h.x, h.y)), `${area.name} heap at ${h.x},${h.y}`).toBe(true);
-        expect(areaAt(h.x, h.y), `${area.name} heap at ${h.x},${h.y}`).toBe(a);
+        expect(areaAt(SPEC, h.x, h.y), `${area.name} heap at ${h.x},${h.y}`).toBe(a);
       }
     });
   });
@@ -79,7 +71,7 @@ describe('the cave', () => {
     expect(cave.lamps.length).toBeGreaterThan(0);
     for (const l of cave.lamps) {
       expect(cells[tileAt(l.x, l.y)], `lamp at ${l.x},${l.y}`).toBe(OPEN);
-      expect(l.area).toBe(areaAt(l.x, l.y));
+      expect(l.area).toBe(areaAt(SPEC, l.x, l.y));
       expect(Math.hypot(l.x - HOLE.x, l.y - HOLE.y)).toBeGreaterThan(HOLE.radius + 4);
     }
   });
@@ -89,7 +81,7 @@ describe('the cave', () => {
       const mine = cave.barrels.filter((b) => b.area === a);
       expect(mine.length, area.name).toBeGreaterThanOrEqual(3);
       for (const b of mine) {
-        expect(areaAt(b.x, b.y)).toBe(a);
+        expect(areaAt(SPEC, b.x, b.y)).toBe(a);
         const t = tileAt(b.x, b.y);
         expect(main.has(t), `${area.name} barrel at ${b.x},${b.y} joined to the hole`).toBe(true);
         expect(cells[t]).toBe(OPEN);
@@ -107,16 +99,18 @@ describe('the cave', () => {
 
   it('closes each side room off behind its wall, inside its own room', () => {
     STASHES.forEach((st, k) => {
-      const inside = flood(tileAt(...stashCentre(k)), (t) => cells[t] === OPEN);
+      const inside = flood(tileAt(...stashCentre(FIVE, k)), (t) => cells[t] === OPEN);
       expect(inside.size, `${st.name} has floor`).toBeGreaterThan(0);
       for (const t of inside) {
         expect(main.has(t), `${st.name} reaches the cave without its wall broken`).toBe(false);
         const [x, y] = centreOf(t);
         for (let o = 1; o < AREAS.length; o++) {
           if (o !== st.area)
-            expect(pastGate(o, x, y) || atGate(o, x, y), `${st.name} in ${AREAS[o].name}'s gate zone`).toBe(false);
+            expect(pastGate(SPEC, o, x, y) || atGate(SPEC, o, x, y), `${st.name} in ${AREAS[o].name}'s gate zone`).toBe(
+              false,
+            );
         }
-        if (st.area > 0) expect(behindGate(st.area, x, y), `${st.name} tile not sealed with its room`).toBe(true);
+        if (st.area > 0) expect(behindGate(SPEC, st.area, x, y), `${st.name} tile not sealed with its room`).toBe(true);
       }
     });
   });
@@ -146,12 +140,13 @@ describe('the cave', () => {
       const isWall = (x: number, y: number) => x >= w0x && x <= w1x && y >= w0y && y <= w1y;
       let faces = 0;
       for (const [x, y] of mine) {
-        const [wx, wy] = tileCentre(x, y);
+        const [wx, wy] = tileCentre(GRID, x, y);
         for (let o = 1; o < AREAS.length; o++) {
           if (o !== s.area)
-            expect(pastGate(o, wx, wy) || atGate(o, wx, wy), `chamber ${k} in ${AREAS[o].name}'s gate zone`).toBe(
-              false,
-            );
+            expect(
+              pastGate(SPEC, o, wx, wy) || atGate(SPEC, o, wx, wy),
+              `chamber ${k} in ${AREAS[o].name}'s gate zone`,
+            ).toBe(false);
         }
         if (isWall(x, y)) {
           if (
@@ -160,7 +155,9 @@ describe('the cave', () => {
               [-1, 0],
               [0, 1],
               [0, -1],
-            ].some(([dx, dy]) => at(x + dx, y + dy) === OPEN && areaAt(...tileCentre(x + dx, y + dy)) === s.area)
+            ].some(
+              ([dx, dy]) => at(x + dx, y + dy) === OPEN && areaAt(SPEC, ...tileCentre(GRID, x + dx, y + dy)) === s.area,
+            )
           )
             faces++;
           continue;
@@ -175,7 +172,7 @@ describe('the cave', () => {
         }
       }
       expect(faces, `chamber ${k} has a face to break`).toBeGreaterThan(0);
-      expect(cells[tileAt(...chamberCentre(k))]).toBe(SECRET + k);
+      expect(cells[tileAt(...chamberCentre(FIVE, k))]).toBe(SECRET + k);
     });
   });
 });

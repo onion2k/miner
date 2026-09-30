@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, COLS, HOLE, HOLLOW, ROWS, TILE, WINGS, buildCave, rockish, tileCentre } from '../src/cave';
-import { BIOMES, BIOME_STYLE, biomeAt, decorate, groundTone, lampColour, LAMP_COLOUR, tint } from '../src/biomes';
+import { TILE, buildCave, rockish, tileCentre } from '../src/cave';
+import { LAMP_COLOUR, biomeAt, biomeStyle, biomesOf, decorate, groundTone, lampColour, tint } from '../src/biomes';
 import { FLOOR_TONES, ROCK_TONES } from '../src/palette';
 import { FOOT_TONE, PLAIN_ROCK, buildTerrain } from '../src/terrain';
+import { AREAS, COLS, GRID, HOLE, HOLLOW, ROWS, SPEC, WINGS } from './helpers';
 
-const cave = buildCave();
+const cave = buildCave(SPEC);
+const BIOMES = biomesOf(SPEC);
+const BIOME_STYLE = biomeStyle(SPEC);
 const hidden = [false, false, false, false];
 const terrain = buildTerrain(cave, hidden, BIOME_STYLE);
-const decor = decorate(terrain.samples);
+const decor = decorate(SPEC, terrain.samples);
 /** The middle of a wing's room, in world units. */
 const roomMiddle = (a: number): [number, number] => {
   const { dir, room } = WINGS[a];
@@ -34,12 +37,12 @@ describe('the biomes', () => {
     // the hollow's ellipse and a tile of rock round it
     for (let ty = 0; ty < ROWS; ty++) {
       for (let tx = 0; tx < COLS; tx++) {
-        const [x, y] = tileCentre(tx, ty);
+        const [x, y] = tileCentre(GRID, tx, ty);
         const inside = (x / ((HOLLOW.rx + 1) * TILE)) ** 2 + (y / ((HOLLOW.ry + 1) * TILE)) ** 2 < 1;
-        if (inside) expect(biomeAt(x, y).weight, `${x},${y}`).toBe(0);
+        if (inside) expect(biomeAt(SPEC, x, y).weight, `${x},${y}`).toBe(0);
       }
     }
-    for (let a = 1; a < AREAS.length; a++) expect(biomeAt(...roomMiddle(a))).toEqual({ area: a, weight: 1 });
+    for (let a = 1; a < AREAS.length; a++) expect(biomeAt(SPEC, ...roomMiddle(a))).toEqual({ area: a, weight: 1 });
   });
 
   it('come in gradually down each corridor, never all at once', () => {
@@ -50,7 +53,7 @@ describe('the biomes', () => {
       for (let along = mouth * TILE; along <= room.along * TILE; along += 1) {
         const x = dir[0] ? dir[0] * along : 0,
           y = dir[0] ? room.across * TILE : dir[1] * along;
-        const { weight } = biomeAt(x, y);
+        const { weight } = biomeAt(SPEC, x, y);
         biggestStep = Math.max(biggestStep, weight - last);
         expect(weight).toBeGreaterThanOrEqual(last - 1e-9);
         last = weight;
@@ -66,9 +69,9 @@ describe('the biomes', () => {
     for (let a = 1; a < AREAS.length; a++) expect(terrain.groups.some((g) => g.palette === a)).toBe(true);
     expect(BIOME_STYLE.shape(0, -14)).toBe(PLAIN_ROCK);
     expect(BIOME_STYLE.palette(0, -14)).toBe(0);
-    expect(groundTone(0, true, 1)).toEqual(ROCK_TONES[1]);
-    expect(groundTone(0, false, 2)).toEqual(FLOOR_TONES[2]);
-    expect(groundTone(3, false, 0)).toEqual(BIOMES[3]!.floor[0]);
+    expect(groundTone(SPEC, 0, true, 1)).toEqual(ROCK_TONES[1]);
+    expect(groundTone(SPEC, 0, false, 2)).toEqual(FLOOR_TONES[2]);
+    expect(groundTone(SPEC, 3, false, 0)).toEqual(BIOMES[3]!.floor[0]);
   });
 
   it('shape the hollow’s ground exactly as it was without them', () => {
@@ -77,22 +80,22 @@ describe('the biomes', () => {
       { samples: b } = terrain;
     for (let k = 0; k < a.z.length; k++) {
       // past where the rock is drawn in detail it is a plateau between tile corners, which may be in a biome
-      if (!Number.isFinite(a.depth[k]) || biomeAt(a.x[k], a.y[k]).weight > 0) continue;
+      if (!Number.isFinite(a.depth[k]) || biomeAt(SPEC, a.x[k], a.y[k]).weight > 0) continue;
       if (a.z[k] !== b.z[k]) expect.fail(`height at ${a.x[k]},${a.y[k]}: ${a.z[k]} became ${b.z[k]}`);
     }
   });
 
   it('colour lamps and stones by how strong the biome is, and not at all in the hollow', () => {
-    expect(lampColour(0, -14)).toEqual(LAMP_COLOUR);
+    expect(lampColour(SPEC, 0, -14)).toEqual(LAMP_COLOUR);
     const lava = BIOMES[3]!;
-    const middle = lampColour(...roomMiddle(3));
+    const middle = lampColour(SPEC, ...roomMiddle(3));
     lava.lamp.forEach((c, i) => expect(middle[i]).toBeCloseTo(c * lava.lampBright, 9));
     const base: [number, number, number] = [1, 1, 1];
-    expect(tint(base, 0, -14, (b) => b.stone.rock)).toBe(base);
+    expect(tint(SPEC, base, 0, -14, (b) => b.stone.rock)).toBe(base);
   });
 
   it('put its decoration in the rooms, the same every time, and nothing tall where the dozer drives', () => {
-    const again = decorate(terrain.samples);
+    const again = decorate(SPEC, terrain.samples);
     expect(again).toEqual(decor);
     const kinds = new Set(decor.props.map((p) => p.kind));
     for (const kind of ['crystal', 'fern', 'pool', 'neon', 'column', 'crate', 'trunk', 'cap'] as const)
@@ -111,7 +114,7 @@ describe('the biomes', () => {
             ny = ty + oy;
           const rock = nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || rockish(cave.cells[ny * COLS + nx], hidden);
           if (!rock) continue;
-          const [cx, cy] = tileCentre(nx, ny);
+          const [cx, cy] = tileCentre(GRID, nx, ny);
           best = Math.min(
             best,
             Math.hypot(Math.max(0, Math.abs(x - cx) - TILE / 2), Math.max(0, Math.abs(y - cy) - TILE / 2)),
@@ -121,7 +124,7 @@ describe('the biomes', () => {
       return best;
     };
     for (const p of decor.props) {
-      expect(biomeAt(p.x, p.y).weight, `${p.kind} outside the biomes`).toBeGreaterThan(0);
+      expect(biomeAt(SPEC, p.x, p.y).weight, `${p.kind} outside the biomes`).toBeGreaterThan(0);
       // what stands up off the floor stands on the rock, or at its very foot
       const tall = p.z + p.size[2] > 0.9 && !['snow', 'tuft', 'seep', 'pool'].includes(p.kind);
       if (tall && toRock(p.x, p.y) > 0.8)
@@ -147,7 +150,7 @@ describe('the biomes', () => {
       const sum = (t: readonly number[]) => t[0] + t[1] + t[2];
       expect(sum(b.floor[FOOT_TONE])).toBeLessThan(sum(b.floor[1]));
     }
-    expect(groundTone(0, false, FOOT_TONE)).toEqual(FLOOR_TONES[FOOT_TONE]);
+    expect(groundTone(SPEC, 0, false, FOOT_TONE)).toEqual(FLOOR_TONES[FOOT_TONE]);
     // the future's floor keeps its panels and seams, and its foot is the gutter
     expect(BIOME_STYLE.tone(4, ...roomMiddle(4), false, FOOT_TONE)).toBe(FOOT_TONE);
     expect(BIOME_STYLE.tone(4, ...roomMiddle(4), false, 0)).toBeLessThan(FOOT_TONE);
@@ -156,7 +159,7 @@ describe('the biomes', () => {
   it('light their features only in their own rooms', () => {
     const byBiome = new Map<string, number>();
     for (const l of decor.lights) {
-      const { area } = biomeAt(l.x, l.y);
+      const { area } = biomeAt(SPEC, l.x, l.y);
       expect(BIOMES[area]!.name, `${l.biome} light at ${l.x.toFixed(0)},${l.y.toFixed(0)}`).toBe(l.biome);
       expect(l.area).not.toBe(0);
       byBiome.set(l.biome, (byBiome.get(l.biome) ?? 0) + 1);

@@ -2,7 +2,7 @@
  * Finding the way round the rock, for the robo-dozers.
  *
  * The open floor as tiles, and fields over them: how far each tile is from
- * somewhere, walking. The hole's field is kept, since every load goes there;
+ * somewhere, walking. The holes' field is kept, since every load goes to one;
  * a field toward anywhere else is made when a machine wants it, which for a
  * cave of a few thousand tiles is a moment's work. A tile beside the rock
  * costs more to cross than one in the open, so the way keeps to the middle
@@ -23,10 +23,9 @@
  * furthest point there is a clear line to, so a machine drives at a corner
  * and not from tile to tile.
  */
-import { COLS, HOLE, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from './cave';
+import { TILE, type Grid, type HoleSpec } from './cave';
 import type { Belt } from './physics';
 
-const TILES = COLS * ROWS;
 /** What crossing a tile costs over the open floor: beside the rock, and one further off. */
 const BESIDE_ROCK = 3,
   NEAR_ROCK = 0.6;
@@ -50,27 +49,44 @@ const STEPS: [number, number, number][] = [
 
 export class Nav {
   private solid!: Uint8Array;
-  private readonly cost = new Float32Array(TILES);
+  private readonly cols: number;
+  private readonly rows: number;
+  private readonly cost: Float32Array;
   /** How many coins lie on each tile, as last counted: what the way round the heaps goes round. */
-  readonly crowd = new Uint16Array(TILES);
-  /** How far each tile is from the hole, in tiles and the extra the rock costs; Infinity where there is no way. */
-  readonly toHole = new Float32Array(TILES);
-  /** How far each tile is from somewhere a load can be left: the hole, or a running belt. */
-  readonly toDrop = new Float32Array(TILES);
+  readonly crowd: Uint16Array;
+  /** How far each tile is from the nearest hole, in tiles and the extra the rock costs; Infinity where there is no way. */
+  readonly toHole: Float32Array;
+  /** How far each tile is from somewhere a load can be left: a hole, or a running belt. */
+  readonly toDrop: Float32Array;
   private belts: Belt[] = [];
-  private readonly heap = new Int32Array(TILES * 8);
-  private readonly heapKey = new Float32Array(TILES * 8);
+  private readonly heap: Int32Array;
+  private readonly heapKey: Float32Array;
 
-  constructor(solid: Uint8Array) {
+  constructor(
+    solid: Uint8Array,
+    private readonly grid: Grid,
+    /** Every hole a load can be pushed down: the drones aim at the nearest. */
+    readonly holes: readonly HoleSpec[],
+  ) {
+    this.cols = grid.cols;
+    this.rows = grid.rows;
+    const tiles = grid.cols * grid.rows;
+    this.cost = new Float32Array(tiles);
+    this.crowd = new Uint16Array(tiles);
+    this.toHole = new Float32Array(tiles);
+    this.toDrop = new Float32Array(tiles);
+    this.heap = new Int32Array(tiles * 8);
+    this.heapKey = new Float32Array(tiles * 8);
     this.rebuild(solid);
   }
 
   /** The rock has changed: a gate came down or went up. */
   rebuild(solid: Uint8Array) {
     this.solid = solid;
-    for (let ty = 0; ty < ROWS; ty++) {
-      for (let tx = 0; tx < COLS; tx++) {
-        const t = ty * COLS + tx;
+    const { cols, rows } = this;
+    for (let ty = 0; ty < rows; ty++) {
+      for (let tx = 0; tx < cols; tx++) {
+        const t = ty * cols + tx;
         if (solid[t]) {
           this.cost[t] = Infinity;
           continue;
@@ -115,9 +131,11 @@ export class Nav {
 
   private holeTiles(): number[] {
     const seeds: number[] = [];
-    for (let t = 0; t < TILES; t++) {
+    const tiles = this.cols * this.rows;
+    for (let t = 0; t < tiles; t++) {
+      if (this.solid[t]) continue;
       const [x, y] = this.centre(t);
-      if (!this.solid[t] && Math.hypot(x - HOLE.x, y - HOLE.y) < HOLE.radius + TILE) seeds.push(t);
+      if (this.holes.some((h) => Math.hypot(x - h.x, y - h.y) < h.radius + TILE)) seeds.push(t);
     }
     return seeds;
   }
@@ -125,7 +143,8 @@ export class Nav {
   private fillDrop() {
     const seeds = this.holeTiles();
     const values = seeds.map(() => 0);
-    for (let t = 0; t < TILES; t++) {
+    const tiles = this.cols * this.rows;
+    for (let t = 0; t < tiles; t++) {
       if (this.solid[t]) continue;
       const [x, y] = this.centre(t);
       const b = this.onBelt(x, y);
@@ -150,20 +169,22 @@ export class Nav {
 
   /** A field of how far every tile is from a point; Infinity if the point is in rock. */
   toward(x: number, y: number): Float32Array {
-    const field = new Float32Array(TILES);
+    const field = new Float32Array(this.cols * this.rows);
     const t = this.tileOf(x, y);
     this.fill(field, t >= 0 && !this.solid[t] ? [t] : [], true);
     return field;
   }
 
   tileOf(x: number, y: number): number {
-    const tx = Math.floor((x - ORIGIN_X) / TILE),
-      ty = Math.floor((y - ORIGIN_Y) / TILE);
-    return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS ? -1 : ty * COLS + tx;
+    const { cols, rows, grid } = this;
+    const tx = Math.floor((x - grid.originX) / TILE),
+      ty = Math.floor((y - grid.originY) / TILE);
+    return tx < 0 || ty < 0 || tx >= cols || ty >= rows ? -1 : ty * cols + tx;
   }
 
   centre(t: number): [number, number] {
-    return [ORIGIN_X + ((t % COLS) + 0.5) * TILE, ORIGIN_Y + (((t / COLS) | 0) + 0.5) * TILE];
+    const { cols, grid } = this;
+    return [grid.originX + ((t % cols) + 0.5) * TILE, grid.originY + (((t / cols) | 0) + 0.5) * TILE];
   }
 
   /** How far a point is from wherever a field runs to; Infinity with no way there. */
@@ -216,14 +237,15 @@ export class Nav {
 
   /** The neighbouring tile furthest down a field, never cutting a corner of rock; -1 at the bottom. */
   private downhill(field: Float32Array, t: number): number {
-    const tx = t % COLS,
-      ty = (t / COLS) | 0;
+    const { cols } = this;
+    const tx = t % cols,
+      ty = (t / cols) | 0;
     let best = -1,
       bestValue = field[t];
     for (const [ox, oy] of STEPS) {
       if (this.rock(tx + ox, ty + oy)) continue;
       if (ox && oy && (this.rock(tx + ox, ty) || this.rock(tx, ty + oy))) continue;
-      const n = (ty + oy) * COLS + tx + ox;
+      const n = (ty + oy) * cols + tx + ox;
       if (field[n] < bestValue) {
         bestValue = field[n];
         best = n;
@@ -238,12 +260,13 @@ export class Nav {
       bestD = Infinity;
     const t0 = this.tileOf(x, y);
     if (t0 < 0) return -1;
-    const tx = t0 % COLS,
-      ty = (t0 / COLS) | 0;
+    const { cols } = this;
+    const tx = t0 % cols,
+      ty = (t0 / cols) | 0;
     for (let oy = -2; oy <= 2; oy++) {
       for (let ox = -2; ox <= 2; ox++) {
         if (this.rock(tx + ox, ty + oy)) continue;
-        const n = (ty + oy) * COLS + tx + ox;
+        const n = (ty + oy) * cols + tx + ox;
         if (!Number.isFinite(field[n])) continue;
         const [cx, cy] = this.centre(n);
         const d = Math.hypot(cx - x, cy - y);
@@ -257,13 +280,13 @@ export class Nav {
   }
 
   private rock(tx: number, ty: number): boolean {
-    return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS || this.solid[ty * COLS + tx] === 1;
+    return tx < 0 || ty < 0 || tx >= this.cols || ty >= this.rows || this.solid[ty * this.cols + tx] === 1;
   }
 
   /** Dijkstra out from the seeds, each starting at its value or 0, over the tiles' costs, and round the heaps if `round`. */
   private fill(field: Float32Array, seeds: number[], round: boolean, values?: number[]) {
     field.fill(Infinity);
-    const { heap, heapKey, crowd } = this;
+    const { heap, heapKey, crowd, cols } = this;
     const cost = round ? this.cost.map((c, t) => c + Math.min(CROWD_MOST, crowd[t] * PER_COIN)) : this.cost;
     let size = 0;
     const push = (t: number, key: number) => {
@@ -307,12 +330,12 @@ export class Nav {
       const key = heapKey[0],
         t = pop();
       if (key > field[t]) continue;
-      const tx = t % COLS,
-        ty = (t / COLS) | 0;
+      const tx = t % cols,
+        ty = (t / cols) | 0;
       for (const [ox, oy, step] of STEPS) {
         if (this.rock(tx + ox, ty + oy)) continue;
         if (ox && oy && (this.rock(tx + ox, ty) || this.rock(tx, ty + oy))) continue;
-        const n = (ty + oy) * COLS + tx + ox;
+        const n = (ty + oy) * cols + tx + ox;
         const d = field[t] + (step * (cost[t] + cost[n])) / 2;
         if (d < field[n] && size < heap.length) {
           field[n] = d;

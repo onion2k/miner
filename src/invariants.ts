@@ -10,8 +10,7 @@
  * Checked by the fuzzer after everything it does, by the test API on asking,
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
-import { AREAS, COLS, ORDER, ORIGIN_X, ORIGIN_Y, ROWS, TILE } from './cave';
-import { SOURCES, areaOfSource } from './economy';
+import { TILE } from './cave';
 import type { Game } from './game';
 import { BARREL_KIND, KINDS, KIND_NAME } from './physics';
 import { NO_SOURCE } from './stock';
@@ -21,17 +20,20 @@ const EACH = 3;
 
 export function checkInvariants(game: Game): string[] {
   const out: string[] = [];
-  const { world, stock, economy, barrels } = game;
+  const { world, stock, economy, barrels, cave } = game;
   const save = economy.save;
+  const { areas, order } = cave.spec;
+  const { sources } = economy;
+  const { cols, rows, originX, originY } = cave.grid;
   const report = (sort: string, found: string[]) => {
     if (!found.length) return;
     out.push(...found.slice(0, EACH).map((f) => `${sort}: ${f}`));
     if (found.length > EACH) out.push(`${sort}: and ${found.length - EACH} more`);
   };
   const inRock = (x: number, y: number) => {
-    const tx = Math.floor((x - ORIGIN_X) / TILE),
-      ty = Math.floor((y - ORIGIN_Y) / TILE);
-    return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS || world.solid[ty * COLS + tx] === 1;
+    const tx = Math.floor((x - originX) / TILE),
+      ty = Math.floor((y - originY) / TILE);
+    return tx < 0 || ty < 0 || tx >= cols || ty >= rows || world.solid[ty * cols + tx] === 1;
   };
   const at = (i: number) =>
     `${KIND_NAME[world.kind[i]] ?? `kind ${world.kind[i]}`} ${i} at ${world.x[i].toFixed(1)},${world.y[i].toFixed(1)},${world.z[i].toFixed(1)}`;
@@ -40,7 +42,7 @@ export function checkInvariants(game: Game): string[] {
   const notNumbers: string[] = [],
     buried: string[] = [];
   const kinds = new Array<number>(KINDS).fill(0);
-  const bySource = Array.from({ length: SOURCES }, () => new Array<number>(KINDS).fill(0));
+  const bySource = Array.from({ length: sources.count }, () => new Array<number>(KINDS).fill(0));
   const sealedIn: string[] = [];
   let live = 0;
   for (let i = 0; i < world.count; i++) {
@@ -57,14 +59,14 @@ export function checkInvariants(game: Game): string[] {
     else if (!world.carried[i] && inRock(world.x[i], world.y[i])) buried.push(at(i));
     const from = stock.origin[i];
     if (from !== NO_SOURCE) {
-      if (from >= SOURCES) notNumbers.push(`${at(i)} from no source (${from})`);
+      if (from >= sources.count) notNumbers.push(`${at(i)} from no source (${from})`);
       else {
         bySource[from][k]++;
-        if (economy.sealed(areaOfSource(from)))
-          sealedIn.push(`${at(i)}, from sealed ${AREAS[areaOfSource(from)].name}`);
+        if (economy.sealed(sources.area(from)))
+          sealedIn.push(`${at(i)}, from sealed ${areas[sources.area(from)].name}`);
       }
     } else if (k === BARREL_KIND && economy.sealed(stock.home[i])) {
-      sealedIn.push(`${at(i)}, of sealed ${AREAS[stock.home[i]].name}`);
+      sealedIn.push(`${at(i)}, of sealed ${areas[stock.home[i]].name}`);
     }
   }
   report('not a number', notNumbers);
@@ -74,7 +76,7 @@ export function checkInvariants(game: Game): string[] {
   const miscounted: string[] = [];
   for (let k = 0; k < KINDS; k++)
     if (kinds[k] !== stock.kinds[k]) miscounted.push(`${KIND_NAME[k]}: counted ${stock.kinds[k]}, holds ${kinds[k]}`);
-  for (let s = 0; s < SOURCES; s++)
+  for (let s = 0; s < sources.count; s++)
     for (let k = 0; k < KINDS; k++)
       if (bySource[s][k] !== (stock.left[s][k] ?? 0))
         miscounted.push(`source ${s} ${KIND_NAME[k]}: counted ${stock.left[s][k]}, holds ${bySource[s][k]}`);
@@ -94,14 +96,14 @@ export function checkInvariants(game: Game): string[] {
 
   // the bank and the rooms
   if (!Number.isFinite(save.bank) || save.bank < 0) out.push(`the bank: ${save.bank}`);
-  if (!ORDER.includes(save.room)) out.push(`the room being cleared is no room: ${save.room}`);
-  else if (!save.areas[save.room]) out.push(`the room being cleared, ${AREAS[save.room].name}, is not open`);
+  if (!order.includes(save.room)) out.push(`the room being cleared is no room: ${save.room}`);
+  else if (!save.areas[save.room]) out.push(`the room being cleared, ${areas[save.room].name}, is not open`);
   if (!save.areas[0]) out.push('the hollow is shut');
   // no room past the next is open, and no room behind the one being cleared but the hollow
-  const here = ORDER.indexOf(save.room);
-  ORDER.forEach((a, n) => {
-    if (n > here + 1 && save.areas[a]) out.push(`${AREAS[a].name} is open, past the next room`);
-    if (n > 0 && n < here && save.areas[a]) out.push(`${AREAS[a].name} is open, behind the room being cleared`);
+  const here = order.indexOf(save.room);
+  order.forEach((a, n) => {
+    if (n > here + 1 && save.areas[a]) out.push(`${areas[a].name} is open, past the next room`);
+    if (n > 0 && n < here && save.areas[a]) out.push(`${areas[a].name} is open, behind the room being cleared`);
   });
 
   // the save is plain data, and comes back as it went

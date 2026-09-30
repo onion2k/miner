@@ -10,11 +10,10 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Autopilot } from '../src/autopilot';
-import { AREAS, ORDER } from '../src/cave';
 import { Economy, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
 import { checkInvariants } from '../src/invariants';
-import { withSeed } from './helpers';
+import { AREAS, FIVE, ORDER, SPEC, newGame, withSeed } from './helpers';
 
 const DIR = new URL('saves/', import.meta.url);
 const files = readdirSync(DIR)
@@ -45,7 +44,7 @@ describe('saves from every shape the game has written', () => {
   for (const file of files) {
     describe(file, () => {
       it('loads with what it bought kept, and every list filled out to the cave as it is now', () => {
-        const e = new Economy(memoryStore(read(file)));
+        const e = new Economy(memoryStore(read(file)), SPEC);
         const save = e.save;
         for (const [key, was] of Object.entries(KEPT[file])) expect(save[key as keyof typeof save]).toEqual(was);
         expect(save.areas).toHaveLength(AREAS.length);
@@ -57,7 +56,7 @@ describe('saves from every shape the game has written', () => {
 
       it('plays on from where it left off, and breaks no rule', () => {
         withSeed(7, () => {
-          const game = new Game(new Economy(memoryStore(read(file))));
+          const game = newGame(read(file));
           expect(checkInvariants(game)).toEqual([]);
           const pilot = new Autopilot(game, 'rusher', { shop: false });
           for (let f = 0; f < 600; f++) pilot.step(1 / 60);
@@ -67,11 +66,11 @@ describe('saves from every shape the game has written', () => {
 
       it('comes back as it went, written again in the shape of today', () => {
         const store = memoryStore(read(file));
-        const before = new Economy(store).save;
-        new Economy(memoryStore(read(file))); // loading alone must not write
-        const game = new Game(new Economy(store));
+        const before = new Economy(store, SPEC).save;
+        new Economy(memoryStore(read(file)), SPEC); // loading alone must not write
+        const game = new Game(new Economy(store, SPEC), FIVE);
         game.persist();
-        const after = new Economy(memoryStore(store.json)).save;
+        const after = new Economy(memoryStore(store.json), SPEC).save;
         expect(after.bank).toBe(before.bank);
         expect(after.room).toBe(before.room);
         expect(after.areas).toEqual(before.areas);
@@ -82,7 +81,7 @@ describe('saves from every shape the game has written', () => {
   }
 
   it('has the shape the game writes now: a new field means a new file here', () => {
-    const game = new Game(new Economy(memoryStore()));
+    const game = newGame();
     game.persist();
     const now = Object.keys(JSON.parse(JSON.stringify(game.economy.save)) as object).sort();
     const newest = Object.keys(JSON.parse(read(files[files.length - 1])) as object).sort();

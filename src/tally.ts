@@ -2,7 +2,7 @@
  * A run: everything that has gone down the hole without a pause longer than
  * a moment, tallied as it goes, and how hot it is — how fast value is
  * arriving — which is what the sparkle, the light and the pitch grow with.
- * And the hole's own glow, which flares with each thing banked and fades.
+ * And each hole's own glow, which flares with each thing banked down it and fades.
  */
 import { KINDS, KIND_NAME, KIND_VALUE } from './physics';
 
@@ -28,18 +28,22 @@ export class Tally {
   readonly gained = new Array<number>(KINDS).fill(0);
   /** How fast value is arriving, in coins a second, smoothed. */
   flow = 0;
-  /** How bright the hole glows, 0 to 3. */
-  holePulse = 0;
+  /** How bright each hole glows, 0 to 3. */
+  readonly holePulse: number[];
 
-  /** Something banked. How hot the run is now, 0 to 1. */
-  add(kind: number): number {
+  constructor(holes = 1) {
+    this.holePulse = new Array<number>(holes).fill(0);
+  }
+
+  /** Something banked down the hole `hole`. How hot the run is now, 0 to 1. */
+  add(kind: number, hole = 0): number {
     this.gained[kind]++;
     this.value += KIND_VALUE[kind];
     this.count++;
     this.timer = RUN_PAUSE;
     this.flow += 1;
     const heat = this.heat;
-    this.holePulse = Math.min(3, this.holePulse + 0.2 + heat * 0.5 + (kind > 0 ? 0.7 : 0));
+    this.holePulse[hole] = Math.min(3, this.holePulse[hole] + 0.2 + heat * 0.5 + (kind > 0 ? 0.7 : 0));
     return heat;
   }
 
@@ -49,7 +53,7 @@ export class Tally {
 
   /** The glow and the heat die away. */
   fade(dt: number) {
-    this.holePulse = Math.max(0, this.holePulse - dt * 1.8);
+    for (let k = 0; k < this.holePulse.length; k++) this.holePulse[k] = Math.max(0, this.holePulse[k] - dt * 1.8);
     this.flow = Math.max(0, this.flow - this.flow * Math.min(1, 2.5 * dt));
   }
 

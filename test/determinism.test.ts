@@ -6,9 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { hashGame, playTwice } from '../scripts/determinism';
-import { Economy, memoryStore } from '../src/economy';
-import { Game } from '../src/game';
-import { withSeed } from './helpers';
+import { newGame, withSeed } from './helpers';
 
 describe('the same seed gives the same game', () => {
   it('plays out the same, twice from a seed, all the way down to the last coin', () => {
@@ -19,12 +17,12 @@ describe('the same seed gives the same game', () => {
 
   it('hashes what a game is, so anything moved shows', () => {
     const one = withSeed(5, () => {
-      const game = new Game(new Economy(memoryStore()));
+      const game = newGame();
       for (let f = 0; f < 60; f++) game.step(1 / 60, { throttle: 1, steer: 0.2 });
       return { game, hash: hashGame(game) };
     });
     const two = withSeed(5, () => {
-      const game = new Game(new Economy(memoryStore()));
+      const game = newGame();
       for (let f = 0; f < 60; f++) game.step(1 / 60, { throttle: 1, steer: 0.2 });
       return hashGame(game);
     });

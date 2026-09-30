@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ORDER, SECRETS, WALLS } from '../src/cave';
 import { Autopilot } from '../src/autopilot';
 import { BOT_SCALE } from '../src/tools';
-import { Economy, memoryStore } from '../src/economy';
-import { Game } from '../src/game';
 import { checkInvariants } from '../src/invariants';
-import { withSeed } from './helpers';
+import { ORDER, SECRETS, WALLS, newGame, withSeed } from './helpers';
 
 const DT = 1 / 60;
-const newGame = (json: string | null = null) => new Game(new Economy(memoryStore(json)));
 /** Play `seconds` of the game under the autopilot, or until `until` holds. */
 function fly(pilot: Autopilot, seconds: number, until: () => boolean = () => false) {
   for (let f = 0; f < seconds * 60 && !until(); f++) pilot.step(DT);

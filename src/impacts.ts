@@ -11,7 +11,7 @@
  * against a wall is not a hit every frame. What follows — the damage, the
  * noise, the dust — is the caller's.
  */
-import { BRICK, COLS, SECRET, SECRETS, WALLS, tileCentre } from './cave';
+import { BRICK, SECRET, tileCentre, type CaveSpec, type Grid } from './cave';
 
 /** Square enough on, as the cosine off straight at it, and fast enough, to smash the rock that breaks or hurt a wall. */
 export const SMASH_SQUARE = 0.7,
@@ -36,17 +36,25 @@ export interface ImpactState {
 }
 
 export class Impacts {
-  private readonly knockedAt = SECRETS.map(() => -Infinity);
-  private readonly hitAt = WALLS.map(() => -Infinity);
+  private readonly knockedAt: number[];
+  private readonly hitAt: number[];
 
-  constructor(private readonly cells: Uint8Array) {}
+  /** `cells` are the cave's, over `grid`; `spec` says how many chambers and walls there are to remember. */
+  constructor(
+    private readonly cells: Uint8Array,
+    private readonly grid: Grid,
+    spec: CaveSpec,
+  ) {
+    this.knockedAt = spec.secrets.map(() => -Infinity);
+    this.hitAt = spec.walls.map(() => -Infinity);
+  }
 
   /**
    * The machine is up against the tile (tx, ty), driving at it `square` on
    * (1 straight at it, 0 along it) at `speed`, at time `t`.
    */
   hit(tx: number, ty: number, square: number, speed: number, t: number, state: ImpactState): Impact | null {
-    const cell = this.cells[ty * COLS + tx];
+    const cell = this.cells[ty * this.grid.cols + tx];
     speed = Math.abs(speed);
     if (cell >= BRICK) {
       const wall = cell - BRICK;
@@ -54,7 +62,7 @@ export class Impacts {
       const damage = state.ram(speed);
       if (!damage) return null;
       this.hitAt[wall] = t;
-      const [x, y] = tileCentre(tx, ty);
+      const [x, y] = tileCentre(this.grid, tx, ty);
       return { type: 'wall', wall, damage, x, y };
     }
     if (cell < SECRET || state.secretsOpen[cell - SECRET]) return null;

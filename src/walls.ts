@@ -3,11 +3,11 @@
  * treasure, how it looks for the beating it has taken, and how it comes
  * apart when it falls.
  *
- * All of it follows from a wall's tiles, grade and treasure in `cave.ts`,
- * and from nothing else: the same wall is always the same bricks.
+ * All of it follows from a wall's tiles, grade and treasure in the cave's
+ * spec, and from nothing else: the same wall is always the same bricks.
  */
 import { BAR } from './physics';
-import { ORIGIN_X, ORIGIN_Y, STASHES, TILE, WALLS, hash, tileCentre, wallAlongX, type Stash } from './cave';
+import { TILE, hash, tileCentre, wallAlongX, type Cave, type Stash } from './cave';
 
 /** A brick in a wall: how long along the wall, how deep, how tall; and how many courses a wall stands. */
 export const BRICK_SIZE = [1.9, 1.75, 1.05] as const;
@@ -28,12 +28,13 @@ export interface Brick {
  * part brick at each end where the bond leaves one. Along the wall's own
  * length, which is X or Y as the wall runs.
  */
-export function layBricks(w: number): Brick[] {
-  const [x0, y0, x1, y1] = WALLS[w].tiles;
-  const alongX = wallAlongX(w);
-  const start = alongX ? ORIGIN_X + x0 * TILE : ORIGIN_Y + y0 * TILE;
+export function layBricks(cave: Cave, w: number): Brick[] {
+  const { originX, originY } = cave.grid;
+  const [x0, y0, x1, y1] = cave.spec.walls[w].tiles;
+  const alongX = wallAlongX(cave.spec, w);
+  const start = alongX ? originX + x0 * TILE : originY + y0 * TILE;
   const span = ((alongX ? x1 - x0 : y1 - y0) + 1) * TILE;
-  const across = alongX ? ORIGIN_Y + (y0 + 0.5) * TILE : ORIGIN_X + (x0 + 0.5) * TILE;
+  const across = alongX ? originY + (y0 + 0.5) * TILE : originX + (x0 + 0.5) * TILE;
   const out: Brick[] = [];
   const [L, D, H] = BRICK_SIZE;
   for (let c = 0; c < COURSES; c++) {
@@ -63,9 +64,9 @@ export function layBricks(w: number): Brick[] {
  * brick, a gem is set in the top of one. Always the same bricks for the same
  * wall, and from the top course, where they show from above.
  */
-export function treasureBricks(w: number): { brick: number; kind: number }[] {
-  const bricks = layBricks(w),
-    items = WALLS[w].treasure.flatMap(([kind, n]) => new Array<number>(n).fill(kind));
+export function treasureBricks(cave: Cave, w: number): { brick: number; kind: number }[] {
+  const bricks = layBricks(cave, w),
+    items = cave.spec.walls[w].treasure.flatMap(([kind, n]) => new Array<number>(n).fill(kind));
   const high = bricks
     .map((b, i) => [b, i] as const)
     .filter(([b]) => b.z > BRICK_SIZE[2] * (COURSES - 1))
@@ -83,18 +84,19 @@ export function treasureBricks(w: number): { brick: number; kind: number }[] {
 }
 
 /** A brick wall's tiles, as world centres. */
-export function wallTiles(w: number): [number, number][] {
-  const [x0, y0, x1, y1] = WALLS[w].tiles,
+export function wallTiles(cave: Cave, w: number): [number, number][] {
+  const [x0, y0, x1, y1] = cave.spec.walls[w].tiles,
     out: [number, number][] = [];
-  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.push(tileCentre(x, y));
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.push(tileCentre(cave.grid, x, y));
   return out;
 }
 
 /** The side room a wall stands in front of, if it stands in front of one. */
-export function stashBehind(w: number): Stash | undefined {
-  const [x0, y0, x1, y1] = WALLS[w].tiles;
-  return STASHES.find(
-    (st) => st.area === WALLS[w].area && Math.hypot((x0 + x1) / 2 - st.at[0], (y0 + y1) / 2 - st.at[1]) < 12,
+export function stashBehind(cave: Cave, w: number): Stash | undefined {
+  const { walls, stashes } = cave.spec;
+  const [x0, y0, x1, y1] = walls[w].tiles;
+  return stashes.find(
+    (st) => st.area === walls[w].area && Math.hypot((x0 + x1) / 2 - st.at[0], (y0 + y1) / 2 - st.at[1]) < 12,
   );
 }
 
@@ -112,9 +114,9 @@ export interface StandingBrick extends Brick {
  * darker, the more the worse. `hurt` is how much of what it stands it has
  * taken, 0 to 1.
  */
-export function standingBricks(w: number, hurt: number): StandingBrick[] {
-  const gold = new Map(treasureBricks(w).map((t) => [t.brick, t.kind]));
-  return layBricks(w).map((b, i) => {
+export function standingBricks(cave: Cave, w: number, hurt: number): StandingBrick[] {
+  const gold = new Map(treasureBricks(cave, w).map((t) => [t.brick, t.kind]));
+  return layBricks(cave, w).map((b, i) => {
     const j = (salt: number) => hash(w * 131 + i, salt, 5) - 0.5;
     return {
       x: b.x + j(1) * hurt * 0.9,
@@ -153,6 +155,7 @@ export interface Loose {
  * the one below, or the balls would start inside each other and burst apart.
  */
 export function looseBricks(
+  cave: Cave,
   w: number,
   from: { x: number; y: number; yaw: number },
   ballRadius: number,
@@ -160,9 +163,9 @@ export function looseBricks(
 ): Loose[] {
   const c = Math.cos(from.yaw),
     s = Math.sin(from.yaw);
-  const gold = new Map(treasureBricks(w).map((t) => [t.brick, t.kind]));
+  const gold = new Map(treasureBricks(cave, w).map((t) => [t.brick, t.kind]));
   const out: Loose[] = [];
-  layBricks(w).forEach((b, n) => {
+  layBricks(cave, w).forEach((b, n) => {
     const near = Math.max(0, 1 - Math.hypot(b.x - from.x, b.y - from.y) / 16);
     const push = 3 + near * 9 + (b.z / (COURSES * BRICK_SIZE[2])) * 4;
     const course = Math.round(b.z / BRICK_SIZE[2] - 0.5);

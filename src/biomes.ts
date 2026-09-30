@@ -20,7 +20,7 @@
  */
 import type { Emit } from 'artshape-render/game/particles';
 import type { Mesh } from 'artshape-render/mesh/types';
-import { AREAS, ORIGIN_X, ORIGIN_Y, TILE, WINGS, hash } from './cave';
+import { TILE, gridOf, hash, type CaveSpec } from './cave';
 import { ball, box, cone, cylinder, frond, gem, lump, moved, scaled, tuft } from './meshes';
 import { noise, smoothstep } from './noise';
 import { FLOOR_TONES, ROCK_TONES, type Rgb } from './palette';
@@ -130,24 +130,37 @@ const FUTURE: Biome = {
   shape: { rough: 0.15, ledge: 0.25, beds: 1, top: 1 },
 };
 
+const listed = new WeakMap<CaveSpec, (Biome | null)[]>();
+let lastSpec: CaveSpec | null = null,
+  lastBiomes: (Biome | null)[] | null = null;
+
 /** Each room's biome, by its index: none for the hollow. */
-export const BIOMES: (Biome | null)[] = AREAS.map((_, a) => [null, JUNGLE, ICE, LAVA, FUTURE][a] ?? null);
+export function biomesOf(spec: CaveSpec): (Biome | null)[] {
+  // the terrain asks once a vertex, always of the same cave, so the last answer is kept to hand
+  if (spec === lastSpec) return lastBiomes!;
+  let biomes = listed.get(spec);
+  if (!biomes) listed.set(spec, (biomes = spec.areas.map((_, a) => [null, JUNGLE, ICE, LAVA, FUTURE][a] ?? null)));
+  lastSpec = spec;
+  lastBiomes = biomes;
+  return biomes;
+}
 
 // ---- how much of a biome there is where ----
 
 /** Along a wing and across it, in world units. */
-function onWing(area: number, x: number, y: number): [number, number] {
-  const [dx, dy] = WINGS[area].dir;
+function onWing(spec: CaveSpec, area: number, x: number, y: number): [number, number] {
+  const [dx, dy] = spec.wings[area].dir;
   return dx ? [dx * x, y] : [dy * y, x];
 }
 
 /** The room whose biome is strongest at a point, and how strong, 0 to 1. The hollow and its walls are 0. */
-export function biomeAt(x: number, y: number): { area: number; weight: number } {
+export function biomeAt(spec: CaveSpec, x: number, y: number): { area: number; weight: number } {
+  const biomes = biomesOf(spec);
   let best = { area: 0, weight: 0 };
-  for (let a = 1; a < WINGS.length; a++) {
-    if (!BIOMES[a]) continue;
-    const { mouth, room } = WINGS[a];
-    const [along, across] = onWing(a, x, y);
+  for (let a = 1; a < spec.wings.length; a++) {
+    if (!biomes[a]) continue;
+    const { mouth, room } = spec.wings[a];
+    const [along, across] = onWing(spec, a, x, y);
     // from a little past the hollow's rim, which stays as it was, to a little into the room
     const start = mouth * TILE + 5,
       whole = (room.along - room.half) * TILE + 8;
@@ -160,58 +173,62 @@ export function biomeAt(x: number, y: number): { area: number; weight: number } 
 }
 
 /** A colour of the cave's own, taken as far toward a biome's as the biome is strong at a point. */
-export function tint(base: Rgb, x: number, y: number, pick: (b: Biome) => Rgb): Rgb {
-  const { area, weight } = biomeAt(x, y);
-  const biome = BIOMES[area];
+export function tint(spec: CaveSpec, base: Rgb, x: number, y: number, pick: (b: Biome) => Rgb): Rgb {
+  const { area, weight } = biomeAt(spec, x, y);
+  const biome = biomesOf(spec)[area];
   if (!biome || weight <= 0) return base;
   const to = pick(biome);
   return [0, 1, 2].map((i) => base[i] + (to[i] - base[i]) * weight) as Rgb;
 }
 
 /** The colour of a lamp's light where it stands, and its brightness against the cave's own lamps. */
-export function lampColour(x: number, y: number): Rgb {
-  return tint(LAMP_COLOUR, x, y, (b) => b.lamp.map((c) => c * b.lampBright) as Rgb);
+export function lampColour(spec: CaveSpec, x: number, y: number): Rgb {
+  return tint(spec, LAMP_COLOUR, x, y, (b) => b.lamp.map((c) => c * b.lampBright) as Rgb);
 }
 
 /** The shade of a group of rock or floor, by the palette it was drawn from: 0 the cave's own, else a room's biome. */
-export function groundTone(palette: number, rock: boolean, tone: number): Tone {
-  const biome = BIOMES[palette];
+export function groundTone(spec: CaveSpec, palette: number, rock: boolean, tone: number): Tone {
+  const biome = biomesOf(spec)[palette];
   if (!biome) return (rock ? ROCK_TONES : FLOOR_TONES)[tone] as Tone;
   return (rock ? biome.rock : biome.floor)[tone];
 }
 
 /** How the terrain takes the biomes: which palette each patch is drawn from, its shades, and the rock's shape. */
-export const BIOME_STYLE: TerrainStyle = {
-  palette(x, y) {
-    const { area, weight } = biomeAt(x, y);
-    if (weight <= 0) return 0;
-    // patches that grow as the weight does, ragged at the triangle's own size
-    const threshold = 0.6 * noise(x * 0.16, y * 0.16, 91) + 0.4 * hash(Math.round(x * 3), Math.round(y * 3), 93);
-    return weight >= 0.999 || weight > threshold ? area : 0;
-  },
-  tone(palette, x, y, rock, tone) {
-    if (BIOMES[palette]?.name !== 'future' || rock || tone === FOOT_TONE) return tone;
-    // the future's floor is panels, a tile each, alternating, with a dark seam round each
-    const fx = (x - ORIGIN_X) / TILE,
-      fy = (y - ORIGIN_Y) / TILE;
-    const ex = fx - Math.floor(fx),
-      ey = fy - Math.floor(fy);
-    if (Math.min(ex, 1 - ex, ey, 1 - ey) < 0.07) return SEAM_TONE;
-    return (Math.floor(fx) + Math.floor(fy)) & 1;
-  },
-  scree(x, y) {
-    // the future's rock is cut and does not shed; the rest sheds as the cave's own does
-    const { area, weight } = biomeAt(x, y);
-    return BIOMES[area]?.name === 'future' ? 1 - weight : 1;
-  },
-  shape(x, y) {
-    const { area, weight } = biomeAt(x, y);
-    const to = BIOMES[area]?.shape;
-    if (!to || weight <= 0) return PLAIN_ROCK;
-    const mix = (k: keyof RockShape) => PLAIN_ROCK[k] + (to[k] - PLAIN_ROCK[k]) * weight;
-    return { rough: mix('rough'), ledge: mix('ledge'), beds: mix('beds'), top: mix('top') };
-  },
-};
+export function biomeStyle(spec: CaveSpec): TerrainStyle {
+  const biomes = biomesOf(spec),
+    { originX, originY } = gridOf(spec);
+  return {
+    palette(x, y) {
+      const { area, weight } = biomeAt(spec, x, y);
+      if (weight <= 0) return 0;
+      // patches that grow as the weight does, ragged at the triangle's own size
+      const threshold = 0.6 * noise(x * 0.16, y * 0.16, 91) + 0.4 * hash(Math.round(x * 3), Math.round(y * 3), 93);
+      return weight >= 0.999 || weight > threshold ? area : 0;
+    },
+    tone(palette, x, y, rock, tone) {
+      if (biomes[palette]?.name !== 'future' || rock || tone === FOOT_TONE) return tone;
+      // the future's floor is panels, a tile each, alternating, with a dark seam round each
+      const fx = (x - originX) / TILE,
+        fy = (y - originY) / TILE;
+      const ex = fx - Math.floor(fx),
+        ey = fy - Math.floor(fy);
+      if (Math.min(ex, 1 - ex, ey, 1 - ey) < 0.07) return SEAM_TONE;
+      return (Math.floor(fx) + Math.floor(fy)) & 1;
+    },
+    scree(x, y) {
+      // the future's rock is cut and does not shed; the rest sheds as the cave's own does
+      const { area, weight } = biomeAt(spec, x, y);
+      return biomes[area]?.name === 'future' ? 1 - weight : 1;
+    },
+    shape(x, y) {
+      const { area, weight } = biomeAt(spec, x, y);
+      const to = biomes[area]?.shape;
+      if (!to || weight <= 0) return PLAIN_ROCK;
+      const mix = (k: keyof RockShape) => PLAIN_ROCK[k] + (to[k] - PLAIN_ROCK[k]) * weight;
+      return { rough: mix('rough'), ledge: mix('ledge'), beds: mix('beds'), top: mix('top') };
+    },
+  };
+}
 
 // ---- what stands in them ----
 
@@ -298,7 +315,8 @@ export interface Decor {
  * flat on the floor at its foot, so nothing stands where the dozer drives
  * that it would drive through. The same every time for the same terrain.
  */
-export function decorate(s: Samples): Decor {
+export function decorate(spec: CaveSpec, s: Samples): Decor {
+  const biomes = biomesOf(spec);
   const props: Prop[] = [],
     lights: FeatureLight[] = [];
   const { gx, gy, depth } = s;
@@ -310,8 +328,8 @@ export function decorate(s: Samples): Decor {
       if (!Number.isFinite(d) || s.area[k] === 255) continue;
       const x = s.x[k],
         y = s.y[k];
-      const { area: b, weight: w } = biomeAt(x, y);
-      const biome = BIOMES[b];
+      const { area: b, weight: w } = biomeAt(spec, x, y);
+      const biome = biomes[b];
       if (!biome || w < 0.05) continue;
       const h = (salt: number) => hash(i, j, 300 + salt);
       const r = h(0);
@@ -740,8 +758,8 @@ function future(p: Place, r: number, props: Prop[], lights: FeatureLight[]) {
  * Something drifting in a biome's air at a point: snow falling, a firefly,
  * an ember, a mote of light. Null for the hollow.
  */
-export function airParticle(area: number, x: number, y: number, random: () => number): Emit | null {
-  switch (BIOMES[area]?.name) {
+export function airParticle(spec: CaveSpec, area: number, x: number, y: number, random: () => number): Emit | null {
+  switch (biomesOf(spec)[area]?.name) {
     case 'ice':
       return {
         position: [x, y, 9 + random() * 6],

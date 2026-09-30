@@ -8,7 +8,8 @@
  * always hold are checked as it goes; a broken one, or the autopilot stuck,
  * is reported as a problem.
  */
-import { AREAS, ORDER } from '../src/cave';
+import { buildCave } from '../src/cave';
+import { FIVE_ROOMS } from '../src/caves';
 import { Autopilot, type Profile } from '../src/autopilot';
 import { Economy, memoryStore, workshopTotal } from '../src/economy';
 import { Game } from '../src/game';
@@ -70,7 +71,7 @@ function seeded(n: number): () => number {
   };
 }
 
-export function playThrough({ seed, profile, rooms = ORDER.length, capMinutes = 90 }: PlayOptions): PlayRun {
+export function playThrough({ seed, profile, rooms = FIVE_ROOMS.order.length, capMinutes = 90 }: PlayOptions): PlayRun {
   const started = performance.now();
   const saved = Math.random;
   Math.random = seeded(seed);
@@ -82,9 +83,9 @@ export function playThrough({ seed, profile, rooms = ORDER.length, capMinutes = 
   let game: Game | null = null;
   let spent = 0;
   try {
-    const economy = new Economy(memoryStore());
+    const economy = new Economy(memoryStore(), FIVE_ROOMS);
     const costOf = (id: string) => [...economy.offers(), ...economy.cosmetics()].find((o) => o.id === id)?.cost ?? 0;
-    game = new Game(economy, {});
+    game = new Game(economy, buildCave(FIVE_ROOMS), {});
     const pilot = new Autopilot(game, profile);
     let enteredAt = 0,
       bankedAt = 0,
@@ -92,7 +93,7 @@ export function playThrough({ seed, profile, rooms = ORDER.length, capMinutes = 
     const endRoom = (area: number) => {
       roomRuns.push({
         area,
-        name: AREAS[area].name,
+        name: FIVE_ROOMS.areas[area].name,
         minutes: (game!.t - enteredAt) / 60,
         banked: economy.save.banked - bankedAt,
       });
@@ -156,7 +157,7 @@ export function playThrough({ seed, profile, rooms = ORDER.length, capMinutes = 
       purchases,
       banked: save.banked,
       spent,
-      workshop: workshopTotal(),
+      workshop: workshopTotal(FIVE_ROOMS),
       chambers: save.secrets.filter(Boolean).length,
       walls: save.walls.filter(Boolean).length,
       problems,
@@ -175,7 +176,7 @@ export function playThrough({ seed, profile, rooms = ORDER.length, capMinutes = 
       purchases,
       banked: game?.economy.save.banked ?? 0,
       spent,
-      workshop: workshopTotal(),
+      workshop: workshopTotal(FIVE_ROOMS),
       chambers: 0,
       walls: 0,
       problems,

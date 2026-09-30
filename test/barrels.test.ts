@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, BODY_CAPACITY, buildCave } from '../src/cave';
+import { BODY_CAPACITY, buildCave } from '../src/cave';
 import { BLAST_RADIUS, Barrels, FUSE } from '../src/barrels';
 import { BARREL_KIND, KIND_RADIUS, makeWorld, type Pusher, type World } from '../src/physics';
+import { AREAS, GRID, SPEC } from './helpers';
 
-const cave = buildCave();
+const cave = buildCave(SPEC);
 const DT = 1 / 60;
-const world = () => makeWorld(BODY_CAPACITY, cave.solid(AREAS.map(() => true)));
+const world = () => makeWorld(BODY_CAPACITY, cave.solid(AREAS.map(() => true)), GRID, SPEC.holes);
 /** A box of a machine's, at (x, y) facing +x, `owner`'s. */
 const box = (x: number, y: number, owner: number): Pusher => ({
   x,
