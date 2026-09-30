@@ -34,6 +34,7 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '09-current.json': { engine: 2 },
   '10-spider.json': { body: 'spider' },
   '11-linear.json': { cave: 'east-gallery', open: true },
+  '12-two-belts.json': { cave: 'east-gallery', belts: ['east-belt', 'east-belt-bottom'] },
 };
 
 /**
@@ -154,11 +155,20 @@ const LANDS: Record<
     walls: [false],
     wallDamage: [0],
   },
+  '12-two-belts.json': {
+    cave: 'east-gallery',
+    open: false,
+    left: [220, 14, 0, 0, 0, 0, 0, 0],
+    belts: ['east-belt', 'east-belt-bottom'],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
 };
 
 describe('saves from every shape the game has written', () => {
   it('has a file for every shape, oldest first, and says where each lands', () => {
-    expect(files.length).toBeGreaterThanOrEqual(11);
+    expect(files.length).toBeGreaterThanOrEqual(12);
     expect(files).toEqual(Object.keys(KEPT).sort());
     expect(Object.keys(LANDS).sort()).toEqual(files);
   });
@@ -183,6 +193,7 @@ describe('saves from every shape the game has written', () => {
         expect(save.rubble, 'rubble starts afresh').toEqual([]);
         // an old save's rubble, lamps and barrels were in the old map's coordinates: they start afresh; a new one's are kept
         if (file.startsWith('11')) expect(save.lampsBroken).toEqual([4, 9]);
+        else if (file.startsWith('12')) expect(save.lampsBroken).toEqual([2, 7]);
         else {
           expect(save.lampsBroken, 'lamps start afresh').toEqual([]);
           expect(save.barrels, 'barrels start afresh').toBeNull();

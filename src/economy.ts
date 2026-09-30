@@ -554,7 +554,7 @@ export class Economy {
     for (const belt of cave.belts) {
       out.push({
         id: `belt:${belt.id}`,
-        title: `Conveyor to the ${cave.name.replace(/^The /, '')}`,
+        title: belt.label ?? `Conveyor to the ${cave.name.replace(/^The /, '')}`,
         sub: 'push coins onto it and it carries them to the hole',
         cost: belt.cost,
         owned: s.belts.includes(belt.id),

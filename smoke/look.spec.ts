@@ -127,6 +127,45 @@ test.describe('what it looks like', () => {
     });
   }
 
+  // several holes and belts in a cave: the North Vault's second hole among its heaps, and the East Gallery's two belts
+  // running, each with the bar across where it ends
+  test('the north vault, both its holes', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('north-vault'));
+    const [a, b] = await page.evaluate(() => window.pushminer!.content().holes);
+    expect(Math.hypot(a.x - b.x, a.y - b.y), 'two holes, apart').toBeGreaterThan(40);
+    await scene(page, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, radius: 120 }, 180, [b.x - 12, b.y - 14, Math.PI / 2]);
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('north-holes.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the east gallery, both its belts running', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('east-gallery', { belts: ['east-belt', 'east-belt-bottom'] }));
+    const hole = await page.evaluate(() => window.pushminer!.content().hole);
+    expect(await page.evaluate(() => window.pushminer!.state().belts)).toHaveLength(2);
+    await scene(page, { x: hole.x + 34, y: hole.y - 4, radius: 105 }, 180, [hole.x - 12, hole.y - 14, Math.PI / 2]);
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('east-belts.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('where the east gallery’s belts end, up close', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('east-gallery', { belts: ['east-belt', 'east-belt-bottom'] }));
+    const ends = await page.evaluate(() => window.pushminer!.content().belts.map((b) => b.to));
+    await scene(
+      page,
+      { x: (ends[0].x + ends[1].x) / 2, y: (ends[0].y + ends[1].y) / 2, azimuth: 0.9, polar: 1.0, radius: 38 },
+      120,
+      [ends[0].x + 10, ends[0].y + 14, Math.PI / 2],
+    );
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('east-belt-ends.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the dozer, up close', async ({ page }) => {
     const problems = watch(page);
     await begin(page, inCave('south-gallery', { flag: true }));
@@ -391,6 +430,23 @@ test.describe('what it looks like on a phone', () => {
     expect((await page.evaluate(() => window.pushminer!.state())).cave).toBe('south-gallery');
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone-arriving.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the workshop in the east gallery on a phone, its two belts named', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('east-gallery', { bank: 4000, drones: 1, horn: true }));
+    const [x, y] = await heart(page);
+    await scene(page, { x, y, radius: 84 }, 120);
+    await page.locator('#shopButton').click();
+    await page.evaluate(() => window.pushminer!.step(1));
+    await expect(page.locator('#shop')).toBeVisible();
+    const fits = await page.$$eval('#shop button[data-id^="belt:"]', (buttons) =>
+      buttons.map((b) => b.scrollWidth <= b.clientWidth + 1 && b.getBoundingClientRect().right <= window.innerWidth),
+    );
+    expect(fits, 'both belt buttons fit the screen, names and all').toEqual([true, true]);
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('phone-workshop-east.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 

@@ -42,6 +42,8 @@ export interface GameState {
   walls: boolean[];
   wallDamage: number[];
   lampsBroken: number[];
+  /** The ids of the belts bought for this cave, which are the ones running. */
+  belts: string[];
   drones: number;
   horn: boolean;
   /** The body the machine stands on: 'dozer' on its tracks, or 'spider'. */
@@ -220,6 +222,7 @@ export function createApi(host: DebugHost): PushminerApi {
         walls: [...save.walls],
         wallDamage: [...save.wallDamage],
         lampsBroken: [...save.lampsBroken],
+        belts: [...save.belts],
         drones: save.drones,
         horn: save.horn,
         body: save.body,

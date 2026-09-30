@@ -249,6 +249,109 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   expect(problems).toEqual([]);
 });
 
+test('the North Vault’s two holes each bank what goes down them', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true, save: { cave: 'north-vault' } });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(1);
+  });
+  const content = await page.evaluate(() => window.pushminer!.content());
+  expect(content.holes, 'two holes in the North Vault').toHaveLength(2);
+  expect(content.hole, 'the first is the one the machine is told of').toEqual(content.holes[0]);
+  // a coin off the heap set over each hole in turn, and let fall: banked, each time, and nothing breaks
+  for (const [k, hole] of content.holes.entries()) {
+    const before = await page.evaluate(() => window.pushminer!.state().bank);
+    const slot = await page.evaluate(
+      ([x, y]) => {
+        const api = window.pushminer!;
+        const coin = api.bodies('coin').find((b) => Math.hypot(b.x - x, b.y - y) > 30)!;
+        api.place(coin.slot, x, y, 1.5);
+        return coin.slot;
+      },
+      [hole.x, hole.y],
+    );
+    await play(page, 120, `a coin down hole ${k}`);
+    expect(await page.evaluate(() => window.pushminer!.state().bank), `banked down hole ${k}`).toBe(before + 1);
+    expect(slot).toBeGreaterThanOrEqual(0);
+  }
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+test('the East Gallery’s two belts are bought one at a time, by name, and both run', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true, save: { cave: 'east-gallery', bank: 5000 } });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(1);
+  });
+  const content = await page.evaluate(() => window.pushminer!.content());
+  expect(content.belts.map((b) => b.id)).toEqual(['east-belt', 'east-belt-bottom']);
+  // the workshop lists each by where it runs, and they are bought with its own buttons
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
+  const titles = await page.$$eval('#shop .rows:not(.cosmetics) button[data-id^="belt:"]', (buttons) =>
+    buttons.map((b) => b.textContent),
+  );
+  expect(titles[0]).toContain('Conveyor, top of the ring');
+  expect(titles[1]).toContain('Conveyor, bottom of the ring');
+  expect(await page.evaluate(() => window.pushminer!.state().belts), 'none bought yet').toEqual([]);
+  await page.locator('#shop button[data-id="belt:east-belt-bottom"]').click();
+  await page.evaluate(() => window.pushminer!.step(1));
+  expect(await page.evaluate(() => window.pushminer!.state().belts), 'the bottom one, alone').toEqual([
+    'east-belt-bottom',
+  ]);
+  await page.locator('#shop button[data-id="belt:east-belt"]').click();
+  await page.evaluate(() => window.pushminer!.step(1));
+  expect(await page.evaluate(() => window.pushminer!.state().belts).then((b) => [...b].sort())).toEqual([
+    'east-belt',
+    'east-belt-bottom',
+  ]);
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
+  // both run: a coin set on the middle of each belt is carried along it, toward the hole, each at the belt's pace
+  const slots = await page.evaluate((belts) => {
+    const api = window.pushminer!;
+    const coins = api.bodies('coin').slice(0, belts.length);
+    belts.forEach((b, k) =>
+      api.place(coins[k].slot, b.from.x + (b.to.x - b.from.x) * 0.5, b.from.y + (b.to.y - b.from.y) * 0.5, 1.2),
+    );
+    return coins.map((c) => c.slot);
+  }, content.belts);
+  await play(page, 30, 'both belts carrying');
+  const moved = await page.evaluate(
+    ([slots, belts]) => {
+      const bodies = window.pushminer!.bodies('coin');
+      return slots.map((slot, k) => {
+        const c = bodies.find((b) => b.slot === slot);
+        const mid = { x: (belts[k].from.x + belts[k].to.x) / 2, y: (belts[k].from.y + belts[k].to.y) / 2 };
+        // how far along the belt toward its end it has gone, or -1 if it is gone (down the hole already)
+        const len = Math.hypot(belts[k].to.x - belts[k].from.x, belts[k].to.y - belts[k].from.y);
+        return c
+          ? ((c.x - mid.x) * (belts[k].to.x - belts[k].from.x) + (c.y - mid.y) * (belts[k].to.y - belts[k].from.y)) /
+              len
+          : -1;
+      });
+    },
+    [slots, content.belts] as const,
+  );
+  moved.forEach((along, k) => expect(along, `the coin on belt ${k} carried along it`).not.toBeCloseTo(0, 0));
+  await play(page, 60 * 14, 'the belts carrying on');
+  expect(await page.evaluate(() => window.pushminer!.state().belts)).toHaveLength(2);
+  // and a reload keeps which are bought
+  await page.evaluate(() => window.pushminer!.save());
+  await page.reload();
+  await ready(page);
+  expect(await page.evaluate(() => window.pushminer!.state().belts).then((b) => [...b].sort())).toEqual([
+    'east-belt',
+    'east-belt-bottom',
+  ]);
+  await page.evaluate(() => window.pushminer!.step(30));
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
 test('the end: the last cave cleared, and the vein runs', async ({ page }, info) => {
   const problems = watch(page);
   await start(page, { seed: 1, paused: true, save: { cave: 'west-gallery' } });

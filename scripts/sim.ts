@@ -9,6 +9,7 @@
  *   npm run sim -- --cave east-gallery --belt     the east gallery, with its belt running
  *   npm run sim -- --cave south-gallery --player patrol   the player driving in and out through the drones
  *   npm run sim -- --cave north-vault --secret    the north vault with its hidden chamber broken into
+ *   npm run sim -- --cave north-vault --drones 2   the north vault's two holes, two drones
  *   npm run sim -- --drones 1 --seconds 300 --seeds 1-3 --each
  *
  * What it reports, per seed with --each and as a mean:
@@ -20,6 +21,7 @@
  *   yielding   how much of the time drones were out of another's way rather than working
  *   player     with --player patrol: its mean speed, trips made, and how often a drone blocked it
  *   chamber    with --secret: what came out of the hidden chamber, and how many of its gold bars
+ *   hole share the smaller hole's share of what went down, in a cave with more than one
  */
 import { RUN } from '../src/caves';
 import { SIM_DEFAULTS, meanOf, simulate, type SimRow } from './simulate';
@@ -54,26 +56,28 @@ function options() {
   };
 }
 
-function line(r: Omit<SimRow, 'seed'>, patrol: boolean) {
+function line(r: Omit<SimRow, 'seed'>, patrol: boolean, holes: number) {
   const f = (n: number, d = 0) => n.toFixed(d);
   return (
     `banked ${f(r.banked).padStart(4)} (${f(r.share, 1)}%)  pushes: hole ${f(r.hole, 1)} belt ${f(r.belt, 1)} lost ${f(r.lost, 1)} backUp ${f(r.backUp, 1)}` +
     `  touching ${f(r.touching, 1)}  held ${f(r.held, 1)}%  yielding ${f(r.yielding, 1)}%` +
     (patrol ? `  player: speed ${f(r.playerSpeed, 2)} trips ${f(r.trips, 1)} blocked ${f(r.blocked, 1)}` : '') +
+    (holes > 1 ? `  hole share ${f(r.holeShare, 2)}` : '') +
     (r.bars ? `  chamber: ${f(r.fromChamber)} banked, ${f(r.barsOut, 1)} of ${f(r.bars)} bars` : '')
   );
 }
 
 const opts = options();
+const holes = RUN.find((c) => c.id === opts.cave)!.holes.length;
 const started = performance.now();
 console.log(
   `${RUN.find((c) => c.id === opts.cave)!.name}${opts.belt ? ' with its belt' : ''}${opts.secret ? ' and its chamber open' : ''}, ${opts.drones} drone${opts.drones === 1 ? '' : 's'}, ${opts.seconds} s, seeds ${opts.seeds.join(',')}${opts.patrol ? ', player patrolling' : ''}`,
 );
 const rows = opts.seeds.map((seed) => {
   const r = simulate(opts, seed);
-  if (opts.each) console.log(`  seed ${String(seed).padStart(2)}  ${line(r, opts.patrol)}`);
+  if (opts.each) console.log(`  seed ${String(seed).padStart(2)}  ${line(r, opts.patrol, holes)}`);
   return r;
 });
 const mean = meanOf(rows);
-console.log(`  mean     ${line(mean, opts.patrol)}`);
+console.log(`  mean     ${line(mean, opts.patrol, holes)}`);
 console.log(`  (${((performance.now() - started) / 1000).toFixed(1)} s)`);

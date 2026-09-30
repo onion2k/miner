@@ -66,7 +66,37 @@ describe('the static scene', () => {
 
   it('draws the belts that run, and only those', () => {
     const count = (s: StaticState) => scene.groups(s).length;
-    expect(count(state({ belts: [0] }))).toBe(count(state()) + 2);
+    // a bed, a rail down either side, and the mark where it ends
+    expect(count(state({ belts: [0] }))).toBe(count(state()) + 3);
+  });
+
+  it('marks the floor where each running belt ends, so it can be seen where it delivers, and only for belts bought', () => {
+    const east = caveOf('east-gallery');
+    const scene = new StaticScene(east);
+    const at = (belts: number[]): StaticState => ({
+      open: false,
+      secrets: east.spec.secrets.map(() => false),
+      walls: east.spec.walls.map(() => false),
+      wallDamage: east.spec.walls.map(() => 0),
+      lampsBroken: [],
+      belts,
+    });
+    const none = scene.groups(at([])).length;
+    expect(scene.groups(at([0])).length, 'one belt').toBe(none + 3);
+    expect(scene.groups(at([0, 1])).length, 'two belts').toBe(none + 6);
+    expect(scene.groups(at([])).length, 'gone with the belt not bought').toBe(none);
+    // the mark is the last of each belt's three groups, at the belt's end and on the floor
+    const both = scene.groups(at([0, 1]));
+    east.spec.belts.forEach(({ spec: b }, k) => {
+      const mark = both[none + k * 3 + 2];
+      expect(mark.matrices[12], `belt ${k}'s mark, east`).toBeCloseTo(b.x1, 3);
+      expect(mark.matrices[13], `belt ${k}'s mark, north`).toBeCloseTo(b.y1, 3);
+      expect(mark.matrices[14], `belt ${k}'s mark on the floor`).toBeLessThan(1);
+    });
+    expect(both[none + 2].matrices[13], 'the two marks are in two places').not.toBeCloseTo(
+      both[none + 5].matrices[13],
+      0,
+    );
   });
 });
 

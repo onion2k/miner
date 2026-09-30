@@ -72,7 +72,7 @@ Taken on judgement, as asked; each can be put back to the user.
 | ----- | ----------------------------------------------- | ------------- | ------- |
 | 1     | The cave as a value, holes as a list (refactor) | no            | landed  |
 | 2     | One cave after another                          | yes           | landed  |
-| 3     | Several holes and belts in a cave, in content   | yes           | agreed  |
+| 3     | Several holes and belts in a cave, in content   | yes           | landed  |
 | 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | agreed  |
 | 5     | Bigger caves, measured first                    | yes           | agreed  |
 | 6     | New biomes, one feature each                    | yes           | planned |
@@ -938,11 +938,14 @@ pushed on `linear-caves` before Phase 4 starts.
   the ring". The old single-belt names read as they do.
 - **Each belt's drop-off is drawn where it ends**, a small mark on the
   floor at its end, so it can be seen where a belt delivers.
-- **The drones spread their work across holes.** The foreman takes the hole
-  a coin is nearest along the floor as that coin's hole, and does not send
-  two drones to the same hole at once when another hole is as near, within a
-  margin. A drone keeps aiming at the nearest hole to where it is, as
-  now.
+- **The drones take each coin to its nearest hole along the floor.**
+  The spread first specified here (not sending two drones to one hole when
+  another was nearly as near) was built and measured, and it cost the
+  drones about a third of what they bank: in the North Vault, two drones
+  over 120 s on seeds 1 to 16 banked 694 spread against 1,003 not. The user
+  chose nearest hole, with no forced spread (2026-09-30). Each drone keeps
+  to the hole it was given with its coin (`Bot.hole`), since in the North
+  Vault the neck would otherwise turn it round.
 - **The arrow**, as Phase 2 made it, points at the nearest hole. That
   already holds.
 
@@ -955,10 +958,10 @@ pushed on `linear-caves` before Phase 4 starts.
    are bought.
 3. Each running belt draws a drop-off mark at its end. It is gone when the
    belt is not bought.
-4. With two drones in the North Vault, over a sim run, both holes take a
-   share. The new sim figure `hole share`, the smaller hole's share of what
-   was banked, is above 0.2. With the spread switched off in a test, it
-   falls, showing the spread is what does it.
+4. With two drones in the North Vault, each coin goes down the hole nearest
+   it along the floor. The sim figure `hole share` (the smaller hole's share
+   of what was banked) is kept as a measurement, held both ways to its
+   baseline like the other figures, not as a target.
 5. The pictures show two holes and two belts, each looked at.
 
 ### Edge cases

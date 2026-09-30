@@ -5,23 +5,35 @@
     "touching": 7.375,
     "held": 0.226,
     "blocked": 0,
-    "barsOut": 0
+    "barsOut": 0,
+    "holeShare": 0
   },
   "north": {
-    "banked": 589.875,
-    "lost": 1.5,
-    "touching": 6.375,
-    "held": 1.726,
+    "banked": 1403.875,
+    "lost": 2.125,
+    "touching": 10.375,
+    "held": 2.959,
     "blocked": 0,
-    "barsOut": 0
+    "barsOut": 0,
+    "holeShare": 0.046
+  },
+  "north, two holes, two drones": {
+    "banked": 1004.625,
+    "lost": 1,
+    "touching": 3.5,
+    "held": 1.269,
+    "blocked": 0,
+    "barsOut": 0,
+    "holeShare": 0.016
   },
   "east with belt": {
-    "banked": 878,
-    "lost": 0.875,
-    "touching": 3.25,
-    "held": 0.747,
+    "banked": 1661.75,
+    "lost": 0.375,
+    "touching": 6,
+    "held": 1.076,
     "blocked": 0,
-    "barsOut": 0
+    "barsOut": 0,
+    "holeShare": 0
   },
   "west with belt": {
     "banked": 2969.625,
@@ -29,7 +41,8 @@
     "touching": 6.75,
     "held": 1.091,
     "blocked": 0,
-    "barsOut": 0
+    "barsOut": 0,
+    "holeShare": 0
   },
   "south, player patrolling": {
     "banked": 391.25,
@@ -37,14 +50,16 @@
     "touching": 9.125,
     "held": 0.74,
     "blocked": 135.625,
-    "barsOut": 0
+    "barsOut": 0,
+    "holeShare": 0
   },
   "north, chamber open": {
-    "banked": 733.375,
-    "lost": 1.875,
-    "touching": 7,
-    "held": 0.98,
+    "banked": 1181.875,
+    "lost": 0.875,
+    "touching": 8.125,
+    "held": 0.685,
     "blocked": 0,
-    "barsOut": 0.875
+    "barsOut": 0.75,
+    "holeShare": 0.285
   }
 }

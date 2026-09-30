@@ -78,6 +78,8 @@ export interface BeltSpec {
 /** A conveyor bought for the cave: which, what it is and what it costs. */
 export interface BeltOffer {
   id: string;
+  /** What the workshop calls it, where it runs, in a cave with more than one belt; a cave's only belt has none, and is named for the cave. */
+  label?: string;
   spec: BeltSpec;
   cost: number;
 }

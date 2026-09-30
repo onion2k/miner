@@ -12,10 +12,11 @@ import { Economy, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
 import { HOLE_LAMP_HEIGHT, holeLamps } from '../src/lamps';
 import { Nav } from '../src/nav';
+import { BAR } from '../src/physics';
 import { Bot, type Traffic } from '../src/tools';
 import { floorHeight, buildTerrain } from '../src/terrain';
 import { HAUL_LIMIT, haulField } from '../scripts/hauls';
-import { withSeed } from './helpers';
+import { caveOf, gameIn, withSeed } from './helpers';
 
 const DT = 1 / 60;
 const still = { throttle: 0, steer: 0 };
@@ -185,6 +186,84 @@ describe('a cave handed in', () => {
     expect(nearestHole(cave.holes, -40, 3)).toBe(cave.holes[0]);
     // not the game's hole, which is in the middle
     expect(nearestHole(RUN[0].holes, 40, 3)).toBe(RUN[0].holes[0]);
+  });
+});
+
+describe('several holes and belts in a cave', () => {
+  const north = caveOf('north-vault');
+  const east = caveOf('east-gallery');
+
+  it('gives the North Vault two holes, each on its own floor and clear of the other and of the ways in and out', () => {
+    expect(north.holes).toHaveLength(2);
+    const [a, b] = north.holes;
+    expect(Math.hypot(a.x - b.x, a.y - b.y), 'the holes are a good way apart').toBeGreaterThan(40);
+    for (const h of north.holes) {
+      const { cols, originX, originY } = north.grid;
+      for (let dx = -h.radius - TILE; dx <= h.radius + TILE; dx += TILE / 2)
+        for (let dy = -h.radius - TILE; dy <= h.radius + TILE; dy += TILE / 2) {
+          const t = Math.floor((h.y + dy - originY) / TILE) * cols + Math.floor((h.x + dx - originX) / TILE);
+          expect(north.cells[t], `rock by the hole at ${h.x},${h.y}`).toBe(OPEN);
+        }
+    }
+  });
+
+  it('banks what is pushed down either hole of the North Vault, in the game', () => {
+    withSeed(5, () => {
+      const banked: [number, number, number][] = [];
+      const game = gameIn('north-vault', {}, { banked: (_k, value, x, y) => banked.push([value, x, y]) });
+      const before = game.economy.bank;
+      north.holes.forEach((h, k) => {
+        expect(game.stock.spawn(1, h.x, h.y, 2), `a ruby over hole ${k}`).toBe(true);
+        for (let f = 0; f < 120; f++) game.step(DT, still);
+        expect(game.economy.bank, `after a ruby down hole ${k}`).toBe(before + 10 * (k + 1));
+      });
+      expect(banked.map(([value]) => value)).toEqual([10, 10]);
+      // told where each went down: one near each hole
+      banked.forEach(([, x, y], k) =>
+        expect(nearestHole(north.holes, x, y), `the ruby banked at ${x.toFixed(0)},${y.toFixed(0)}`).toBe(
+          north.holes[k],
+        ),
+      );
+    });
+  });
+
+  it('gives the East Gallery two belts, each with a label of its own and a price of its own', () => {
+    const { belts } = east.spec;
+    expect(belts.map((b) => b.label)).toEqual(['Conveyor, top of the ring', 'Conveyor, bottom of the ring']);
+    expect(new Set(belts.map((b) => b.id)).size, 'their ids differ').toBe(2);
+    expect(belts[0].id, 'the first keeps the id a save has been given').toBe('east-belt');
+    // the bottom belt runs from the bottom heap toward the hole: the heap furthest south, and a belt that ends near the hole
+    const bottom = east.spec.heaps.reduce((f, h) => (h.y < f.y ? h : f));
+    const b = belts[1].spec;
+    expect(Math.hypot(b.x0 - bottom.x, b.y0 - bottom.y), 'the bottom belt starts by the bottom heap').toBeLessThan(12);
+    expect(Math.hypot(b.x1 - east.holes[0].x, b.y1 - east.holes[0].y), 'and ends by the hole').toBeLessThan(18);
+    expect(belts[1].cost, 'about the first belt’s price').toBeGreaterThan(belts[0].cost * 0.7);
+    expect(belts[1].cost).toBeLessThan(belts[0].cost * 1.5);
+    // the caves with one belt have no label: their names read as they did
+    for (const c of RUN) if (c.id !== 'east-gallery') for (const o of c.belts) expect(o.label).toBeUndefined();
+  });
+
+  it('carries a load off either belt of the East Gallery to the hole, both running at once', () => {
+    withSeed(6, () => {
+      // a gold bar, which the heaps have none of, is set down on each belt near its far end; the belts carry the
+      // heaps' coins too, so the bars are what is watched for
+      const bars: number[] = [];
+      const game = gameIn(
+        'east-gallery',
+        { belts: ['east-belt', 'east-belt-bottom'] },
+        { banked: (kind) => kind === BAR && bars.push(bars.length) },
+      );
+      expect(game.running(), 'both belts run').toEqual([0, 1]);
+      expect(game.world.belts, 'both are the physics’ belts').toHaveLength(2);
+      const carried = east.spec.belts.map(({ spec: s }, k) => {
+        const x = s.x0 + (s.x1 - s.x0) * 0.6,
+          y = s.y0 + (s.y1 - s.y0) * 0.6;
+        expect(game.stock.spawn(BAR, x, y, 1.2), `a bar on belt ${k}`).toBe(true);
+        return k;
+      });
+      for (let f = 0; f < 60 * 30 && bars.length < carried.length; f++) game.step(DT, still);
+      expect(bars.length, 'a bar banked off each belt').toBe(2);
+    });
   });
 });
 

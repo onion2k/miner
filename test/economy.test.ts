@@ -235,6 +235,33 @@ describe('the economy', () => {
     expect(e.offers().map((o) => o.id)).toContain('belt:east-belt');
   });
 
+  it('sells each of a cave’s belts on its own, named by where it runs, and keeps which are bought', () => {
+    const e = new Economy(memoryStore(JSON.stringify({ cave: 'east-gallery' })), RUN);
+    const belt = (id: string) => e.offers().find((o) => o.id === `belt:${id}`)!;
+    expect(belt('east-belt').title).toBe('Conveyor, top of the ring');
+    expect(belt('east-belt-bottom').title).toBe('Conveyor, bottom of the ring');
+    expect(belt('east-belt-bottom')).toMatchObject({ owned: false, available: true });
+    // a belt with no label reads as the single belts always did
+    expect(
+      new Economy(memoryStore(JSON.stringify({ cave: 'south-gallery' })), RUN)
+        .offers()
+        .find((o) => o.id.startsWith('belt:'))!.title,
+    ).toBe('Conveyor to the South Gallery');
+    e.deposit(1e6);
+    expect(e.buy('belt:east-belt-bottom')).toBe(true);
+    expect(e.save.belts, 'only the one bought').toEqual(['east-belt-bottom']);
+    expect(belt('east-belt').owned, 'the other still for sale').toBe(false);
+    expect(belt('east-belt-bottom').owned).toBe(true);
+    expect(e.buy('belt:east-belt')).toBe(true);
+    expect([...e.save.belts].sort()).toEqual(['east-belt', 'east-belt-bottom']);
+    // a save keeps both, and a save with only the first (the shape before the second was sold) loads with the second not bought
+    const again = new Economy(memoryStore(JSON.stringify(e.save)), RUN);
+    expect([...again.save.belts].sort()).toEqual(['east-belt', 'east-belt-bottom']);
+    const old = new Economy(memoryStore(JSON.stringify({ ...e.save, belts: ['east-belt'] })), RUN);
+    expect(old.save.belts).toEqual(['east-belt']);
+    expect(old.offers().find((o) => o.id === 'belt:east-belt-bottom')).toMatchObject({ owned: false, available: true });
+  });
+
   it('hurts a wall more the harder it is hit, and brings it down at its strength', () => {
     const e = newEconomy();
     expect(e.ram(2)).toBe(0);

@@ -503,3 +503,17 @@ describe('twenty changes of cave leave nothing bigger than one does (criterion 9
     });
   });
 });
+
+describe('a reload of a done game', () => {
+  it('puts back what the vein ran in since, not only what the last cave was laid with', () => {
+    const last = RUN[RUN.length - 1];
+    const laid = caveStock(last).kinds;
+    // a done game whose save says more of each kind is left than the cave was laid with, and a gem the heaps never
+    // held, as the vein leaves it after running a while
+    const vein = laid.map((n, k) => (k === 0 ? n + 17 : k === 5 ? 0 : n + (n ? 1 : 0)));
+    vein[5] = 2;
+    const left = [vein];
+    const game = gameIn(last.id, { done: true, left });
+    for (let kind = 0; kind < vein.length; kind++) expect(game.stock.left[0][kind], `kind ${kind}`).toBe(vein[kind]);
+  });
+});

@@ -28,6 +28,7 @@ interface Scenario {
 const SCENARIOS: Scenario[] = [
   { name: 'south', options: { cave: 'south-gallery' } },
   { name: 'north', options: { cave: 'north-vault' } },
+  { name: 'north, two holes, two drones', options: { cave: 'north-vault', drones: 2 } },
   { name: 'east with belt', options: { cave: 'east-gallery', belt: true } },
   { name: 'west with belt', options: { cave: 'west-gallery', belt: true } },
   { name: 'south, player patrolling', options: { cave: 'south-gallery', patrol: true } },
@@ -40,13 +41,15 @@ const SCENARIOS: Scenario[] = [
  * a share or an absolute allowance, whichever is the more generous, so a
  * figure near nothing is not failed for a fraction.
  */
-const HELD: { key: keyof SimRow; better: 'higher' | 'lower'; share: number; slack?: number }[] = [
+const HELD: { key: keyof SimRow; better: 'higher' | 'lower' | 'either'; share: number; slack?: number }[] = [
   { key: 'banked', better: 'higher', share: 0.05 },
   { key: 'lost', better: 'lower', share: 0.25, slack: 1 },
   { key: 'touching', better: 'lower', share: 0.25, slack: 2 },
   { key: 'held', better: 'lower', share: 0.25, slack: 2 },
   { key: 'blocked', better: 'lower', share: 0.25, slack: 2 },
   { key: 'barsOut', better: 'higher', share: 0.1 },
+  // the smaller of two holes' share of what was banked: a measurement, not a target, so a move either way is a change
+  { key: 'holeShare', better: 'either', share: 0.25, slack: 0.03 },
 ];
 
 type Means = Partial<Record<string, number>>;
@@ -114,9 +117,10 @@ async function main() {
         b = now[key];
       if (a === undefined || b === undefined || Math.abs(a - b) < 1e-9) continue;
       const allowed = Math.max(Math.abs(a) * share, slack);
-      const got = dir === 'higher' ? a - b : b - a;
-      const verdict = got > allowed ? 'WORSE' : got < 0 ? 'better' : 'within tolerance';
-      if (verdict === 'WORSE') worse++;
+      const got = dir === 'higher' ? a - b : dir === 'lower' ? b - a : Math.abs(b - a);
+      const verdict =
+        got > allowed ? (dir === 'either' ? 'CHANGED' : 'WORSE') : got < 0 ? 'better' : 'within tolerance';
+      if (verdict === 'WORSE' || verdict === 'CHANGED') worse++;
       if (verdict === 'better') better++;
       notes.push(`${key} ${fmt(a)} -> ${fmt(b)} (${verdict})`);
     }

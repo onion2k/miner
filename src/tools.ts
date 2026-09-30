@@ -91,8 +91,10 @@ export class Bot {
   /** How big the machine is against a drone, for how much room it needs and how far back it sets up. */
   private readonly size: number;
   state: BotState = 'seek';
-  /** The coin it is after, and where it sets up to push it. */
+  /** The coin it is after, and the hole that coin is for, which the foreman notes: the nearest along the floor, and the one the machine keeps to. */
   coin = -1;
+  hole = -1;
+  /** Where it sets up to push the coin. */
   private setUp: [number, number] = [0, 0];
   private way: Float32Array | null = null;
   private timer = 0;
@@ -160,6 +162,7 @@ export class Bot {
   reset() {
     this.state = 'seek';
     this.coin = -1;
+    this.hole = -1;
     this.way = null;
     this.timer = 0;
     this.headway();
@@ -236,12 +239,13 @@ export class Bot {
         break;
       }
       case 'push': {
-        const hole = nearestHole(nav.holes, d.x, d.y);
+        // to the hole it was sent to, or the nearest if it was sent to none, or a belt, whichever is nearer, as the
+        // way goes; aimed from the machine's middle, clear by the width of a loaded blade, so its corners do not
+        // catch a corridor's
+        const hole = this.holeFrom(nav, d.x, d.y);
         const dist = Math.hypot(hole.x - d.x, hole.y - d.y);
-        // to the nearest hole or a belt, whichever is nearer, as the way goes; aimed from the machine's middle,
-        // clear by the width of a loaded blade, so its corners do not catch a corridor's
-        const toHole = nav.dropIsHole(d.x, d.y) && nav.clear(d.x, d.y, hole.x, hole.y, loadedClearance);
-        const aim = toHole ? [hole.x, hole.y] : nav.ahead(nav.toDrop, d.x, d.y, loadedClearance, 5);
+        const toHole = nav.dropIsHole(d.x, d.y, this.hole) && nav.clear(d.x, d.y, hole.x, hole.y, loadedClearance);
+        const aim = toHole ? [hole.x, hole.y] : nav.ahead(nav.dropField(this.hole), d.x, d.y, loadedClearance, 5);
         if (!aim) {
           this.retreat();
           break;
@@ -255,7 +259,7 @@ export class Bot {
         const onBelt =
           this.timer < 29.2 && nav.onBelt(d.x + c * BLADE_AT * d.scale, d.y + s * BLADE_AT * d.scale, -1) !== null;
         if (dist < stopAt(hole) || onBelt || this.timer <= 0 || (this.timer < 28 && this.empty > 1.5)) this.retreat();
-        else if (this.stalled(dt, nav.distance(nav.toDrop, d.x, d.y))) {
+        else if (this.stalled(dt, nav.distance(nav.dropField(this.hole), d.x, d.y))) {
           // caught on a corner, most likely: a little way back and at it again, load and all
           if (this.tries++ < RETRIES) {
             this.state = 'backUp';
@@ -283,12 +287,12 @@ export class Bot {
   setUpFor(world: World, nav: Nav, i: number): [number, number] | null {
     const cx = world.x[i],
       cy = world.y[i];
-    if (!Number.isFinite(nav.distance(nav.toDrop, cx, cy))) return null;
-    const hole = nearestHole(nav.holes, cx, cy);
+    if (!Number.isFinite(nav.distance(nav.dropField(this.hole), cx, cy))) return null;
+    const hole = this.holeFrom(nav, cx, cy);
     const on =
-      nav.dropIsHole(cx, cy) && nav.clear(cx, cy, hole.x, hole.y, 0.5)
+      nav.dropIsHole(cx, cy, this.hole) && nav.clear(cx, cy, hole.x, hole.y, 0.5)
         ? [hole.x, hole.y]
-        : nav.ahead(nav.toDrop, cx, cy, 0.5, 3);
+        : nav.ahead(nav.dropField(this.hole), cx, cy, 0.5, 3);
     if (!on) return null;
     let ux = on[0] - cx,
       uy = on[1] - cy;
@@ -312,6 +316,11 @@ export class Bot {
       }
     }
     return null;
+  }
+
+  /** The hole it is working to: the one the foreman sent it to with its coin, and with none, the nearest to a point. */
+  private holeFrom(nav: Nav, x: number, y: number): HoleSpec {
+    return this.hole >= 0 ? nav.holes[this.hole] : nearestHole(nav.holes, x, y);
   }
 
   /** Whether it is out of another machine's way this moment, rather than about its own business. */
@@ -497,6 +506,9 @@ export class Bot {
  * that. Its coins are listed now and then; a machine takes
  * the best of a handful, for value, company, nearness and how far it has to
  * go to the hole, and leaves alone what another machine is already after.
+ * In a cave with several holes each coin is for the hole it is nearest along
+ * the floor, whichever machine takes it, and the machine keeps to that hole: in
+ * a cave whose holes are a neck apart, it would otherwise turn for the nearer to where it stands.
  */
 export class Foreman {
   private workable: number[] = [];
@@ -531,7 +543,8 @@ export class Foreman {
     const n = workable.length;
     if (!n) return -1;
     let best = -1,
-      bestScore = -Infinity;
+      bestScore = -Infinity,
+      bestHole = -1;
     for (let k = 0, m = Math.min(n, 48); k < m; k++) {
       const i = n <= 48 ? workable[k] : workable[(Math.random() * n) | 0];
       if (!world.alive[i] || bot.shuns(i)) continue;
@@ -542,7 +555,10 @@ export class Foreman {
           o !== bot && o.coin >= 0 && world.alive[o.coin] && Math.hypot(world.x[o.coin] - x, world.y[o.coin] - y) < 6,
       );
       if (taken) continue;
-      const toDrop = nav.distance(nav.toDrop, x, y);
+      // with one hole a coin is for it, and the machine takes the nearest drop, hole or belt, as it always did
+      const hole = nav.holes.length > 1 ? nav.holeOf(x, y) : -1;
+      if (hole < 0 && nav.holes.length > 1) continue;
+      const toDrop = nav.distance(nav.dropField(hole), x, y);
       if (!Number.isFinite(toDrop)) continue;
       // a coin with others round it is a load, and a stray on its own is a trip for one coin;
       // one buried in the middle of a heap is turned down when the machine looks for where to set up
@@ -552,8 +568,10 @@ export class Foreman {
       if (score > bestScore) {
         bestScore = score;
         best = i;
+        bestHole = hole;
       }
     }
+    bot.hole = best >= 0 ? bestHole : -1;
     return best;
   }
 }

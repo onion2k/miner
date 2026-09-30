@@ -56,8 +56,15 @@ export class Nav {
   readonly crowd: Uint16Array;
   /** How far each tile is from the nearest hole, in tiles and the extra the rock costs; Infinity where there is no way. */
   readonly toHole: Float32Array;
+  /**
+   * How far each tile is from each hole on its own, by the hole's place in the cave's list, for telling which
+   * hole a coin is nearest along the floor. A cave with one hole has only `toHole`, and the list is that.
+   */
+  readonly toEach: Float32Array[];
   /** How far each tile is from somewhere a load can be left: a hole, or a running belt. */
   readonly toDrop: Float32Array;
+  /** The same for a load that is for one hole only, by the hole's place in the list: that hole, or a running belt. One hole has only `toDrop`. */
+  readonly toDropEach: Float32Array[];
   private belts: Belt[] = [];
   private readonly heap: Int32Array;
   private readonly heapKey: Float32Array;
@@ -74,7 +81,9 @@ export class Nav {
     this.cost = new Float32Array(tiles);
     this.crowd = new Uint16Array(tiles);
     this.toHole = new Float32Array(tiles);
+    this.toEach = holes.length > 1 ? holes.map(() => new Float32Array(tiles)) : [this.toHole];
     this.toDrop = new Float32Array(tiles);
+    this.toDropEach = holes.length > 1 ? holes.map(() => new Float32Array(tiles)) : [this.toDrop];
     this.heap = new Int32Array(tiles * 8);
     this.heapKey = new Float32Array(tiles * 8);
     this.rebuild(solid);
@@ -102,7 +111,28 @@ export class Nav {
       }
     }
     this.fill(this.toHole, this.holeTiles(), false);
+    if (this.holes.length > 1) this.holes.forEach((_, k) => this.fill(this.toEach[k], this.holeTiles(k), false));
     this.fillDrop();
+  }
+
+  /** The hole nearest a point along the floor, by its place in the cave's list; -1 off the grid or with no way to any. */
+  holeOf(x: number, y: number): number {
+    const t = this.tileOf(x, y);
+    if (t < 0) return -1;
+    let best = -1,
+      nearest = Infinity;
+    for (let k = 0; k < this.toEach.length; k++) {
+      if (this.toEach[k][t] < nearest) {
+        nearest = this.toEach[k][t];
+        best = k;
+      }
+    }
+    return best;
+  }
+
+  /** How far a point is from one hole along the floor, in tiles and the extra the rock costs; Infinity with no way there. */
+  distanceTo(hole: number, x: number, y: number): number {
+    return this.distance(this.toEach[hole], x, y);
   }
 
   /** The belts running now: bought, and in a room not sealed. */
@@ -111,10 +141,19 @@ export class Nav {
     this.fillDrop();
   }
 
-  /** Whether the best place to leave a load from here is the hole itself, and not a belt. */
-  dropIsHole(x: number, y: number): boolean {
+  /**
+   * Whether the best place to leave a load from here is the hole itself, and not a belt: the nearest hole, or
+   * the one hole `hole` if the load is for that one.
+   */
+  dropIsHole(x: number, y: number, hole = -1): boolean {
     const t = this.tileOf(x, y);
-    return t >= 0 && this.toDrop[t] >= this.toHole[t] - 1e-3;
+    if (t < 0) return false;
+    return hole < 0 ? this.toDrop[t] >= this.toHole[t] - 1e-3 : this.toDropEach[hole][t] >= this.toEach[hole][t] - 1e-3;
+  }
+
+  /** The field to follow to leave a load: to the nearest hole or belt, or to the one hole `hole` or a belt. */
+  dropField(hole = -1): Float32Array {
+    return hole < 0 ? this.toDrop : this.toDropEach[hole];
   }
 
   /** Whether a point is on a running belt, within `margin` of its edges. */
@@ -129,20 +168,22 @@ export class Nav {
     return null;
   }
 
-  private holeTiles(): number[] {
+  /** The tiles by the holes, or by the one hole `only`, that a field runs out from. */
+  private holeTiles(only?: number): number[] {
     const seeds: number[] = [];
     const tiles = this.cols * this.rows;
+    const holes = only === undefined ? this.holes : [this.holes[only]];
     for (let t = 0; t < tiles; t++) {
       if (this.solid[t]) continue;
       const [x, y] = this.centre(t);
-      if (this.holes.some((h) => Math.hypot(x - h.x, y - h.y) < h.radius + TILE)) seeds.push(t);
+      if (holes.some((h) => Math.hypot(x - h.x, y - h.y) < h.radius + TILE)) seeds.push(t);
     }
     return seeds;
   }
 
   private fillDrop() {
-    const seeds = this.holeTiles();
-    const values = seeds.map(() => 0);
+    const beltTiles: number[] = [],
+      beltValues: number[] = [];
     const tiles = this.cols * this.rows;
     for (let t = 0; t < tiles; t++) {
       if (this.solid[t]) continue;
@@ -151,10 +192,13 @@ export class Nav {
       if (!b) continue;
       // how far it has to ride, from here to the belt's end
       const along = (x - b.cx) * b.dx + (y - b.cy) * b.dy;
-      seeds.push(t);
-      values.push(BELT_HANDOVER + ((b.half - along) / TILE) * BELT_RIDE);
+      beltTiles.push(t);
+      beltValues.push(BELT_HANDOVER + ((b.half - along) / TILE) * BELT_RIDE);
     }
-    this.fill(this.toDrop, seeds, false, values);
+    const drop = (field: Float32Array, holeTiles: number[]) =>
+      this.fill(field, [...holeTiles, ...beltTiles], false, [...holeTiles.map(() => 0), ...beltValues]);
+    drop(this.toDrop, this.holeTiles());
+    if (this.holes.length > 1) this.holes.forEach((_, k) => drop(this.toDropEach[k], this.holeTiles(k)));
   }
 
   /** Count the coins onto the tiles again. */

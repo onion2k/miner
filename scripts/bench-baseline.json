@@ -1,17 +1,17 @@
 {
   "cave at rest": {
-    "relative": 0.00009781970620218361,
+    "relative": 0.00009626257247289066,
     "ms": 0.0015,
-    "ref": 15.6829
+    "ref": 15.6783
   },
   "blades and belts through the heaps": {
-    "relative": 0.046032633826038706,
-    "ms": 0.7365,
-    "ref": 15.9992
+    "relative": 0.05350532356994815,
+    "ms": 0.8476,
+    "ref": 15.8415
   },
   "a heap falling all at once": {
-    "relative": 0.361524713883202,
-    "ms": 5.6992,
-    "ref": 15.7643
+    "relative": 0.36021824778900996,
+    "ms": 5.7023,
+    "ref": 15.83
   }
 }

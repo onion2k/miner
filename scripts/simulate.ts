@@ -2,7 +2,7 @@
  * One run of the drones without the picture, from a seed: what `npm run sim`
  * reports and what `npm run sim:check` holds to its baseline. See sim.ts.
  */
-import { BODY_CAPACITY, arrival, buildCave, chamberCentre, type Heap } from '../src/cave';
+import { BODY_CAPACITY, arrival, buildCave, chamberCentre, nearestHole, type Heap } from '../src/cave';
 import { RUN } from '../src/caves';
 import { BAR, KIND_VALUE, makeWorld, type Pusher } from '../src/physics';
 import { Dozer, BLADE_AT, separate } from '../src/dozer';
@@ -129,8 +129,9 @@ function runSeeded(opts: SimOptions, seed: number) {
     player.y = at.y;
   }
 
-  let banked = 0,
-    fromChamber = 0,
+  let banked = 0;
+  const atHole = cave.holes.map(() => 0);
+  let fromChamber = 0,
     barsOut = 0;
   const ends = { hole: 0, belt: 0, lost: 0, backUp: 0 };
   let touching = 0,
@@ -173,7 +174,7 @@ function runSeeded(opts: SimOptions, seed: number) {
         const c = Math.cos(b.yaw),
           s = Math.sin(b.yaw);
         if (b.state === 'backUp') ends.backUp++;
-        else if (Math.hypot(b.x - HOLE.x, b.y - HOLE.y) < 11) ends.hole++;
+        else if (cave.holes.some((h) => Math.hypot(b.x - h.x, b.y - h.y) < 11)) ends.hole++;
         else if (nav.onBelt(b.x + c * BLADE_AT * BOT_SCALE, b.y + s * BLADE_AT * BOT_SCALE, 0)) ends.belt++;
         else ends.lost++;
       }
@@ -205,8 +206,9 @@ function runSeeded(opts: SimOptions, seed: number) {
         s = Math.sin(player.yaw);
       world.wakeNear(player.x + c * BLADE_AT, player.y + s * BLADE_AT, PLAYER_SPEC.bladeWidth * 0.75 + 1.5);
     }
-    world.step(DT, (kind, _x, _y, i) => {
+    world.step(DT, (kind, x, y, i) => {
       banked += KIND_VALUE[kind];
+      atHole[cave.holes.indexOf(nearestHole(cave.holes, x, y))] += KIND_VALUE[kind];
       if (secret >= 0 && origin[i] === sources.chamber(secret)) {
         fromChamber += KIND_VALUE[kind];
         if (kind === BAR) barsOut++;
@@ -252,6 +254,8 @@ function runSeeded(opts: SimOptions, seed: number) {
     seed,
     banked,
     share: pct(banked, caveStock(spec).value),
+    // the smaller hole's share of what went down: nothing to say of a cave with one hole
+    holeShare: cave.holes.length > 1 && banked ? Math.min(...atHole) / banked : 0,
     ...ends,
     touching,
     held: pct(held, pushSamples),

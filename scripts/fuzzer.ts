@@ -44,6 +44,9 @@ export interface FuzzResult {
   /** How often each thing was done, and each event happened: to see that the monkey got about. */
   done: Record<string, number>;
   happened: Record<string, number>;
+  /** The cave the game began in, which the seed picks, and every cave it was in at some time. */
+  started: string;
+  visited: string[];
 }
 
 function seeded(n: number): () => number {
@@ -69,6 +72,10 @@ export function fuzz(seed: number, frames: number): FuzzResult {
     },
   );
   const log: string[] = [];
+  // the seed picks the cave the game begins in, through a fresh save made before it starts, as a player's save
+  // would be, so the caves with two holes and two belts are played and not only the first
+  const started = RUN[seed % RUN.length].id;
+  const visited = new Set<string>([started]);
   let frame = 0;
   const fail = (problems: string[]): FuzzResult => ({
     seed,
@@ -76,10 +83,12 @@ export function fuzz(seed: number, frames: number): FuzzResult {
     failure: { seed, frame, problems, log: log.slice(-LOG_TAIL) },
     done,
     happened,
+    started,
+    visited: [...visited],
   });
 
   try {
-    let store = memoryStore();
+    let store = memoryStore(JSON.stringify({ cave: started }));
     const first = new Economy(store, RUN);
     let game = new Game(first, buildCave(first.cave()), events);
     /** The autopilot, while the monkey has handed it the controls to drive out through the way out. */
@@ -161,8 +170,10 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const slots = [...Array(world.count).keys()].filter((i) => world.alive[i] && !world.carried[i]);
           const i = pick(slots);
           if (i === undefined) return;
-          world.x[i] = between(-1, 1);
-          world.y[i] = between(-1, 1);
+          // over one of the cave's holes: the world's middle is rock in most caves, and a body put there is in it
+          const hole = pick(game.cave.holes)!;
+          world.x[i] = hole.x + between(-1, 1);
+          world.y[i] = hole.y + between(-1, 1);
           world.z[i] = 2;
           world.vx[i] = world.vy[i] = world.vz[i] = 0;
           world.wake(i);
@@ -200,7 +211,23 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           e.deposit(Math.floor(between(0, 3000)));
           const offer = pick([...e.offers(), ...e.cosmetics()].filter((o) => o.available));
           const bought = offer ? e.buy(offer.id) : false;
+          if (bought && offer?.id.startsWith('belt:')) count(happened, `bought ${offer.id}`);
           act('shop', `${offer?.id ?? 'nothing'}: ${bought ? 'bought' : 'not'}`);
+        },
+      ],
+      [
+        3,
+        () => {
+          // every belt a cave sells, each on its own: the monkey chooses among the ones not yet bought, so a cave
+          // with two gets both, and a cave with two holes or two belts is played with them running
+          const e = game.economy;
+          const unbought = game.cave.spec.belts.filter((b) => !e.save.belts.includes(b.id));
+          const belt = pick(unbought);
+          if (!belt) return;
+          e.deposit(belt.cost);
+          const bought = e.buy(`belt:${belt.id}`);
+          act('buy a belt', `${belt.id}: ${bought ? 'bought' : 'not'}`);
+          if (bought) count(happened, `bought belt:${belt.id}`);
         },
       ],
       [
@@ -279,6 +306,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           store = memoryStore(json);
           const economy = new Economy(store, RUN);
           game = new Game(economy, buildCave(economy.cave()), events);
+          visited.add(economy.save.cave);
           const after = game.economy.save;
           const same = (['bank', 'cave', 'open', 'done', 'drones', 'body'] as const).filter(
             (k) => before[k] !== after[k],
@@ -332,6 +360,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
       if (game.left) {
         const was = game.economy.save.cave;
         game = onward(game, game.economy, RUN, events);
+        visited.add(game.economy.save.cave);
         hand.pilot = null;
         log.push(`frame ${frame}: left ${was} for ${game.economy.save.cave}`);
       }
@@ -340,7 +369,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         if (problems.length) return fail(problems);
       }
     }
-    return { seed, frames, failure: null, done, happened };
+    return { seed, frames, failure: null, done, happened, started, visited: [...visited] };
   } catch (err) {
     if (err instanceof Reload) return fail(err.problems);
     return fail([`threw: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`]);

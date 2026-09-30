@@ -11,6 +11,7 @@
  */
 import { availableParallelism } from 'node:os';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
+import { RUN } from '../src/caves';
 import { fuzz, type FuzzResult } from './fuzzer';
 
 if (!isMainThread) {
@@ -71,6 +72,11 @@ async function main() {
   console.log(
     `  changed cave: ${changed.length} of ${results.length} seeds, ${results.reduce((n, r) => n + caveChanges(r), 0)} times in all`,
   );
+  // the caves the monkeys played in: where they began, and every cave they got to
+  const count = (of: (r: FuzzResult) => string[]) =>
+    RUN.map((c) => `${c.id} ${results.filter((r) => of(r).includes(c.id)).length}`).join(', ');
+  console.log(`  began in (seeds): ${count((r) => [r.started])}`);
+  console.log(`  played in (seeds): ${count((r) => r.visited)}`);
   for (const r of failed) {
     const f = r.failure!;
     console.error(`\nseed ${f.seed} failed at frame ${f.frame}:`);

@@ -25,6 +25,8 @@ export interface SaveSetup {
   horn?: boolean;
   flag?: boolean;
   lampsBroken?: number[];
+  /** The ids of the belts bought for the cave. */
+  belts?: string[];
   barrels?: number[] | null;
 }
 

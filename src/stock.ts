@@ -174,8 +174,15 @@ export class Stock {
           kind === 0 ? h.coins : h.gems.reduce((n, [k, m]) => n + (k === kind ? m : 0), 0),
         );
         const total = per.reduce((x, y) => x + y, 0);
-        if (!total) continue;
-        const want = had ? Math.min(had[kind], total) : total;
+        // what the save says is left, even past what the cave was laid with: once the cave is done the vein
+        // runs more in, and a reload that capped it at the heaps' size would take back what the player saw
+        const want = had ? had[kind] : total;
+        if (!want) continue;
+        // a kind the heaps never held, which only the vein brings, goes on the first heap
+        if (!total) {
+          counts[0][kind] = want;
+          continue;
+        }
         const exact = per.map((n) => (n * want) / total);
         exact.forEach((e, j) => (counts[j][kind] = Math.floor(e)));
         let over = want - counts.reduce((n, c) => n + c[kind], 0);

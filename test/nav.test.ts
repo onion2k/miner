@@ -19,21 +19,32 @@ describe.each(IDS)('the way round the rock in %s', (id) => {
     expect(nav.toHole[tileIn(cave, hole.x, hole.y)]).toBe(0);
   });
 
-  it('leads from every heap to the hole in clear straight runs', () => {
+  it('leads from every heap to a hole in clear straight runs', () => {
+    const atAHole = (x: number, y: number, margin: number) =>
+      holes.some((h) => Math.hypot(x - h.x, y - h.y) <= h.radius + margin);
     for (const h of spec.heaps) {
       let x = h.x,
         y = h.y;
-      for (let leg = 0; leg < 160 && Math.hypot(x - hole.x, y - hole.y) > hole.radius + 4; leg++) {
+      for (let leg = 0; leg < 160 && !atAHole(x, y, 4); leg++) {
         const aim = nav.ahead(nav.toHole, x, y, 2.4, 6);
         expect(aim, `${spec.name}: no way on from ${x},${y}`).not.toBeNull();
         expect(nav.clear(x, y, aim![0], aim![1], 0.5)).toBe(true);
         expect(nav.distance(nav.toHole, aim![0], aim![1])).toBeLessThan(nav.distance(nav.toHole, x, y));
         [x, y] = aim!;
       }
-      expect(
-        Math.hypot(x - hole.x, y - hole.y),
-        `${spec.name} heap at ${h.x},${h.y} never got to the hole`,
-      ).toBeLessThanOrEqual(hole.radius + 4);
+      expect(atAHole(x, y, 4), `${spec.name} heap at ${h.x},${h.y} never got to a hole`).toBe(true);
+    }
+  });
+
+  it('knows how far each of its holes is on its own, and which a point is nearest', () => {
+    expect(nav.toEach).toHaveLength(holes.length);
+    holes.forEach((h, k) => {
+      expect(nav.distanceTo(k, h.x, h.y), `hole ${k}`).toBe(0);
+    });
+    for (const h of spec.heaps) {
+      const own = holes.map((_, k) => nav.distanceTo(k, h.x, h.y));
+      expect(nav.distance(nav.toHole, h.x, h.y), 'the nearest is the nearest of them').toBeCloseTo(Math.min(...own), 3);
+      expect(own[nav.holeOf(h.x, h.y)]).toBe(Math.min(...own));
     }
   });
 

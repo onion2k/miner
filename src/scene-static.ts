@@ -46,6 +46,7 @@ export class StaticScene {
     hanging: moved(cylinder(0.6, 0.7, 10), 0, 0, -0.7),
     beltBase: box(1, 1, 1),
     rail: box(1, 1, 1),
+    dropMark: box(1, 1, 1),
   };
   private readonly propMeshes = Object.fromEntries(
     Object.entries(PROP_MESHES).map(([kind, make]) => [kind, make()]),
@@ -228,7 +229,10 @@ export class StaticScene {
     ];
   }
 
-  /** Each running belt: its bed, and a rail down either side. */
+  /**
+   * Each running belt: its bed, a rail down either side, and a bar across where it ends. With two belts in
+   * a cave, the bar is what says where each one delivers, and it is taller than the bed so it shows on both sides.
+   */
   private belts(state: StaticState): GameGroup[] {
     const out: GameGroup[] = [];
     for (const a of state.belts) {
@@ -244,6 +248,9 @@ export class StaticScene {
       placePart(rails, 1, cx, cy, 0, yaw, 0, -s.width / 2 - 0.3, 0, 0, 0, len, 0.6, 0.9);
       out.push({ mesh: this.meshes.beltBase, matrices: base, albedo: [0.12, 0.12, 0.14], roughness: 0.7 });
       out.push({ mesh: this.meshes.rail, matrices: rails, albedo: [0.75, 0.55, 0.2], roughness: 0.4 });
+      const mark = new Float32Array(16);
+      placePart(mark, 0, s.x1, s.y1, 0, yaw, 0, 0, 0, 0, 0, 1.4, s.width + 1.8, 0.55);
+      out.push({ mesh: this.meshes.dropMark, matrices: mark, albedo: [0.4, 0.9, 0.45], roughness: 0.45 });
     }
     return out;
   }

@@ -17,4 +17,13 @@ describe('the drone simulation', () => {
     expect(r.banked).toBeGreaterThan(0);
     expect(r.hole).toBeGreaterThan(0);
   });
+
+  it('reports the smaller hole’s share of what was banked: nothing in a cave with one hole, at most half in one with two', () => {
+    const one = simulate({ ...SIM_DEFAULTS, cave: 'hollow', seconds: 14 }, 1);
+    expect(one.banked).toBeGreaterThan(0);
+    expect(one.holeShare).toBe(0);
+    const two = simulate({ ...SIM_DEFAULTS, cave: 'north-vault', drones: 2, seconds: 30 }, 1);
+    expect(two.holeShare).toBeGreaterThanOrEqual(0);
+    expect(two.holeShare).toBeLessThanOrEqual(0.5);
+  });
 });

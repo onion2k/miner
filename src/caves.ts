@@ -31,6 +31,13 @@ function plan(cols: number, rows: number, hx: number, hy: number) {
     rows,
     /** The hole, where the tile it is over is centred in the world. */
     hole: { x: (hx - cols / 2) * TILE, y: (hy - rows / 2) * TILE, radius: 5.5, depth: 14 },
+    /** Another hole of the cave's, `a` tiles east and `b` north of the first, the same size. */
+    holeAt: (a: number, b: number) => ({
+      x: (hx - cols / 2) * TILE + a * TILE,
+      y: (hy - rows / 2) * TILE + b * TILE,
+      radius: 5.5,
+      depth: 14,
+    }),
     /** An ellipse of floor, or of rock put back, its middle `a` tiles east and `b` north of the hole. */
     ellipse: (a: number, b: number, rx: number, ry: number, seed: number, rock = false): Shape =>
       rock
@@ -222,8 +229,19 @@ const eastGallery = (() => {
   );
   const belt: BeltOffer = {
     id: 'east-belt',
+    label: 'Conveyor, top of the ring',
     spec: { x0: p.pt(130, 34).x, y0: p.pt(130, 34).y, x1: p.pt(9, 3).x, y1: p.pt(9, 3).y, width: 7, speed: 10 },
     cost: 400,
+  };
+  // along the bottom of the ring, under the island's west tip, from the bottom heap, aimed at the hole so that what
+  // it carries is over the rim when it leaves the belt: the belt ends near enough for that, as the top one does
+  const from = p.pt(114, -70),
+    to = p.pt(5.5, -3.4);
+  const bottomBelt: BeltOffer = {
+    id: 'east-belt-bottom',
+    label: 'Conveyor, bottom of the ring',
+    spec: { x0: from.x, y0: from.y, x1: to.x, y1: to.y, width: 7, speed: 10 },
+    cost: 450,
   };
   return {
     id: 'east-gallery',
@@ -232,7 +250,7 @@ const eastGallery = (() => {
     biome: 'lava',
     cols: p.cols,
     rows: p.rows,
-    shapes: [p.ellipse(28, -1, 34, 19, 5.2), p.ellipse(30, -4, 20, 7, 2.4, true)],
+    shapes: [p.ellipse(28, -1, 34, 19, 5.2), p.ellipse(31.5, -2.6, 20, 5.5, 2.4, true)],
     holes: [p.hole],
     heaps: [
       {
@@ -262,7 +280,7 @@ const eastGallery = (() => {
       ],
     },
     cracks: [p.spot(60, 56), p.spot(212, -12), p.spot(100, -66)],
-    belts: [belt],
+    belts: [belt, bottomBelt],
     entry: p.cutting(-25, -2, -6, 1, [-1, 0]),
     exit: p.cutting(20, 14, 23, 25, [0, 1]),
     secrets: [
@@ -321,7 +339,7 @@ const northVault = (() => {
     cols: p.cols,
     rows: p.rows,
     shapes: [p.ellipse(0, 0, 10, 9, 2.2), p.rect(8, -2, 15, 1), p.ellipse(25, 0, 13, 12, 4.1)],
-    holes: [p.hole],
+    holes: [p.hole, p.holeAt(25, 0)],
     heaps: [
       {
         ...p.pt(64, -12),
