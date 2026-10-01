@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Currents mock</title>
+    <style>
+      :root {
+        --ground: #0b0c0f;
+        --ink: #e8e6df;
+        --dim: #8f8c84;
+        --line: #2a2c33;
+        --gold: #f2b21f;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 20px 16px 40px;
+        background: var(--ground);
+        color: var(--ink);
+        font:
+          15px/1.45 ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      p {
+        margin: 0 0 14px;
+        color: var(--dim);
+        max-width: 70ch;
+      }
+      section {
+        margin: 0 0 22px;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 6px;
+        color: var(--gold);
+        font-weight: 600;
+      }
+      .view {
+        position: relative;
+        border: 1px solid var(--line);
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .tag {
+        position: absolute;
+        left: 10px;
+        padding: 2px 8px;
+        background: rgba(0, 0, 0, 0.6);
+        border: 1px solid var(--line);
+        font-size: 13px;
+      }
+      .tag.far {
+        top: 22%;
+      }
+      .tag.near {
+        top: 62%;
+      }
+      button {
+        font: inherit;
+        color: var(--ink);
+        background: #1a1c22;
+        border: 1px solid var(--line);
+        padding: 6px 14px;
+        cursor: pointer;
+      }
+      .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin: 0 0 16px;
+      }
+      .bar span {
+        color: var(--dim);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Currents: two looks of each</h1>
+      <p>
+        A dark cave floor under one moving headlight, seen from about where the game's camera sits. Each strip flows
+        left to right at a belt's speed, with coins riding it. Everything here is opaque and worked out from noise, with
+        no textures: what the renderer could be taught to draw.
+      </p>
+      <div class="bar">
+        <button id="pause">Pause</button>
+        <span id="clock"></span>
+      </div>
+      <section>
+        <h2>Water</h2>
+        <div class="view">
+          <canvas id="water" width="960" height="430"></canvas>
+          <div class="tag far">B · stream, with foam lines</div>
+          <div class="tag near">A · ripples, glinting, with foam at the banks (chosen)</div>
+        </div>
+      </section>
+      <section>
+        <h2>Lava</h2>
+        <div class="view">
+          <canvas id="lava" width="960" height="430"></canvas>
+          <div class="tag far">B · molten bands</div>
+          <div class="tag near">A · crust, with glowing cracks (chosen)</div>
+        </div>
+      </section>
+      <section>
+        <h2>Ice</h2>
+        <div class="view">
+          <canvas id="ice" width="960" height="430"></canvas>
+          <div class="tag far">B · clear blue, cracked</div>
+          <div class="tag near">A · frosted slide, snow drifting (chosen)</div>
+        </div>
+      </section>
+    </main>
+    <script>
+      const VERT = `#version 300 es
+      in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
+
+      const FRAG = `#version 300 es
+      precision highp float;
+      uniform vec2 uRes; uniform float uT; uniform int uKind;
+      out vec4 frag;
+
+      const float SPEED = 9.0;      // a belt's speed, in world units a second
+      const float RIDE = 0.72;      // what a coin on it settles at, as a share of that
+      const float HALF = 3.0;       // half a strip's width
+      const float LEN = 19.0;       // half its length
+      const float YA = -4.4, YB = 4.4;
+
+      float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      float noise(vec2 p){
+        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+      }
+      float fbm(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++){ s += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; } return s; }
+      vec2 voro(vec2 p){
+        vec2 i = floor(p), f = fract(p); float d1 = 9.0, d2 = 9.0;
+        for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++){
+          vec2 g = vec2(float(x), float(y));
+          vec2 o = vec2(hash(i + g), hash(i + g + 31.7));
+          float d = length(g + o - f);
+          if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+        }
+        return vec2(d1, d2 - d1);
+      }
+
+      struct Surf { vec3 albedo; vec3 normal; float rough; vec3 glow; };
+
+      // u runs along the flow in world units, v across it from -1 to 1, s is how far the pattern has travelled
+      float waterHeight(vec2 q, float s){
+        return fbm(vec2(q.x * 0.55 - s * 0.55, q.y * 1.1)) + 0.45 * fbm(vec2(q.x * 1.5 - s * 1.5, q.y * 2.6 + 5.0));
+      }
+      Surf waterA(float u, float v, float s){
+        vec2 q = vec2(u, v * HALF);
+        float e = 0.08, h = waterHeight(q, s);
+        vec3 n = normalize(vec3(-(waterHeight(q + vec2(e, 0), s) - h) / e * 0.55, -(waterHeight(q + vec2(0, e), s) - h) / e * 0.55, 1.0));
+        vec3 a = mix(vec3(0.006, 0.035, 0.055), vec3(0.02, 0.13, 0.17), smoothstep(0.35, 0.95, h));
+        // the chosen water: A's ripples, with B's foam along the banks so the stream's edge shows in the dark
+        float edge = smoothstep(0.8, 0.97, abs(v) + 0.12 * noise(vec2(u * 1.3 - s * 0.9, v * 3.0)));
+        a = mix(a, vec3(0.75, 0.9, 0.95), edge);
+        return Surf(a, normalize(mix(n, vec3(0, 0, 1), edge)), mix(0.07, 0.6, edge), vec3(0));
+      }
+      Surf waterB(float u, float v, float s){
+        vec2 q = vec2(u, v * HALF);
+        float wob = fbm(vec2(u * 0.18 - s * 0.18, v * 1.3)) - 0.5;
+        float lanes = noise(vec2(u * 0.3 - s * 0.3, (v + wob * 0.5) * HALF * 1.5));
+        float band = smoothstep(0.42, 0.5, lanes) - smoothstep(0.62, 0.7, lanes);
+        float foam = smoothstep(0.71, 0.74, noise(vec2(u * 0.55 - s * 0.55, (v + wob) * HALF * 2.4)));
+        float edge = smoothstep(0.8, 0.97, abs(v) + 0.12 * noise(vec2(u * 1.3 - s * 0.9, v * 3.0)));
+        vec3 a = mix(vec3(0.015, 0.11, 0.2), vec3(0.04, 0.26, 0.36), band);
+        a = mix(a, vec3(0.75, 0.9, 0.95), clamp(foam * 0.8 + edge, 0.0, 1.0));
+        float e = 0.2, h = fbm(vec2(q.x * 0.3 - s * 0.3, q.y * 0.6));
+        vec3 n = normalize(vec3(-(fbm(vec2((q.x + e) * 0.3 - s * 0.3, q.y * 0.6)) - h) / e * 0.9, -(fbm(vec2(q.x * 0.3 - s * 0.3, (q.y + e) * 0.6)) - h) / e * 0.9, 1.0));
+        return Surf(a, n, mix(0.16, 0.6, clamp(foam + edge, 0.0, 1.0)), vec3(0));
+      }
+      Surf lavaA(float u, float v, float s, float t){
+        vec2 q = vec2(u * 0.42 - s * 0.42 * 0.35, v * HALF * 0.42);
+        q += 0.25 * vec2(fbm(q * 1.3), fbm(q * 1.3 + 9.0));
+        vec2 w = voro(q);
+        float crack = 1.0 - smoothstep(0.0, 0.16, w.y);
+        float plate = fbm(q * 4.0);
+        vec3 a = vec3(0.045, 0.03, 0.028) * (0.6 + 0.8 * plate);
+        float pulse = 0.75 + 0.25 * sin(t * 1.7 + w.x * 9.0);
+        vec3 g = (vec3(5.0, 1.0, 0.08) * crack * crack + vec3(0.9, 0.08, 0.0) * smoothstep(0.5, 0.0, w.y) * 0.5) * pulse;
+        g *= 1.0 - 0.6 * smoothstep(0.75, 1.0, abs(v));
+        return Surf(a, normalize(vec3((plate - 0.5) * 0.5, (fbm(q * 4.0 + 3.0) - 0.5) * 0.5, 1.0)), 0.85, g);
+      }
+      Surf lavaB(float u, float v, float s, float t){
+        float warp = fbm(vec2(u * 0.16 - s * 0.16 * 0.4, v * 1.2));
+        float n = fbm(vec2(u * 0.3 - s * 0.3 * 0.45, v * HALF * 0.7 + warp * 2.2));
+        float hot = smoothstep(0.38, 0.72, n);
+        vec3 a = vec3(0.05, 0.02, 0.015);
+        vec3 g = mix(vec3(0.7, 0.05, 0.0), vec3(5.5, 2.0, 0.22), hot) * (0.35 + 0.65 * smoothstep(0.25, 0.45, n));
+        g *= 1.0 - 0.75 * smoothstep(0.7, 1.0, abs(v));
+        return Surf(a, vec3(0, 0, 1), 0.7, g);
+      }
+      Surf iceA(float u, float v, float s){
+        float scratch = noise(vec2(u * 0.12, v * HALF * 7.0));
+        float snow = smoothstep(0.6, 0.85, noise(vec2(u * 0.45 - s * 0.45, v * HALF * 1.4 + 0.6 * fbm(vec2(u * 0.2 - s * 0.2, v)))));
+        vec3 a = mix(vec3(0.34, 0.5, 0.62), vec3(0.5, 0.66, 0.76), scratch);
+        a = mix(a, vec3(0.92, 0.96, 1.0), snow * 0.75);
+        float glint = step(0.986, hash(floor(vec2(u * 5.0, v * HALF * 5.0))));
+        return Surf(a + glint * 0.5, normalize(vec3((scratch - 0.5) * 0.12, (scratch - 0.5) * 0.4, 1.0)), mix(0.22, 0.8, snow), vec3(0));
+      }
+      Surf iceB(float u, float v, float s){
+        vec2 q = vec2(u * 0.22, v * HALF * 0.22);
+        vec2 w = voro(q + 0.2 * vec2(fbm(q * 2.0), fbm(q * 2.0 + 4.0)));
+        float crack = 1.0 - smoothstep(0.0, 0.035, w.y);
+        float chevron = smoothstep(0.44, 0.5, fract((u - abs(v) * 2.2) * 0.2 - s * 0.2)) * (1.0 - smoothstep(0.5, 0.56, fract((u - abs(v) * 2.2) * 0.2 - s * 0.2)));
+        float depth = fbm(q * 1.6 + 2.0);
+        vec3 a = mix(vec3(0.02, 0.1, 0.2), vec3(0.06, 0.26, 0.42), depth);
+        a = mix(a, vec3(0.75, 0.9, 1.0), crack * 0.8 + chevron * 0.16);
+        float dust = smoothstep(0.74, 0.9, noise(vec2(u * 0.6 - s * 0.6, v * HALF * 2.0)));
+        a = mix(a, vec3(0.9, 0.95, 1.0), dust * 0.35);
+        return Surf(a, vec3(0, 0, 1), mix(0.05, 0.5, max(crack, dust)), vec3(0));
+      }
+
+      Surf strip(float u, float v, bool second, float t){
+        float s = t * SPEED * RIDE;
+        if (uKind == 0) { if (second) return waterB(u, v, s); return waterA(u, v, s); }
+        if (uKind == 1) { if (second) return lavaB(u, v, s, t); return lavaA(u, v, s, t); }
+        if (second) return iceB(u, v, s);
+        return iceA(u, v, s);
+      }
+
+      vec3 lit(Surf m, vec3 pos, vec3 view, vec3 lamp, vec3 lampColour){
+        vec3 toL = lamp - pos; float d = length(toL); vec3 L = toL / d;
+        float fall = 1.0 / (1.0 + d * d / 60.0) * smoothstep(34.0, 12.0, d);
+        float diff = max(dot(m.normal, L), 0.0);
+        vec3 H = normalize(L + view);
+        float shine = mix(600.0, 6.0, sqrt(m.rough));
+        float spec = pow(max(dot(m.normal, H), 0.0), shine) * (shine + 8.0) / 25.0 * (1.0 - m.rough);
+        return (m.albedo * diff + vec3(spec) * 0.35) * lampColour * fall * 9.0 + m.albedo * 0.012 + m.glow;
+      }
+
+      void main(){
+        vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+        vec3 eye = vec3(0.0, -27.0, 21.0), aim = vec3(0.0, 0.5, 0.0);
+        vec3 f = normalize(aim - eye), r = normalize(cross(f, vec3(0, 0, 1))), up = cross(r, f);
+        vec3 ray = normalize(f * 2.3 + r * uv.x + up * uv.y);
+        float tt = -eye.z / ray.z;
+        vec3 pos = eye + ray * tt;
+        vec3 view = -ray;
+        float t = uT;
+        vec3 lamp = vec3(sin(t * 0.35) * 13.0, -1.0 + cos(t * 0.27) * 3.0, 3.6);
+        vec3 lampColour = vec3(1.0, 0.92, 0.78);
+
+        Surf m;
+        float rockN = fbm(pos.xy * 0.35);
+        m = Surf(vec3(0.07, 0.065, 0.06) * (0.6 + 0.8 * rockN), normalize(vec3((fbm(pos.xy * 1.3) - 0.5) * 0.6, (fbm(pos.xy * 1.3 + 7.0) - 0.5) * 0.6, 1.0)), 0.9, vec3(0));
+        vec3 spill = vec3(0);
+        for (int k = 0; k < 2; k++){
+          float yc = k == 0 ? YA : YB;
+          float v = (pos.y - yc) / HALF;
+          if (abs(pos.x) < LEN && abs(v) < 1.0) m = strip(pos.x, v, k == 1, t);
+          else if (uKind == 1){
+            // what a few lights along the flow would throw on the rock beside it
+            float away = max(abs(pos.y - yc) - HALF, 0.0) + max(abs(pos.x) - LEN, 0.0);
+            spill += vec3(1.0, 0.28, 0.04) * 0.5 * exp(-away * 0.55) * (0.85 + 0.15 * sin(t * 3.0 + pos.x));
+          }
+        }
+        // coins riding each strip, at the pace the pattern moves
+        for (int k = 0; k < 2; k++){
+          float yc = k == 0 ? YA : YB;
+          for (int c = 0; c < 5; c++){
+            float fc = float(c);
+            float cx = mod(fc * 8.3 + float(k) * 3.1 + t * SPEED * RIDE, 2.0 * LEN) - LEN;
+            float cy = yc + (hash(vec2(fc, float(k))) - 0.5) * 3.4;
+            float d = length(pos.xy - vec2(cx, cy));
+            if (d < 0.42) m = Surf(vec3(0.95, 0.66, 0.12), normalize(vec3((pos.xy - vec2(cx, cy)) * 0.9, 1.0)), 0.3, vec3(0));
+          }
+        }
+        vec3 colour = lit(m, pos, view, lamp, lampColour) + m.albedo * spill;
+        colour = 1.0 - exp(-colour * 1.35);
+        frag = vec4(pow(colour, vec3(1.0 / 2.2)), 1.0);
+      }`;
+
+      function build(id, kind) {
+        const canvas = document.getElementById(id);
+        const gl = canvas.getContext('webgl2', { antialias: false });
+        if (!gl) return () => {};
+        const shader = (type, src) => {
+          const s = gl.createShader(type);
+          gl.shaderSource(s, src);
+          gl.compileShader(s);
+          if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(id, gl.getShaderInfoLog(s));
+          return s;
+        };
+        const prog = gl.createProgram();
+        gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERT));
+        gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAG));
+        gl.linkProgram(prog);
+        gl.useProgram(prog);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+        const at = gl.getAttribLocation(prog, 'p');
+        gl.enableVertexAttribArray(at);
+        gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+        gl.uniform2f(gl.getUniformLocation(prog, 'uRes'), canvas.width, canvas.height);
+        gl.uniform1i(gl.getUniformLocation(prog, 'uKind'), kind);
+        const uT = gl.getUniformLocation(prog, 'uT');
+        return (t) => {
+          gl.uniform1f(uT, t);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+        };
+      }
+
+      const draws = [build('water', 0), build('lava', 1), build('ice', 2)];
+      // time is stepped, not read off the clock: ?t=12.5 draws that moment and stands still, for a picture
+      const fixed = new URLSearchParams(location.search).get('t');
+      let t = fixed === null ? 0 : Number(fixed);
+      let running = fixed === null;
+      let last = performance.now();
+      const clock = document.getElementById('clock');
+      const pause = document.getElementById('pause');
+      pause.addEventListener('click', () => {
+        running = !running;
+        pause.textContent = running ? 'Pause' : 'Play';
+      });
+      if (!running) pause.textContent = 'Play';
+      function frame(now) {
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+        if (running) t += dt;
+        for (const draw of draws) draw(t);
+        clock.textContent = `${t.toFixed(1)} s`;
+        window.mockDrawn = t;
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>

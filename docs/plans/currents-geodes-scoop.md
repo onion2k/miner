@@ -319,6 +319,10 @@ sounds that loop; friction by tile.
 
 ## A2: the currents' look (after A1 and the pin)
 
+What R0 settled: the renderer gains three pattern kinds, 5 `ripple`, 6 `crust` and 7 `drift`, each reading
+its placement's floats as kind, scale, speed and glow, and travelling along the mesh's own +x. The foam at
+a stream's banks is the game's: a narrow strip of its own along each edge.
+
 `scene-static.ts` gives each strip the flow material; `main.ts` sets
 `renderer.time = game.t`, so a picture is the same every run. Lava gets two or
 three flickering lights within the light pool's budget. The pattern moves at
@@ -354,11 +358,12 @@ not, and the frame is measured before and after.
 
 ## Status
 
-- [ ] S seams
+- [x] S seams: `8e071a6`. The full check green with no baseline and no picture moved.
 - [ ] C scoop
 - [ ] B geodes
 - [ ] A1 currents and drains
-- [ ] R0 mock chosen
+- [x] R0 mock chosen (2026-10-01): water A, ripples that glint, with B's foam at the banks; lava A, crust
+      over glowing cracks; ice A, a frosted slide with snow drifting. The mock is `docs/plans/currents-mock.html`.
 - [ ] R1 flow material
 - [ ] 0.23.0 released, pin moved
 - [ ] A2 the currents' look
