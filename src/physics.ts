@@ -28,6 +28,19 @@ export const BRICK_KIND = 6;
 export const BARREL_KIND = 7;
 
 /**
+ * The cave as it was on artshape-physics 0.1.0, where the game was tuned. Since
+ * 0.3.0 each body is judged for sleep on a window of its own, and in this cave
+ * two coins resting against each other never sleep on the same step: 257 of
+ * the 9073 bodies in the cave at rest stayed awake for ever, and a heap dropped
+ * at once never settled. Judged together they sleep together. And since 0.3.0
+ * anything rolling slower than about 1.2 a second is slowed to a stop, which is
+ * how a golf putt dies at the lip; here a coin nudged at the hole stopped short
+ * of it, and the South Gallery took a thorough player a sixth longer to clear.
+ * `settle` at 1 turns that off.
+ */
+const TUNING = { sleepTogether: true, settle: 1 };
+
+/**
  * A world for a cave: its tile grid and its holes, the radius of each kind,
  * and `solid` for which tiles are rock, which the game rewrites in place as
  * gates open and walls come down. Chance is Math.random unless told
@@ -47,6 +60,7 @@ export function makeWorld(
     radii: KIND_RADIUS,
     holes: holes.map((h) => ({ x: h.x, y: h.y, radius: h.radius, depth: h.depth })),
     random,
+    tuning: TUNING,
   };
   return new World(options);
 }
