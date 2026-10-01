@@ -17,7 +17,7 @@
 import { Autopilot, PATCH, type Profile } from '../src/autopilot';
 import { TILE, buildCave, type CaveSpec } from '../src/cave';
 import { RUN } from '../src/caves';
-import { Economy, memoryStore } from '../src/economy';
+import { Economy, SCOOP, SCOOP_SIZES, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
 import { BARREL_KIND } from '../src/physics';
 import { runCapacity } from '../src/stock';
@@ -77,6 +77,8 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
   'save bytes': { ceiling: 200_000 },
   'left rows': { ceiling: 400 },
   bots: { ceiling: 3 },
+  // what the biggest scoop can hold; it is emptied by a press, and by the cave being left
+  'scoop held': { ceiling: SCOOP[SCOOP_SIZES].load },
   fountains: { ceiling: 8 },
   // held by its ceiling alone: it says how thick with coins the cave being cleared is, not how long anything is kept,
   // and the last caves are the biggest
@@ -105,6 +107,7 @@ export function sizes(game: Game, pilot?: Autopilot): Record<string, number> {
     'save bytes': JSON.stringify(save).length,
     'left rows': save.left.reduce((n, row) => n + row.length, 0),
     bots: game.bots.length,
+    'scoop held': game.scoop.held.length,
     fountains: game.fountains.length,
     // the most any one machine is holding, not the sum: a fleet that grows from one drone to three is not a leak
     'shunned coins': Math.max(0, ...[...game.bots, ...(pilot ? [pilot.machine] : [])].map((b) => b.shunning)),

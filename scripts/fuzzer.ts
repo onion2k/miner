@@ -2,7 +2,8 @@
  * The game played by a monkey: the real game, without the picture, driven
  * at random and made to do at random everything a player can make happen —
  * charging walls, chambers, lamps and barrels; pushing anything at all down
- * the hole; setting barrels off; buying things; opening the way out and
+ * the hole; scooping up what lies at the blade, carrying it and tipping it
+ * out; setting barrels off; buying things; opening the way out and
  * driving out through it, on into the next cave; honking; saving and
  * loading — and checked after every few frames for anything that must always
  * hold and does not (`invariants.ts`), and for anything thrown.
@@ -95,6 +96,8 @@ export function fuzz(seed: number, frames: number): FuzzResult {
     const hand: { pilot: Autopilot | null } = { pilot: null };
     let drive = { throttle: 0, steer: 0 };
     let busy = 0;
+    /** The frames the monkey presses the scoop's button on. */
+    const presses = new Set<number>();
     const pick = <T>(xs: readonly T[]): T | undefined => (xs.length ? xs[Math.floor(random() * xs.length)] : undefined);
     const between = (a: number, b: number) => a + random() * (b - a);
     /** Somewhere to be: by a heap, a barrel, a lamp, a wall, a chamber or a coin. */
@@ -279,6 +282,32 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         },
       ],
       [
+        5,
+        () => {
+          // the scoop, worked as a player would: bought if it is not yet, then driven up to something, pressed to
+          // take it up, driven about with it, and pressed again, which may be anywhere, the hole, a wall or a corner
+          const e = game.economy;
+          const size = 1 + Math.floor(random() * 3);
+          while (e.save.scoop < size) {
+            e.deposit(1e5);
+            if (!e.buy('scoop')) break;
+          }
+          const at = somewhere();
+          if (!at) return;
+          const [x, y] = openNear(at[0] + between(-4, 4), at[1] + between(-4, 4));
+          // facing it, from where it can be driven at: a little way back
+          const yaw = between(0, Math.PI * 2);
+          const [bx, by] = openNear(x - Math.cos(yaw) * 5, y - Math.sin(yaw) * 5);
+          Object.assign(game.dozer, { x: bx, y: by, yaw: Math.atan2(at[1] - by, at[0] - bx), speed: 0 });
+          drive = { throttle: between(0, 0.8), steer: between(-0.3, 0.3) };
+          busy = Math.floor(between(20, 90));
+          presses.add(frame + 1 + Math.floor(between(0, 25)));
+          presses.add(frame + busy + 1);
+          if (random() < 0.5) presses.add(frame + busy + 30 + Math.floor(between(0, 200)));
+          act('scoop', `size ${e.save.scoop} at ${at[0].toFixed(1)},${at[1].toFixed(1)}`);
+        },
+      ],
+      [
         2,
         () => {
           game.economy.save.horn = true;
@@ -331,6 +360,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           );
           if (problems.length) throw new Reload(problems);
           hand.pilot = null;
+          presses.clear();
           act('reload', `${live} bodies, ${game.world.live} back`);
         },
       ],
@@ -354,7 +384,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
       if (hand.pilot && busy > 0) hand.pilot.step(DT);
       else {
         hand.pilot = null;
-        game.step(DT, drive);
+        game.step(DT, drive, { scoop: presses.delete(frame) });
       }
       // out through the way out: on into the next cave, as whoever owns the game does
       if (game.left) {

@@ -213,7 +213,8 @@ export class Autopilot {
     for (;;) {
       const offer = e
         .offers()
-        .filter((o) => o.available && !o.owned && o.cost <= e.bank)
+        // the scoop is worked by a button it never presses, and bought it would be money spent for nothing
+        .filter((o) => o.id !== 'scoop' && o.available && !o.owned && o.cost <= e.bank)
         .sort((a, b) => a.cost - b.cost)
         .at(0);
       if (!offer || !e.buy(offer.id)) return;
@@ -279,7 +280,7 @@ export class Autopilot {
     const { world, stock } = this.game;
     let value = 0;
     for (let i = 0; i < world.count; i++) {
-      if (!world.alive[i] || stock.origin[i] === NO_SOURCE) continue;
+      if (!world.alive[i] || world.carried[i] || stock.origin[i] === NO_SOURCE) continue;
       value += KIND_VALUE[world.kind[i]];
     }
     return value;
@@ -388,7 +389,7 @@ export class Autopilot {
     let best = -1,
       bestScore = -Infinity;
     for (let i = 0; i < world.count; i++) {
-      if (!world.alive[i] || world.z[i] < 0 || bot.shuns(i)) continue;
+      if (!world.alive[i] || world.carried[i] || world.z[i] < 0 || bot.shuns(i)) continue;
       const from = stock.origin[i];
       if (from === NO_SOURCE) continue;
       const x = world.x[i],
@@ -474,7 +475,7 @@ export class Autopilot {
     const { world, nav, stock, dozer, t, cave } = this.game;
     const value = new Map<number, number>();
     for (let i = 0; i < world.count; i++) {
-      if (!world.alive[i] || world.z[i] < 0) continue;
+      if (!world.alive[i] || world.carried[i] || world.z[i] < 0) continue;
       const from = stock.origin[i];
       if (from === NO_SOURCE) continue;
       const x = world.x[i],

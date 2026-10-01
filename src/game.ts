@@ -29,6 +29,7 @@ import { Impacts } from './impacts';
 import type { Drive } from './input';
 import { lampOn, lampsHit } from './lamps';
 import { Nav } from './nav';
+import { Scoop } from './scoop';
 import { BARREL_KIND, BRICK_KIND, KIND_RADIUS, makeWorld, type Pusher, type World } from './physics';
 import { NO_SOURCE, Stock, capacityOf, lootHeap, type Capacity } from './stock';
 import { Tally } from './tally';
@@ -66,6 +67,10 @@ export interface GameEvents {
   fuseLit?(barrel: number): void;
   /** A barrel gone off. */
   blast?(blast: Blast): void;
+  /** The scoop took up `count` bodies. */
+  scooped?(count: number): void;
+  /** The scoop tipped out `count` bodies. */
+  tipped?(count: number): void;
   /** A crack in the last cave's floor, before it sprays. */
   crack?(): void;
   /** The last cave cleared: the game is done. */
@@ -100,6 +105,8 @@ export class Game {
   readonly stock: Stock;
   readonly barrels: Barrels;
   readonly tally: Tally;
+  /** The scoop's bucket and what it holds; empty and down until the workshop's scoop is bought and worked. */
+  readonly scoop: Scoop;
   /** Game time, in seconds. */
   t = 0;
   /** Driven out through the way out: this game is finished with, and stands still. */
@@ -137,6 +144,7 @@ export class Game {
       cave.holes,
     );
     this.dozer = new Dozer(this.world.solid, cave.grid);
+    this.scoop = new Scoop(this.world, (x, y) => this.rockAt(x, y));
     const at = arrival(cave);
     Object.assign(this.dozer, { x: at.x, y: at.y, yaw: at.yaw, speed: arrived?.speed ?? 0 });
     this.nav = new Nav(this.world.solid, cave.grid, cave.holes);
@@ -217,6 +225,11 @@ export class Game {
     if (controls.horn && save.horn) this.honk();
 
     const spec = economy.spec();
+    if (controls.scoop && save.scoop) {
+      const { took, tipped } = this.scoop.press(dozer, spec.bladeWidth, economy.scoopLoad());
+      if (took) this.events.scooped?.(took);
+      if (tipped) this.events.tipped?.(tipped);
+    }
     dozer.update(dt, drive, spec, world.load);
     this.knockLamps();
     const choose = (bot: Bot) => this.foreman.choose(bot, this.t);
@@ -230,7 +243,10 @@ export class Game {
         for (let j = i + 1; j < machines.length; j++) separate(machines[i], machines[j]);
     }
     this.events.machinesMoved?.();
-    const pushers = dozer.pushers(spec, this.pushers);
+    // what is held goes where the bucket is, before the world steps, which leaves it be; and with a load up
+    // the blade is raised, so that it pushes nothing
+    this.scoop.carry(dt, dozer, spec.bladeWidth);
+    const pushers = dozer.pushers(spec, this.pushers, this.scoop.lift);
     for (const b of this.bots) {
       b.dozer.pushers(BOT_SPEC, this.botPushers);
       pushers.push(...this.botPushers);
@@ -306,7 +322,8 @@ export class Game {
     const { world, dozer } = this;
     const { x, y, z, vz, alive, asleep } = world;
     for (let i = 0; i < world.count; i++) {
-      if (!alive[i]) continue;
+      // what the scoop holds is not on the floor to be startled
+      if (!alive[i] || world.carried[i]) continue;
       const d = Math.hypot(x[i] - dozer.x, y[i] - dozer.y);
       if (d > 14 || z[i] > 3) continue;
       if (asleep[i]) world.wake(i);
@@ -345,6 +362,12 @@ export class Game {
 
   private heading(): Heading {
     return [Math.cos(this.dozer.yaw), Math.sin(this.dozer.yaw)];
+  }
+
+  /** Whether a point is in the rock, or off the cave's tiles. */
+  private rockAt(x: number, y: number): boolean {
+    const t = this.nav.tileOf(x, y);
+    return t < 0 || this.world.solid[t] === 1;
   }
 
   /** The rock where it stands now: the way out, chambers and walls as they are. Everything that goes by the rock is told. */

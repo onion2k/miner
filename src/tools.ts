@@ -207,7 +207,8 @@ export class Bot {
         break;
       }
       case 'approach': {
-        if (!world.alive[this.coin]) {
+        // gone, or taken up by the player's scoop
+        if (!world.alive[this.coin] || world.carried[this.coin]) {
           this.reset();
           break;
         }
@@ -532,7 +533,8 @@ export class Foreman {
       nav.count(world.count, world.alive, world.x, world.y);
       this.workable = [];
       for (let i = 0; i < world.count; i++) {
-        if (!world.alive[i] || !this.works(this.origin[i]) || world.z[i] < 0) continue;
+        // what the player's scoop holds is the player's, and is not lying for a drone to go after
+        if (!world.alive[i] || world.carried[i] || !this.works(this.origin[i]) || world.z[i] < 0) continue;
         if (nearHole(nav.holes, world.x[i], world.y[i], 9)) continue;
         // on a belt, and on its way
         if (nav.onBelt(world.x[i], world.y[i])) continue;
@@ -547,7 +549,8 @@ export class Foreman {
       bestHole = -1;
     for (let k = 0, m = Math.min(n, 48); k < m; k++) {
       const i = n <= 48 ? workable[k] : workable[(Math.random() * n) | 0];
-      if (!world.alive[i] || bot.shuns(i)) continue;
+      // listed a moment ago, and taken up by the scoop since
+      if (!world.alive[i] || world.carried[i] || bot.shuns(i)) continue;
       const x = world.x[i],
         y = world.y[i];
       const taken = bots.some(

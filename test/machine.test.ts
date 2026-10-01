@@ -10,14 +10,16 @@ import { LIGHT_STRIDE } from 'artshape-render/game/lights';
 import { lookAt, multiply, perspective } from 'artshape-render/gpu/camera';
 import type { Mesh } from 'artshape-render/mesh/types';
 import { BOT_SCALE, BOT_SPEC } from '../src/tools';
-import { BLADE_AT, BLADE_HEIGHT, TRACK_GAUGE, WING_SWEEP, bladePieces } from '../src/dozer';
+import { BLADE_AT, BLADE_HEIGHT, BLADE_RISE, Dozer, TRACK_GAUGE, WING_SWEEP, bladePieces } from '../src/dozer';
 import { SceneLights } from '../src/lighting';
-import { ANCHORS, ENVELOPE, TRIANGLE_BUDGET, bladeMesh, machineMeshes } from '../src/machine';
+import { ANCHORS, ENVELOPE, TRIANGLE_BUDGET, bladeMesh, machineMeshes, scoopMesh } from '../src/machine';
+import { MOUTH_DEEP, seat } from '../src/scoop';
+import { makeWorld } from '../src/physics';
 import { DynamicScene } from '../src/scene-dynamic';
 import { PAINTS } from '../src/economy';
 import { runCapacity } from '../src/stock';
 import { holeLamps } from '../src/lamps';
-import { RUN, caveOf, gameIn } from './helpers';
+import { RUN, TEST_GRID, caveOf, gameIn, grid } from './helpers';
 
 const machine = machineMeshes();
 const tris = (m: Mesh) => m.indices.length / 3;
@@ -289,3 +291,112 @@ describe('the belts of the cave being played', () => {
 function machineMeshesOf(scene: DynamicScene) {
   return scene.machineParts;
 }
+
+describe('the scoop as drawn', () => {
+  const [lo, hi] = [6.5, 12.5];
+
+  it('stands where the blade does, as wide as it, with a floor as deep as the mouth and no higher than the blade', () => {
+    for (const width of [lo, 8, 10, hi]) {
+      const bucket = scoopMesh(width);
+      const pieces = bladePieces(width);
+      const reach = Math.max(...pieces.map((p) => Math.abs(p.y) + p.length / 2)) + 0.3;
+      let front = -Infinity,
+        across = 0;
+      for (const [x, y, z] of vertices(bucket)) {
+        expect(x, `${width}: not behind the blade`).toBeGreaterThanOrEqual(BLADE_AT - 1.0);
+        expect(Math.abs(y), `${width}: no wider than the blade`).toBeLessThanOrEqual(reach);
+        expect(z, `${width}: no higher than the blade`).toBeLessThanOrEqual(BLADE_HEIGHT + 0.3);
+        expect(z, `${width}: on the floor and not under it`).toBeGreaterThanOrEqual(-0.05);
+        front = Math.max(front, x);
+        across = Math.max(across, Math.abs(y));
+      }
+      expect(front, `${width}: its lip is at the mouth's far edge`).toBeGreaterThanOrEqual(BLADE_AT + MOUTH_DEEP);
+      expect(across * 2, `${width}: edge to edge`).toBeGreaterThan(width * 0.95);
+    }
+  });
+
+  it('holds every body the scoop seats, on its floor and between its cheeks, at any width', () => {
+    for (const width of [lo, 8, 10, hi]) {
+      const bucket = scoopMesh(width);
+      const floor = [...vertices(bucket)].filter(([x, , z]) => z < 0.4 && x > BLADE_AT);
+      const wide = Math.max(...floor.map(([, y]) => Math.abs(y)));
+      const long = Math.max(...floor.map(([x]) => x));
+      for (let n = 0; n < 40; n++) {
+        const s = seat(n, width);
+        expect(Math.abs(s.y), `${width}: ${n} across`).toBeLessThan(wide);
+        expect(s.x, `${width}: ${n} along`).toBeLessThan(long);
+      }
+    }
+  });
+
+  it('is under the triangle budget in the blade’s place, and not a box', () => {
+    const total =
+      Object.values(machine).reduce((n, m) => n + tris(m), 0) +
+      tris(scoopMesh(hi)) +
+      tris(bladeMesh(BOT_SPEC.bladeWidth));
+    expect(total).toBeLessThan(TRIANGLE_BUDGET);
+    expect(tris(scoopMesh(lo))).toBeGreaterThan(100);
+    for (let i = 0; i < scoopMesh(lo).normals.length; i += 3) {
+      const m = scoopMesh(lo);
+      expect(Math.hypot(m.normals[i], m.normals[i + 1], m.normals[i + 2])).toBeCloseTo(1, 3);
+    }
+  });
+
+  it('takes the blade’s place once fitted, whatever width is bought after, and rises and tips with what it holds', () => {
+    const moved = new Map<number, Float32Array>();
+    const target = {
+      setDynamic: () => undefined,
+      move: (group: number, m: Float32Array) => moved.set(group, Float32Array.from(m)),
+      tint: () => undefined,
+    };
+    const scene = new DynamicScene(target, {
+      bodyCapacity: runCapacity(RUN).bodies,
+      kindCapacity: runCapacity(RUN).kinds,
+      belts: [],
+      bots: 3,
+      botScale: BOT_SCALE,
+      botBladeWidth: BOT_SPEC.bladeWidth,
+      bladeWidth: 6.5,
+      paint: PAINTS[0],
+      trackPages: [],
+    });
+    const BLADE_GROUP = 9;
+    const plain = scene.groups[BLADE_GROUP].mesh;
+    expect(plain.positions).toEqual(bladeMesh(6.5).positions);
+    scene.setScoop(true);
+    expect(scene.groups[BLADE_GROUP].mesh.positions, 'the bucket, in the blade’s group').toEqual(
+      scoopMesh(6.5).positions,
+    );
+    scene.setBlade(10);
+    expect(scene.groups[BLADE_GROUP].mesh.positions, 'a wider blade bought: a wider bucket').toEqual(
+      scoopMesh(10).positions,
+    );
+    expect(scene.groups[BLADE_GROUP].matrices, 'a matrix of its own').not.toBe(scene.groups[5].matrices);
+
+    const solid = grid();
+    const dozer = new Dozer(solid, TEST_GRID);
+    Object.assign(dozer, { x: 3, y: -5, yaw: 0.6 });
+    const frame = (scoop?: { lift: number; dump: number }) => ({
+      world: makeWorld(10, solid, TEST_GRID, []),
+      brickGrade: new Uint8Array(10),
+      dozer,
+      bots: [],
+      belts: [],
+      flag: false,
+      tracks: { counts: [], dirty: new Set<number>() },
+      legs: null,
+      barrel: () => 'idle' as const,
+      scoop,
+      t: 0,
+    });
+    scene.write(frame());
+    const down = moved.get(BLADE_GROUP)!;
+    const hull = moved.get(5)!;
+    down.forEach((v, k) => expect(v, 'at rest it is placed as the machine is').toBeCloseTo(hull[k], 6));
+    scene.write(frame({ lift: 1, dump: 0 }));
+    const up = moved.get(BLADE_GROUP)!;
+    expect(up[2] * BLADE_AT + up[14], 'the lip raised by the blade’s rise').toBeCloseTo(BLADE_RISE, 5);
+    expect(moved.get(5)![14], 'the hull stays on the floor').toBe(0);
+    expect(up[2], 'tipped back about its lip').not.toBeCloseTo(0, 3);
+  });
+});

@@ -2,7 +2,8 @@
  * What must always be true of the game, however it has been played: the
  * rules that, broken, are a bug whatever the feature was.
  *
- * Nothing solid is in the rock and nothing is not a number. The counts the
+ * Nothing solid is in the rock and nothing is not a number. What the scoop
+ * holds is carried, worth something, and no more than it takes. The counts the
  * game keeps of what is in the cave agree with what is in it. The bank is a
  * number, the scoop is a size the workshop sells, the save's cave is in the
  * run and every list of it is the cave's size, and the way out is open only
@@ -15,7 +16,7 @@
 import { EXIT, TILE } from './cave';
 import { CLEAR_SHARE, FORMER_LAST, SCOOP_SIZES } from './economy';
 import type { Game } from './game';
-import { BARREL_KIND, KINDS, KIND_NAME } from './physics';
+import { BARREL_KIND, KINDS, KIND_NAME, KIND_VALUE } from './physics';
 import { NO_SOURCE } from './stock';
 
 /** How many broken rules of one sort are reported before the rest are only counted. */
@@ -78,6 +79,25 @@ export function checkInvariants(game: Game): string[] {
       if (bySource[s][k] !== (stock.left[s][k] ?? 0))
         miscounted.push(`source ${s} ${KIND_NAME[k]}: counted ${stock.left[s][k]}, holds ${bySource[s][k]}`);
   report('counts', miscounted);
+
+  // the scoop holds bodies that are there, held, out of the rock and worth something, as many as it takes and no more; and nothing
+  // is held by the world that the scoop does not hold, which would hang in the air for ever
+  const holds = new Set(game.scoop.held);
+  const misheld: string[] = [];
+  for (const i of game.scoop.held) {
+    if (!world.alive[i]) misheld.push(`slot ${i} is held and is not in the world`);
+    else if (!world.carried[i]) misheld.push(`${at(i)} is held, and not carried`);
+    else if (!(KIND_VALUE[world.kind[i]] > 0)) misheld.push(`${at(i)} is held and is worth nothing`);
+    // the physics does not look at a carried body, so the scoop alone keeps it out of the rock
+    else if (inRock(world.x[i], world.y[i])) misheld.push(`${at(i)} is held, in the rock`);
+  }
+  if (holds.size !== game.scoop.held.length) misheld.push('a body is held twice');
+  if (game.scoop.held.length > economy.scoopLoad())
+    misheld.push(`${game.scoop.held.length} held, and the scoop takes ${economy.scoopLoad()}`);
+  for (let i = 0; i < world.count; i++)
+    if (world.alive[i] && world.carried[i] && !holds.has(i))
+      misheld.push(`${at(i)} is carried, and the scoop does not hold it`);
+  report('the scoop', misheld);
 
   // the barrels' fuses are on barrels
   const badFuses = barrels.lit.filter((i) => !world.alive[i] || world.kind[i] !== BARREL_KIND).map((i) => `slot ${i}`);

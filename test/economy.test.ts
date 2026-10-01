@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Economy, WALL_STRENGTH, browserStore, caveStock, memoryStore, sourcesOf } from '../src/economy';
+import {
+  Economy,
+  SCOOP,
+  SCOOP_SIZES,
+  WALL_STRENGTH,
+  browserStore,
+  caveStock,
+  memoryStore,
+  sourcesOf,
+  workshopTotal,
+} from '../src/economy';
 import { KIND_VALUE } from '../src/physics';
 import { RUN, specOf } from './helpers';
 
@@ -340,5 +350,63 @@ describe('the sources', () => {
       );
       expect(caveStock(spec).value).toBe(byHand);
     }
+  });
+});
+
+describe('the scoop in the workshop', () => {
+  it('comes in three sizes, each dearer and larger than the last, and none is the machine as it starts', () => {
+    expect(SCOOP_SIZES, 'the save is held to the sizes sold').toBe(SCOOP.length - 1);
+    expect(SCOOP_SIZES).toBe(3);
+    expect(SCOOP[0]).toEqual({ load: 0, cost: 0 });
+    for (let k = 1; k < SCOOP.length; k++) {
+      expect(SCOOP[k].load, `size ${k} holds more`).toBeGreaterThan(SCOOP[k - 1].load);
+      expect(SCOOP[k].cost, `size ${k} costs more`).toBeGreaterThan(SCOOP[k - 1].cost);
+    }
+  });
+
+  it('is offered after the blade, bought one size at a time for what that size costs, and holds what the size says', () => {
+    const e = new Economy(memoryStore(), RUN);
+    const ids = e.offers().map((o) => o.id);
+    expect(ids.indexOf('scoop')).toBe(ids.indexOf('blade') + 1);
+    expect(e.scoopLoad(), 'none to begin with').toBe(0);
+    expect(e.save.scoop).toBe(0);
+    expect(e.buy('scoop'), 'not without the money').toBe(false);
+    for (let size = 1; size <= SCOOP_SIZES; size++) {
+      const offer = e.offers().find((o) => o.id === 'scoop')!;
+      expect(offer).toMatchObject({ owned: false, available: true, cost: SCOOP[size].cost });
+      e.deposit(SCOOP[size].cost - 1);
+      expect(e.buy('scoop'), `size ${size} one short`).toBe(false);
+      e.deposit(1);
+      expect(e.buy('scoop')).toBe(true);
+      expect(e.save.scoop).toBe(size);
+      expect(e.scoopLoad()).toBe(SCOOP[size].load);
+      expect(e.bank, 'paid for, to the coin').toBe(0);
+    }
+    expect(e.offers().find((o) => o.id === 'scoop')).toMatchObject({ owned: true, available: false });
+    e.deposit(1e6);
+    expect(e.buy('scoop'), 'no size past the biggest').toBe(false);
+    expect(e.save.scoop).toBe(SCOOP_SIZES);
+  });
+
+  it('tells the game it was bought, and is part of what the whole workshop costs', () => {
+    const e = new Economy(memoryStore(), RUN);
+    const heard: string[] = [];
+    e.onChange((id) => heard.push(id));
+    e.deposit(SCOOP[1].cost);
+    e.buy('scoop');
+    expect(heard).toEqual(['scoop']);
+    // the workshop came to 17,280 before the scoop, and its prices are in the sum now
+    expect(workshopTotal(RUN)).toBe(17_280 + SCOOP.reduce((n, s) => n + s.cost, 0));
+  });
+
+  it('loads from a save made before it with none, and keeps the one a save has', () => {
+    const old = new Economy(memoryStore(JSON.stringify({ bank: 12, engine: 2 })), RUN);
+    expect(old.save.scoop).toBe(0);
+    expect(old.scoopLoad()).toBe(0);
+    const bought = new Economy(memoryStore(JSON.stringify({ scoop: 2 })), RUN);
+    expect(bought.scoopLoad()).toBe(SCOOP[2].load);
+    // a size the workshop does not sell holds nothing, whatever a save or a test has put there
+    bought.save.scoop = 4;
+    expect(bought.scoopLoad()).toBe(0);
   });
 });

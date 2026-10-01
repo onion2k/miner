@@ -356,6 +356,17 @@ describe('what is left to bank', () => {
     expect(view.specks).toEqual([]);
   });
 
+  it('is none for what the scoop holds, which is with the machine and not lying in the cave', () => {
+    const list: [number, number, number][] = [
+      [kind('coin'), 20, 20],
+      [kind('ruby'), -40, 10],
+    ];
+    const held = { ...bodies(list), carried: Uint8Array.from([0, 1]) };
+    const view = minimapView(input(cave, { bodies: held }));
+    expect(view.specks).toHaveLength(1);
+    expect(view.specks[0].x).toBeGreaterThan(0);
+  });
+
   it('is bucketed into the map pixels, so a heap of thousands is a few specks', () => {
     const list: [number, number, number][] = [];
     for (let i = 0; i < 4000; i++) list.push([0, 10 + (i % 20) * 0.1, 10 + Math.floor(i / 20) * 0.01]);

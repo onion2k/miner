@@ -4,7 +4,7 @@ A bulldozer in a cave full of coins, and a hole to push them into.
 
 Drive with **W A S D** (or the arrows), shove coins and gems into the hole to
 bank them, and press **B** for the workshop: a bigger engine, a wider blade,
-a stronger magnet, a conveyor belt for the cave you are in, and drones that
+a scoop, a stronger magnet, a conveyor belt for the cave you are in, and drones that
 go and fetch things. Drag to orbit the camera, wheel to zoom, **C** to put it
 back, **M** to mute. Progress is saved in the browser; the workshop has a
 _start over_ button.
@@ -47,6 +47,21 @@ and stay where they fall, to be pushed aside, or down the hole to be rid of.
 Some walls have treasure set in them, a gold brick or a gem in the top of
 one, which comes loose with the rest. What is in a side room, or set in its
 wall, is over and above the cave, as a chamber's is, and left behind with it.
+
+The scoop, in three sizes, is a bucket in the blade's place that pushes as the
+blade does. Press **Space** (or its button on a phone's pad) with nothing held
+and whatever is worth something in its mouth, between the hull's nose and a
+little past the blade and as wide as the blade, is taken up, nearest the blade
+first, up to what that size holds: 12, 24 or 40 coins, gems and gold bars.
+Bricks and barrels are left. What is held rides in the bucket, which is raised
+and pushes nothing while a load is up, though the hull still shoves; and it
+does not slow the dozer the way pushing a heap does, since nothing carried
+presses on the blade. Press again to tip it out ahead, at the dozer's speed
+and a little more: at the hole's lip, that banks it. It is for the coins in a
+corner, or against a wall, that the blade cannot get a face to. A load is not
+saved: leave the cave with one and it is lost with the rest, and a reload puts
+it back in its heaps. The drones never take what is held, and the autopilot
+neither buys nor works one.
 
 Barrels stand about each cave. Push one and it goes where it is pushed; hit
 one with the dozer and its fuse is lit. It flashes, faster and faster, beeping,
@@ -184,8 +199,8 @@ slower.
 
 The fuzzer (`scripts/fuzzer.ts`) plays the real game without the picture, at
 random, from a seed: driving about and charging walls, chambers, lamps and
-barrels, pushing anything at all down the hole, setting barrels off, buying
-things, opening the way out and going on into the next cave, saving and loading. After every
+barrels, pushing anything at all down the hole, setting barrels off, scooping
+up a load and tipping it out, buying things, opening the way out and going on into the next cave, saving and loading. After every
 few frames it checks the rules in `src/invariants.ts` — nothing in the rock,
 nothing not a number, the counts of what is in the cave agreeing with what is
 in it, every per-cave list the size of its cave, the way out open exactly when enough is banked, a save that comes back as it went — and
@@ -233,6 +248,7 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/vein.ts           the last cave's vein, once the cave is cleared
     src/physics.ts        the kinds of thing there are to push, and a world from this cave, made with artshape-physics
     src/dozer.ts          the bulldozer: tank steering, the blade and hull as pushers, load
+    src/scoop.ts          the scoop: what is in its mouth taken up, carried and tipped out, and where the bucket sits
     src/tools.ts          conveyor belts, drones, and the fountains
     src/autopilot.ts      the player's dozer driven by the drones' mind, for playing the whole game through
     src/nav.ts            the way round the rock and the heaps, for the drones
@@ -254,7 +270,7 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/machine.ts        the bulldozer and the robo-dozers as drawn, part by part, and where their lights attach
     src/spider.ts         the Spiderdozer's eight legs, walking in two sets from where the body is
     src/matrix.ts         column-major placements
-    src/input.ts          the keyboard
+    src/input.ts          the keyboard: driving, and a few one-shot keys (the horn, the scoop)
     src/touch.ts          a phone's sliders
     scripts/sim.ts        the drones without the picture, for measuring them
     scripts/sim-check.ts  the drones held to a baseline

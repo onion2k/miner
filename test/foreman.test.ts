@@ -76,6 +76,58 @@ describe('the holes a coin is for', () => {
   });
 });
 
+describe('what the player’s scoop holds', () => {
+  it('is not for a drone to go after, and a drone that had chosen it lets it go', () => {
+    const { picks, world, bots, nav, solid } = choices({ east: 0, west: 1 });
+    const first = picks[0].coin;
+    expect(first, 'a coin to go for').toBeGreaterThanOrEqual(0);
+    // everything lying in the cave taken up by a scoop: nothing is left to choose
+    for (let i = 0; i < world.count; i++) if (world.alive[i]) world.carried[i] = 1;
+    const origin = new Uint8Array(TEST_BODIES);
+    const foreman = new Foreman(world, nav, bots, origin, () => true);
+    expect(foreman.choose(bots[1], 5), 'all of it held').toBe(-1);
+    // half of it let go: what it picks is among the half that is not held
+    const lying = [...Array(world.count).keys()].filter((i) => world.alive[i]);
+    lying.forEach((i, k) => (world.carried[i] = k % 2 ? 1 : 0));
+    const again = new Foreman(world, nav, bots, origin, () => true);
+    for (const bot of bots) bot.coin = -1;
+    const i = again.choose(bots[0], 5);
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(world.carried[i], 'not a held one').toBe(0);
+    // a drone on its way to a coin that is taken up gives it up on the next look
+    const bot = new Bot(solid, cave.grid, 3, -10, 0);
+    bot.coin = first;
+    bot.state = 'approach';
+    bot['setUp'] = [0, 0];
+    world.carried[first] = 1;
+    bot.decide(DT, world, 0, nav, () => -1, { bots, player: bots[0].dozer });
+    expect(bot.coin, 'let go of').toBe(-1);
+  });
+});
+
+describe('what the player’s scoop takes up after the drones have looked', () => {
+  it('is skipped from the list the foreman keeps, even a long one it can only sample, and from the list as it was kept', () => {
+    const world = makeWorld(TEST_BODIES, cave.solid(false), cave.grid, cave.holes);
+    const nav = new Nav(cave.solid(false), cave.grid, cave.holes);
+    const bots = [new Bot(cave.solid(false), cave.grid, 1, 0, -3)];
+    const foreman = new Foreman(world, nav, bots, new Uint8Array(TEST_BODIES), () => true);
+    // five hundred coins on the floor by the west hole, all held but the last
+    const slots: number[] = [];
+    for (let k = 0; k < 500; k++) slots.push(world.spawn(0, -40 + (k % 25) * 0.6, -14 + Math.floor(k / 25) * 0.6, 0.6));
+    const last = slots[slots.length - 1];
+    for (const i of slots) world.carried[i] = i === last ? 0 : 1;
+    // listed afresh each time, a half second apart: with only the one lying, it is the one it finds, every time
+    for (let t = 1; t <= 12; t += 1.5) expect(foreman.choose(bots[0], t), `at ${t}`).toBe(last);
+    // and listed while five were lying, then four of them taken up inside the half second the list is kept for
+    for (const i of slots) world.carried[i] = i < slots[5] ? 0 : 1;
+    foreman.choose(bots[0], 100);
+    for (const i of slots.slice(0, 4)) world.carried[i] = 1;
+    expect(foreman.choose(bots[0], 100.1), 'the list as it was kept').toBe(slots[4]);
+    world.carried[slots[4]] = 1;
+    expect(foreman.choose(bots[0], 100.2)).toBe(-1);
+  });
+});
+
 describe('the hole each coin is given', () => {
   it('is the second hole for a coin nearer it along the floor, and the first for one nearer that', () => {
     const east = choices({ west: 0 });

@@ -1,4 +1,4 @@
-/** The keyboard: WASD or arrows to drive, and a few one-shot keys. On a phone, the sliders. */
+/** The keyboard: WASD or arrows to drive, and a few one-shot keys, Space the scoop's. On a phone, the sliders. */
 export interface Drive {
   throttle: number;
   steer: number;
@@ -10,6 +10,7 @@ export class Input {
   private recentre = false;
   private mute = false;
   private horn = false;
+  private scoop = false;
   private camera = false;
   /** The phone's sliders, when there are any: read when no drive key is down. */
   touch: { drive(): Drive } | null = null;
@@ -25,10 +26,19 @@ export class Input {
       if (k === 'c') this.recentre = true;
       if (k === 'm') this.mute = true;
       if (k === 'h') this.horn = true;
+      if (k === ' ') {
+        this.scoop = true;
+        // a workshop row clicked a moment ago still has the focus, and Space would press it again, buying the
+        // next size of the very thing the player has just bought
+        if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
+      }
       if (k === 'v') this.camera = true;
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
     });
-    addEventListener('keyup', (e) => this.down.delete(e.key.toLowerCase()));
+    addEventListener('keyup', (e) => {
+      this.down.delete(e.key.toLowerCase());
+      if (e.key === ' ') e.preventDefault();
+    });
     addEventListener('blur', () => this.down.clear());
   }
 
@@ -57,6 +67,11 @@ export class Input {
     this.horn = true;
   }
 
+  /** The scoop's button, from the phone's pad. */
+  pressScoop() {
+    this.scoop = true;
+  }
+
   takeShop() {
     const v = this.shop;
     this.shop = false;
@@ -75,6 +90,11 @@ export class Input {
   takeHorn() {
     const v = this.horn;
     this.horn = false;
+    return v;
+  }
+  takeScoop() {
+    const v = this.scoop;
+    this.scoop = false;
     return v;
   }
   takeCamera() {

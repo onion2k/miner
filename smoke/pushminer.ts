@@ -25,6 +25,8 @@ export interface SaveSetup {
   done?: boolean;
   drones?: number;
   horn?: boolean;
+  /** The size of scoop fitted, 0 for none to 3. */
+  scoop?: number;
   flag?: boolean;
   lampsBroken?: number[];
   /** The ids of the belts bought for the cave. */

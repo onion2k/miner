@@ -105,6 +105,11 @@ export function hashGame(game: Game): string {
     eat(m.yaw);
     eat(m.speed);
   }
+  // the scoop: what it holds and in what order, and how far up and through pouring the bucket is
+  eat(game.scoop.held.length);
+  for (const i of game.scoop.held) eat(i);
+  eat(game.scoop.lift);
+  eat(game.scoop.dump);
   for (const i of game.barrels.lit) {
     eat(i);
     eat(game.barrels.fuseLeft(i) ?? 0);

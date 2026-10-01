@@ -42,6 +42,20 @@ describe('the autopilot', () => {
     });
   });
 
+  it('never buys the scoop, which it cannot work, however much it has to spend', () => {
+    withSeed(11, () => {
+      const game = newGame();
+      const pilot = new Autopilot(game, 'rusher');
+      game.economy.deposit(50_000);
+      pilot.step(DT);
+      const bought = pilot.log.map((l) => l.what);
+      expect(bought.length, 'it bought what it could').toBeGreaterThan(3);
+      expect(bought).not.toContain('bought scoop');
+      expect(game.economy.save.scoop).toBe(0);
+      expect(game.economy.offers().find((o) => o.id === 'scoop')).toMatchObject({ owned: false, available: true });
+    });
+  });
+
   it('as a rusher, drives out through the way out as soon as it is open', () => {
     withSeed(3, () => {
       const game = newGame();

@@ -87,6 +87,10 @@
     color: var(--dim);
     font-size: 13px;
   }
+  /* a key that is only there once what it works is bought: said in the line's own weight */
+  #help b {
+    font-weight: inherit;
+  }
   #help span {
     color: var(--ink);
     background: rgba(255, 255, 255, 0.1);
@@ -295,7 +299,7 @@
   body.touch #pad:not([hidden]) {
     display: flex;
   }
-  /* the buttons, in one row at the bottom between the sliders: mute, shop, and the horn once it is bought */
+  /* the buttons, in one row at the bottom between the sliders: mute, shop, and the horn and the scoop once they are bought */
   #pad {
     position: fixed;
     bottom: calc(14px + env(safe-area-inset-bottom));
@@ -321,6 +325,7 @@
     background: rgba(242, 193, 78, 0.25);
   }
   #hornButton,
+  #scoopButton,
   #muteButton,
   #cameraButton,
   #controlsButton {
@@ -335,7 +340,8 @@
     font-size: 14px;
     letter-spacing: -0.1em;
   }
-  #hornButton {
+  #hornButton,
+  #scoopButton {
     border-color: rgba(242, 193, 78, 0.45);
   }
   #shopButton {
@@ -558,7 +564,12 @@
 <canvas class="panel" id="minimap" hidden aria-label="map"></canvas>
 <div class="panel" id="help" hidden>
   drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom ·
-  <span>V</span> camera mode · <span>C</span> reset camera · <span>M</span> mute · <span>H</span> horn<br />
+  <span>V</span> camera mode · <span>C</span> reset camera · <span>M</span> mute · <span>H</span> horn<b
+    id="helpScoop"
+    hidden
+  >
+    · <span>Space</span> scoop</b
+  ><br />
   push the coins and gems into the hole to bank them
 </div>
 <div class="panel" id="shop" hidden>
@@ -581,6 +592,7 @@
   <button id="shopButton" type="button">shop</button>
   <button id="controlsButton" type="button" aria-label="switch controls">⇅⇅</button>
   <button id="hornButton" type="button" aria-label="horn" hidden>📯</button>
+  <button id="scoopButton" type="button" aria-label="scoop" hidden>🪣</button>
 </div>
 <div id="tracks" hidden>
   <div class="track" id="trackLeft" aria-label="left track"><div class="thumb"></div></div>

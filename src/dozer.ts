@@ -22,6 +22,11 @@ export const HULL_HALF = [3.0, 2.5, 1.3] as const;
 /** Where the blade's face stands ahead of the pivot. */
 export const BLADE_AT = 4.3;
 export const BLADE_HEIGHT = 3.0;
+/**
+ * How far the blade is raised off the floor with a scoop's load up, at full lift: clear of the tallest single
+ * coin or gem lying on the floor, so that what is under it is driven over and not shoved.
+ */
+export const BLADE_RISE = 3.0;
 /** The blade: a straight middle for this fraction of its width, and a curved wing each end. */
 export const BLADE_FLAT = 0.6;
 /** Pieces per wing, and how far forward a wing's tip sweeps, as a fraction of the blade's width. */
@@ -250,8 +255,12 @@ export class Dozer {
     }
   }
 
-  /** The boxes the coins feel: the blade's pieces and the hull, scaled to the machine. */
-  pushers(spec: DozerSpec, out: Pusher[]): Pusher[] {
+  /**
+   * The boxes the coins feel: the blade's pieces and the hull, scaled to the machine. `lift` is how far the
+   * scoop has raised the blade, 0 to 1: raised, the blade's boxes stand clear of the floor and push nothing
+   * that lies on it, while the hull still shoves. Nought, which is all a drone ever passes, is the blade down.
+   */
+  pushers(spec: DozerSpec, out: Pusher[], lift = 0): Pusher[] {
     const c = Math.cos(this.yaw),
       s = Math.sin(this.yaw);
     const vx = c * this.speed,
@@ -263,7 +272,7 @@ export class Dozer {
       out.push({
         x: this.x + (c * piece.x - s * piece.y) * k,
         y: this.y + (s * piece.x + c * piece.y) * k,
-        z: (BLADE_HEIGHT / 2) * k,
+        z: (BLADE_HEIGHT / 2 + lift * BLADE_RISE) * k,
         yaw: this.yaw + piece.turn,
         hx: 0.3 * k,
         hy: (piece.length / 2) * k,

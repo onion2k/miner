@@ -11,10 +11,11 @@
 import { mergeMeshes, type Mesh } from 'artshape-render/mesh/types';
 import type { GameGroup } from 'artshape-render/game/renderer';
 import type { BeltSpec } from './cave';
-import { TRACK_GAUGE, type Dozer } from './dozer';
-import { ANCHORS, bladeMesh, machineMeshes, type MachineBody, type MachineMeshes } from './machine';
+import { BLADE_AT, BLADE_RISE, TRACK_GAUGE, type Dozer } from './dozer';
+import { ANCHORS, bladeMesh, machineMeshes, scoopMesh, type MachineBody, type MachineMeshes } from './machine';
+import { bucketTilt } from './scoop';
 import { bar, box, coin, cylinder, gem, moved, square } from './meshes';
-import { hide, place, placeAlong, placePart, placeQuat } from './matrix';
+import { hide, place, placeAlong, placePart, placeQuat, placeTipped } from './matrix';
 import type { LegPose } from './spider';
 import { BARREL_COLOUR, BAR_COLOUR, COIN_COLOUR, GEM_ALBEDO, TRACK_MARK, WALL_COLOUR, type Rgb } from './palette';
 import { BAR, BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, type World } from './physics';
@@ -38,6 +39,8 @@ export interface DynamicOptions {
   botScale: number;
   botBladeWidth: number;
   bladeWidth: number;
+  /** Whether the workshop's scoop is fitted, which is drawn in the blade's place; left out, it is not. */
+  scoop?: boolean;
   paint: { colour: Rgb; roughness: number };
   /** The track marks, a page of placements each. */
   trackPages: readonly Float32Array[];
@@ -62,6 +65,8 @@ export interface DynamicFrame {
   legs: readonly LegPose[] | null;
   /** How a barrel is, by slot: standing, its fuse lit, or lit and in the bright half of a flash. */
   barrel: (i: number) => 'idle' | 'lit' | 'flash';
+  /** How far up the scoop's bucket is and how far through pouring, both 0 to 1; left out, down and level. */
+  scoop?: { lift: number; dump: number };
   t: number;
 }
 
@@ -119,6 +124,10 @@ export class DynamicScene {
   private readonly rubbleM: Float32Array[];
   /** The one matrix every part of the player's machine is placed by, and the drones' each. */
   private readonly machineM = new Float32Array(16);
+  /** The blade's own, which rises and tips with the scoop's bucket; the rest of the machine stands still under it. */
+  private readonly bladeM = new Float32Array(16);
+  private bladeWidth: number;
+  private scoopFitted: boolean;
   private readonly botM: Float32Array;
   private readonly treadM: Float32Array;
   /** The machine's parts as it stands now, for whoever asks what is painted and what is not. */
@@ -143,6 +152,8 @@ export class DynamicScene {
   ) {
     const { bodyCapacity, kindCapacity, bots } = options;
     this.belts = options.belts;
+    this.bladeWidth = options.bladeWidth;
+    this.scoopFitted = options.scoop ?? false;
     this.coinM = new Float32Array(bodyCapacity * 16);
     this.gemM = kindCapacity.map((n) => new Float32Array(Math.max(1, n) * 16));
     this.rubbleM = [1, 2, 3].map(() => new Float32Array(kindCapacity[BRICK_KIND] * 16));
@@ -169,7 +180,7 @@ export class DynamicScene {
       { mesh: machine.dark, matrices: this.machineM, albedo: DARK_ALBEDO, roughness: 0.75 },
       { mesh: machine.metal, matrices: this.machineM, albedo: METAL_ALBEDO, roughness: METAL_ROUGHNESS },
       { mesh: machine.glass, matrices: this.machineM, albedo: GLASS_ALBEDO, roughness: GLASS_ROUGHNESS },
-      { mesh: bladeMesh(options.bladeWidth), matrices: this.machineM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
+      { mesh: this.bladeOrScoop(), matrices: this.bladeM, albedo: [0.4, 0.42, 0.48], roughness: 0.35 },
       {
         mesh: box(0.55, 1.9, 0.35),
         matrices: this.treadM,
@@ -277,9 +288,22 @@ export class DynamicScene {
     this.target.setDynamic(this.groups);
   }
 
+  /** The player's blade as drawn: the scoop's bucket once it is fitted, else the blade. */
+  private bladeOrScoop(): Mesh {
+    return this.scoopFitted ? scoopMesh(this.bladeWidth) : bladeMesh(this.bladeWidth);
+  }
+
   /** A wider blade bought. */
   setBlade(width: number) {
-    this.groups[BLADE].mesh = bladeMesh(width);
+    this.bladeWidth = width;
+    this.groups[BLADE].mesh = this.bladeOrScoop();
+    this.target.setDynamic(this.groups);
+  }
+
+  /** The scoop bought: its bucket is drawn where the blade was. */
+  setScoop(fitted: boolean) {
+    this.scoopFitted = fitted;
+    this.groups[BLADE].mesh = this.bladeOrScoop();
     this.target.setDynamic(this.groups);
   }
 
@@ -351,7 +375,21 @@ export class DynamicScene {
     const { dozer, bots } = f;
     const { target, treadM } = this;
     place(this.machineM, 0, dozer.x, dozer.y, 0, dozer.yaw);
-    for (const g of [HULL, DARK, METAL, GLASS, BLADE]) target.move(g, this.machineM);
+    for (const g of [HULL, DARK, METAL, GLASS]) target.move(g, this.machineM);
+    // the blade is at rest where the machine is; a scoop's bucket rises and tips about its lip
+    const lift = f.scoop?.lift ?? 0;
+    placeTipped(
+      this.bladeM,
+      0,
+      dozer.x,
+      dozer.y,
+      0,
+      dozer.yaw,
+      BLADE_AT,
+      lift * BLADE_RISE,
+      bucketTilt(lift, f.scoop?.dump ?? 0),
+    );
+    target.move(BLADE, this.bladeM);
     // each track's bars, run round with how far the track has run; a drone's at its scale, its run
     // measured in the player's lengths so a bar laps a smaller track as often
     [dozer, ...bots.map((b) => b.dozer)].forEach((d, j) => {

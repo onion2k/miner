@@ -252,6 +252,19 @@ async function main() {
       else if (id.startsWith('paint:')) scene.setPaint(economy.paint());
       else if (id.startsWith('body:')) standOn();
       else if (id === 'horn') pad?.showHorn(true);
+      else if (id === 'scoop') {
+        scene.setScoop(true);
+        pad?.showScoop(true);
+        hud.scoopKey(true);
+      }
+    },
+    scooped(count) {
+      log(`scooped ${count}`);
+      sound.clunk();
+    },
+    tipped(count) {
+      log(`tipped ${count}`);
+      sound.clunk();
     },
     staticChanged: () => buildStatic(),
     machinesMoved() {
@@ -307,6 +320,7 @@ async function main() {
     botScale: BOT_SCALE,
     botBladeWidth: BOT_SPEC.bladeWidth,
     bladeWidth: economy.spec().bladeWidth,
+    scoop: save.scoop > 0,
     paint: economy.paint(),
     trackPages: tracks.matrices,
   });
@@ -438,6 +452,7 @@ async function main() {
       legs: save.body === 'spider' ? gait.poses() : null,
       tracks,
       barrel: (i) => (barrels.flashing(i) ? 'flash' : barrels.fuseLeft(i) !== null ? 'lit' : 'idle'),
+      scoop: game.scoop,
       t: game.t,
     });
     tracks.clean();
@@ -483,6 +498,7 @@ async function main() {
   // ---- the page round the cave ----
 
   hud.booted();
+  hud.scoopKey(economy.save.scoop > 0);
   hud.onReset(() => economy.reset());
   /** A phone's buttons, when there are any. */
   let pad: ReturnType<typeof setupPad> | null = null;
@@ -498,6 +514,7 @@ async function main() {
         shop: () => input.toggleShop(),
         camera: () => input.pressCamera(),
         horn: () => input.pressHorn(),
+        scoop: () => input.pressScoop(),
         mute: () => sound.toggleMute(),
         controls: () => {
           const scheme = controls.cycle();
@@ -509,6 +526,7 @@ async function main() {
       controls.scheme,
     );
     pad.showHorn(save.horn);
+    pad.showScoop(save.scoop > 0);
   }
 
   /**
@@ -614,6 +632,7 @@ async function main() {
     }
     const horn = input.takeHorn() && save.horn;
     if (horn) sound.horn();
+    const scoop = input.takeScoop() && save.scoop > 0;
     if (input.takeRecentre()) rig.recentre();
     if (input.takeCamera()) hud.note(`camera: ${rig.cycle()}`);
     if (input.takeMute()) {
@@ -624,7 +643,7 @@ async function main() {
     }
 
     const drive = input.read();
-    game.step(dt, drive, { horn });
+    game.step(dt, drive, { horn, scoop });
     const { world, dozer, stock, tally } = game;
     if (save.body === 'spider') gait.update(dt, dozer);
 
@@ -743,6 +762,7 @@ async function main() {
     setDrive: (d) => {
       input.override = d;
     },
+    pressScoop: () => input.pressScoop(),
     look(x, y, view) {
       orbit.setSpherical(view);
       mapAt = 0;

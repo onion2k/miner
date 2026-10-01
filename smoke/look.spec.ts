@@ -93,6 +93,42 @@ async function begin(page: Page, save?: SaveSetup) {
   expect(dark, 'the dozer on the floor, in the light').toBe(0);
 }
 
+/**
+ * The scoop loaded and raised, where the dozer stands: `n` coins from elsewhere laid in its mouth, taken up through
+ * the input, as the key and the pad's button do, and the bucket let rise. Read back, so a scene that took nothing is
+ * not a picture of an empty bucket.
+ */
+async function loadBucket(page: Page, n: number, view = { radius: 20, ahead: 0 }) {
+  const held = await page.evaluate(
+    ([n, view]) => {
+      const api = window.pushminer!;
+      const d = api.state().dozer;
+      const coins = api
+        .bodies('coin')
+        .filter((b) => !b.carried)
+        .sort((a, b) => Math.hypot(b.x - d.x, b.y - d.y) - Math.hypot(a.x - d.x, a.y - d.y))
+        .slice(0, n);
+      const c = Math.cos(d.yaw),
+        s = Math.sin(d.yaw);
+      coins.forEach((coin, k) => {
+        const along = 5.3 + Math.floor(k / 6) * 0.9,
+          across = ((k % 6) - 2.5) * 0.9;
+        api.place(coin.slot, d.x + c * along - s * across, d.y + s * along + c * across, 0.6);
+      });
+      api.step(2);
+      api.scoop();
+      api.step(60);
+      // aimed a little ahead of the machine, where the bucket is, which a narrow screen would otherwise cut off
+      api.look(d.x + c * view.ahead, d.y + s * view.ahead, { azimuth: 0.7, polar: 1.0, radius: view.radius });
+      api.step(1);
+      return api.state().scoop;
+    },
+    [n, view] as const,
+  );
+  expect(held.held, 'the coins are in the bucket').toBe(n);
+  expect(held.lift, 'and the bucket is up').toBe(1);
+}
+
 /** The middle of the cave's heaps, so each picture is aimed at where its coins are and not at a hard-coded point. */
 async function heart(page: Page): Promise<[number, number]> {
   return page.evaluate(() => {
@@ -337,6 +373,17 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the scoop, a loaded bucket up', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('south-gallery', { flag: true, scoop: 2 }));
+    const [x, y] = await heart(page);
+    await scene(page, { x, y, azimuth: 0.7, polar: 1.0, radius: 22 }, 120, [x, y, Math.PI / 2]);
+    await loadBucket(page, 18);
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('scoop.png', CANVAS_ONLY);
+    expect(problems).toEqual([]);
+  });
+
   test('a drone, up close', async ({ page }) => {
     const problems = watch(page);
     await begin(page, inCave('south-gallery', { drones: 1 }));
@@ -537,6 +584,18 @@ test.describe('what it looks like on a phone', () => {
     await expect(page.locator('#pad')).toBeVisible();
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the scoop on a phone, its button on the pad and a loaded bucket up', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('south-gallery', { scoop: 2 }));
+    const [x, y] = await heart(page);
+    await scene(page, { x, y, azimuth: 0.7, polar: 1.0, radius: 22 }, 120, [x, y, Math.PI / 2]);
+    await loadBucket(page, 18, { radius: 34, ahead: 5 });
+    await expect(page.locator('#scoopButton')).toBeVisible();
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('phone-scoop.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 

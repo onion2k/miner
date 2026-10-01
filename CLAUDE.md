@@ -59,6 +59,13 @@ What to copy the shape of, when building something new:
 - **In the cave:** barrels, walls, hidden chambers and lamps. Each has its
   unit tests in `test/`, a step in `smoke/progress.spec.ts`, a fuzzer action
   and a picture.
+- **A workshop action worked by a button:** the scoop (`src/scoop.ts`, headless;
+  `test/scoop.test.ts`), through the horn's road end to end: a key in
+  `input.ts`, `Controls` into `Game.step`, a pad button in `hud.ts` and
+  `index.html`, an event for the page, a fuzzer action, a smoke step by the
+  key and another by the pad's button, and two pictures. What it holds is
+  `world.carried`, which the physics leaves alone, so a new thing that reads
+  bodies skips `carried` as the foreman, the autopilot, the horn and the map do.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the drone gate
   (`scripts/sim-check.ts`). Each has unit tests of its own working parts.
 - **Test helpers:** `withSeed` in `test/helpers.ts` for chance from a seed,
@@ -126,7 +133,8 @@ For anything new in the cave, check what it does:
 - **save:** saved, reloaded, and loaded from an old save without the field
 - **drones:** pushed by one, or targeted by the foreman
 - **other features:** blasts, the horn, belts, the magnet, brick walls and rubble,
-  hidden chambers, lamps
+  hidden chambers, lamps, the scoop (a body held in it is carried: skipped, never
+  banked, never in the rock, counted lost on leaving, and back in its heap on a reload)
 - **rock:** against walls and in corridors; never left in rock
 - **caves:** in every cave and biome, the hollow included, and the last, which has no way out
 - **scale:** many at once, chains, at capacity (`KIND_CAPACITY`)

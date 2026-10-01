@@ -86,8 +86,19 @@ export interface Save {
   drained: number;
 }
 
+/**
+ * The scoop: what size 0 (none) to 3 holds at once, in bodies, and what the next size up costs. The workshop
+ * sells it after the blade, and it is worked with Space or a button on the phone's pad.
+ */
+export const SCOOP: { load: number; cost: number }[] = [
+  { load: 0, cost: 0 },
+  { load: 12, cost: 250 },
+  { load: 24, cost: 700 },
+  { load: 40, cost: 1600 },
+];
+
 /** The sizes of scoop the workshop sells: a save is held to them. */
-export const SCOOP_SIZES = 3;
+export const SCOOP_SIZES = SCOOP.length - 1;
 
 /**
  * The cave the game used to end in, before the Deep: a game finished there stays finished, where it is, and is not
@@ -230,11 +241,11 @@ export function memoryStore(json: string | null = null): SaveStore & { json: str
   };
 }
 
-/** What the whole workshop costs: every engine, blade and magnet, every drone and every cave's belts; paint aside. */
+/** What the whole workshop costs: every engine, blade, scoop and magnet, every drone and every cave's belts; paint aside. */
 export function workshopTotal(run: readonly CaveSpec[]): number {
   const sum = (xs: readonly { cost: number }[]) => xs.reduce((n, x) => n + x.cost, 0);
   const belts = run.reduce((n, c) => n + sum(c.belts), 0);
-  return sum(ENGINE) + sum(BLADE) + sum(MAGNET) + DRONE_COST.reduce((n, c) => n + c, 0) + belts;
+  return sum(ENGINE) + sum(BLADE) + sum(SCOOP) + sum(MAGNET) + DRONE_COST.reduce((n, c) => n + c, 0) + belts;
 }
 
 /** The caves the old rooms became, by the room's number in the old map: the hollow, south, north, east, west. */
@@ -499,6 +510,11 @@ export class Economy {
     };
   }
 
+  /** How many bodies the scoop fitted holds, 0 for none. */
+  scoopLoad(): number {
+    return SCOOP[this.save.scoop]?.load ?? 0;
+  }
+
   /** How much a hit at this speed does to a brick wall, with the engine fitted now; 0 for too slow to count. */
   ram(speed: number): number {
     if (speed < RAM_FROM + 1) return 0;
@@ -574,6 +590,19 @@ export class Economy {
       cost: b?.cost ?? 0,
       owned: !b,
       available: !!b,
+    });
+    const c = s.scoop < SCOOP_SIZES ? SCOOP[s.scoop + 1] : null;
+    out.push({
+      id: 'scoop',
+      title: `Scoop${c ? (s.scoop ? ` Mk ${s.scoop + 1}` : '') : ' maxed'}`,
+      sub: !c
+        ? `holds ${SCOOP[s.scoop].load}: the biggest made`
+        : s.scoop
+          ? `holds ${c.load}, up from ${SCOOP[s.scoop].load}`
+          : `lifts what is at the blade and carries it, then tips it out: holds ${c.load}`,
+      cost: c?.cost ?? 0,
+      owned: !c,
+      available: !!c,
     });
     const m = s.magnet + 1 < MAGNET.length ? MAGNET[s.magnet + 1] : null;
     out.push({
@@ -700,6 +729,7 @@ export class Economy {
     const s = this.save;
     if (id === 'engine') s.engine++;
     else if (id === 'blade') s.blade++;
+    else if (id === 'scoop') s.scoop++;
     else if (id === 'drone') s.drones++;
     else if (id === 'magnet') s.magnet++;
     else if (id === 'horn') s.horn = true;

@@ -172,6 +172,7 @@ export class Hud {
   private readonly shopProgress = byId('shopProgress');
   private readonly statsPanel = byId('stats');
   private readonly helpPanel = byId('help');
+  private readonly helpScoop = byId('helpScoop');
   private readonly toast = byId('toast');
   private readonly noteLine = byId('cameraNote');
   private readonly fadeLayer = byId('fade');
@@ -195,6 +196,11 @@ export class Hud {
     this.statsPanel.hidden = false;
     this.helpPanel.hidden = false;
     this.map.show();
+  }
+
+  /** The scoop's key in the line of keys, once there is a scoop for it to work: a key that does nothing is not listed. */
+  scoopKey(owned: boolean) {
+    this.helpScoop.hidden = !owned;
   }
 
   /** A word at the top of the screen for a few seconds: what just happened, or what a button just changed. */
@@ -281,6 +287,7 @@ export interface PadActions {
   shop(): void;
   camera(): void;
   horn(): void;
+  scoop(): void;
   /** Toggle the sound; whether it is muted now. */
   mute(): boolean;
   /** On to the next way of driving by touch; which it is now. */
@@ -298,6 +305,7 @@ export function setupPad(actions: PadActions, muted: boolean, scheme: 'tracks' |
   byId('pad').hidden = false;
   const controlsButton = byId<HTMLButtonElement>('controlsButton');
   const hornButton = byId<HTMLButtonElement>('hornButton');
+  const scoopButton = byId<HTMLButtonElement>('scoopButton');
   const muteButton = byId<HTMLButtonElement>('muteButton');
   const showControls = (s: 'tracks' | 'stick') => {
     controlsButton.textContent = s === 'tracks' ? '⇅⇅' : '⇅⇆';
@@ -314,6 +322,11 @@ export function setupPad(actions: PadActions, muted: boolean, scheme: 'tracks' |
     e.preventDefault();
     actions.horn();
   });
+  // the scoop likewise: it lifts as it is pressed, not as the finger comes up
+  scoopButton.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    actions.scoop();
+  });
   // straight to the sound, not through the input's once-a-frame flag: two taps inside
   // one frame would be one toggle there, and the button would say the wrong thing
   muteButton.addEventListener('click', () => showMute(actions.mute()));
@@ -323,6 +336,9 @@ export function setupPad(actions: PadActions, muted: boolean, scheme: 'tracks' |
     showMute,
     showHorn: (owned: boolean) => {
       hornButton.hidden = !owned;
+    },
+    showScoop: (owned: boolean) => {
+      scoopButton.hidden = !owned;
     },
   };
 }

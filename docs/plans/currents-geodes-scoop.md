@@ -359,11 +359,14 @@ not, and the frame is measured before and after.
 ## Status
 
 - [x] S seams: `8e071a6`. The full check green with no baseline and no picture moved.
-- [ ] C scoop
+- [x] C scoop: landed. Loads 12, 24 and 40 at 250, 700 and 1600. A full scoop of 24 reaches the engine's top of 11
+      where the same pile pushed reaches 9.65. Space is in the line of keys once a scoop is owned. The full check
+      green; the three workshop pictures written again for the new row, and nothing else moved.
 - [ ] B geodes
 - [ ] A1 currents and drains
 - [x] R0 mock chosen (2026-10-01): water A, ripples that glint, with B's foam at the banks; lava A, crust
       over glowing cracks; ice A, a frosted slide with snow drifting. The mock is `docs/plans/currents-mock.html`.
-- [ ] R1 flow material
-- [ ] 0.23.0 released, pin moved
+- [x] R1 flow material: built and checked, `74b4c48` on the branch `flow-material` of artshape-render, not yet
+      merged or released. Its frame timings were taken on a busy machine and are to be taken again first.
+- [ ] 0.23.0 released (artshape-render `ed9b117`, tagged and pushed, 2026-10-01); pin not yet moved
 - [ ] A2 the currents' look

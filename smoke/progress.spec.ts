@@ -35,6 +35,28 @@ async function play(page: Page, frames: number, stage: string) {
   expect(broken, `invariants after ${stage}`).toEqual([]);
 }
 
+/**
+ * The dozer put down at (x, y) facing north, and `n` coins laid in a block in its mouth, ahead of the blade, from
+ * what the cave has: the same every run, since the scene is seeded.
+ */
+async function layInMouth(page: Page, x: number, y: number, n: number) {
+  await page.evaluate(
+    ([x, y, n]) => {
+      const api = window.pushminer!;
+      api.teleport(x, y, Math.PI / 2);
+      // the coins that are lying furthest from where the dozer is, so none is already in the mouth
+      const coins = api
+        .bodies('coin')
+        .filter((b) => !b.carried)
+        .sort((a, b) => Math.hypot(b.x - x, b.y - y) - Math.hypot(a.x - x, a.y - y))
+        .slice(0, n);
+      coins.forEach((c, k) => api.place(c.slot, x - 1.35 + (k % 4) * 0.9, y + 5.4 + Math.floor(k / 4) * 0.9, 0.6));
+      api.step(2);
+    },
+    [x, y, n] as const,
+  );
+}
+
 /** The belts the workshop is selling, by id: the shop opened with its key, read, and shut again. */
 async function shopBelts(page: Page) {
   await page.keyboard.press('b');
@@ -139,6 +161,59 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
     p.honk();
   });
   await play(page, 30, 'the horn');
+
+  // the scoop, bought and worked with the keyboard's Space: taken up at the blade, carried to the hole's lip, and
+  // tipped in, which banks it. Its key is in the line of keys only once there is a scoop for it to work.
+  await expect(page.locator('#helpScoop'), 'no key listed for a scoop not yet bought').toBeHidden();
+  const bought = await page.evaluate(() => {
+    const p = window.pushminer!;
+    p.deposit(5000);
+    return p.buy('scoop');
+  });
+  expect(bought, 'the scoop bought').toBe(true);
+  await expect(page.locator('#helpScoop'), 'Space is listed with the other keys').toBeVisible();
+  expect(await page.evaluate(() => window.pushminer!.state().scoop), 'the smallest size, nothing held').toMatchObject({
+    size: 1,
+    load: 12,
+    held: 0,
+  });
+  await layInMouth(page, content.hole.x, content.hole.y - 24, 8);
+  await page.keyboard.press('Space');
+  await play(page, 2, 'the scoop taking up');
+  const taken = await page.evaluate(() => window.pushminer!.state().scoop.held);
+  expect(taken, 'Space takes up what is in the mouth').toBe(8);
+  const carried = (await page.evaluate(() => window.pushminer!.bodies('coin'))).filter((b) => b.carried);
+  expect(carried, 'and they are carried').toHaveLength(taken);
+  const mine = carried.map((b) => b.slot);
+  expect((await page.evaluate(() => window.pushminer!.events())).filter((e) => e.startsWith('scooped'))).toEqual([
+    'scooped 8',
+  ]);
+  await play(page, 40, 'the bucket up');
+  expect(await page.evaluate(() => window.pushminer!.state().scoop.lift), 'the bucket is up').toBe(1);
+  // driven up to the hole's lip with it, and stopped
+  await page.evaluate(() => window.pushminer!.drive(1, 0));
+  for (let f = 0; f < 600; f += 5) {
+    await play(page, 5, 'carrying it to the hole');
+    const s = await page.evaluate(() => window.pushminer!.state());
+    if (Math.hypot(s.dozer.x - content.hole.x, s.dozer.y - content.hole.y) < content.hole.radius + 4.6) break;
+  }
+  await page.evaluate(() => window.pushminer!.release());
+  await play(page, 90, 'stopped at the hole');
+  const atLip = await page.evaluate(() => window.pushminer!.state());
+  expect(atLip.scoop.held, 'still holding all of it').toBe(8);
+  // the drone bought earlier is banking coins of its own, so it is these coins that are watched, not the bank
+  const lying = async () => (await page.evaluate(() => window.pushminer!.bodies('coin'))).map((b) => b.slot);
+  expect(await lying(), 'all eight still in the cave, carried to the lip').toEqual(expect.arrayContaining(mine));
+  const bankAtLip = atLip.bank;
+  await page.keyboard.press('Space');
+  await play(page, 240, 'tipped into the hole');
+  const tipped = await page.evaluate(() => window.pushminer!.state());
+  expect(tipped.scoop.held, 'Space again tips it out').toBe(0);
+  for (const slot of mine) expect(await lying(), `coin ${slot} banked`).not.toContain(slot);
+  expect(tipped.bank - bankAtLip, 'banked, by at least the eight').toBeGreaterThanOrEqual(8);
+  expect((await page.evaluate(() => window.pushminer!.events())).filter((e) => e.startsWith('tipped'))).toEqual([
+    'tipped 8',
+  ]);
 
   // the workshop sells the belts of the cave the player is in, and the hollow has none
   expect(content.belts, 'the hollow has no belt').toEqual([]);
@@ -677,5 +752,69 @@ test('the black is drawn, with the words in it, before the next cave is built', 
     log.findIndex((e) => e.startsWith('swap south-gallery ')),
     'the swap came after the blackout',
   ).toBeGreaterThanOrEqual(0);
+  expect(problems).toEqual([]);
+});
+
+test.describe('the scoop on a phone', () => {
+  test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
+
+  test('has its button on the pad once bought, and tapping it takes up what is in the mouth and tips it out', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    // with the horn too, which is the fullest the pad gets
+    await start(page, { seed: 1, paused: true, save: { horn: true } });
+    await page.evaluate(() => window.pushminer!.pause());
+    const button = page.locator('#scoopButton');
+    await expect(button, 'no button before there is a scoop').toBeHidden();
+    await page.evaluate(() => {
+      window.pushminer!.deposit(5000);
+      window.pushminer!.buy('scoop');
+    });
+    await expect(button, 'the button once it is bought').toBeVisible();
+    // every button on the pad is on the screen and clear of the sliders, the horn's and the scoop's with the rest
+    await expect(page.locator('#hornButton')).toBeVisible();
+    for (const b of await page.locator('#pad button:visible').all()) {
+      const box = (await b.boundingBox())!;
+      expect(box.x, 'inside the left edge').toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, 'inside the right edge').toBeLessThanOrEqual(400);
+      for (const id of ['#trackLeft', '#trackRight']) {
+        const rail = (await page.locator(id).boundingBox())!;
+        const apart = box.x + box.width <= rail.x || box.x >= rail.x + rail.width || box.y + box.height <= rail.y;
+        expect(apart, `a pad button clear of ${id}`).toBe(true);
+      }
+    }
+    const content = await page.evaluate(() => window.pushminer!.content());
+    await layInMouth(page, content.hole.x, content.hole.y - 24, 6);
+    await button.tap();
+    await page.evaluate(() => window.pushminer!.step(2));
+    expect(await page.evaluate(() => window.pushminer!.state().scoop.held), 'tapped: taken up').toBe(6);
+    await page.evaluate(() => window.pushminer!.step(40));
+    await button.tap();
+    await page.evaluate(() => window.pushminer!.step(2));
+    expect(await page.evaluate(() => window.pushminer!.state().scoop.held), 'tapped again: tipped out').toBe(0);
+    expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+    // a reload with the scoop bought shows the button from the start
+    await page.evaluate(() => window.pushminer!.save());
+    await page.reload();
+    await ready(page);
+    await expect(button, 'there again after a reload').toBeVisible();
+    expect(problems).toEqual([]);
+  });
+});
+
+test('Space after buying the scoop from the workshop works the scoop and does not buy the next size', async ({
+  page,
+}) => {
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true, save: { bank: 5000 } });
+  await page.evaluate(() => window.pushminer!.pause());
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
+  await page.locator('#shop .rows:not(.cosmetics) button[data-id="scoop"]').click();
+  expect(await page.evaluate(() => window.pushminer!.state().scoop.size), 'bought from its row').toBe(1);
+  await page.keyboard.press('Space');
+  await page.evaluate(() => window.pushminer!.step(2));
+  expect(await page.evaluate(() => window.pushminer!.state().scoop.size), 'Space did not press the row again').toBe(1);
   expect(problems).toEqual([]);
 });

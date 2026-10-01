@@ -34,6 +34,8 @@ export interface MinimapBodies {
   kind: ArrayLike<number>;
   x: ArrayLike<number>;
   y: ArrayLike<number>;
+  /** Held by the scoop: with the machine, not lying in the cave, so not a mark on the map. Left out, none is. */
+  carried?: ArrayLike<number>;
 }
 
 export interface MinimapInput {
@@ -109,7 +111,7 @@ export function minimapView(input: MinimapInput): MinimapView {
   const specks = new Map<number, Mark>();
   const cell = (2 * range) / SPECK_CELLS;
   for (let i = 0; i < bodies.count; i++) {
-    if (!bodies.alive[i] || !(KIND_VALUE[bodies.kind[i]] > 0)) continue;
+    if (!bodies.alive[i] || bodies.carried?.[i] || !(KIND_VALUE[bodies.kind[i]] > 0)) continue;
     const m = at(bodies.x[i], bodies.y[i]);
     if (!inside(m)) continue;
     const cx = Math.min(SPECK_CELLS - 1, Math.floor((m.x + range) / cell)),

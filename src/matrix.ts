@@ -119,6 +119,50 @@ export function placePart(
 }
 
 /**
+ * A part of a body that rises and tips about a line across it: the body stands at (bx, by, bz) turned to
+ * `yaw`, and the part, modelled where it stands in the body's own frame, is raised by `rise` and turned `tilt`
+ * radians about the line across the body (its Y) through `pivotX` along it, forward being down for a positive
+ * tilt. `placePart`'s pitch turns about the part's own forward axis, which tips a thing sideways; a bucket
+ * tips over its lip. With nothing raised and nothing tipped, it is `place`.
+ */
+export function placeTipped(
+  out: Float32Array,
+  i: number,
+  bx: number,
+  by: number,
+  bz: number,
+  yaw: number,
+  pivotX: number,
+  rise: number,
+  tilt: number,
+) {
+  const c = Math.cos(yaw),
+    s = Math.sin(yaw);
+  const ct = Math.cos(tilt),
+    st = Math.sin(tilt);
+  // the body's frame's X and Z after the tilt, from Ry(tilt); Y is untouched
+  const tx = pivotX * (1 - ct),
+    tz = pivotX * st + rise;
+  const o = i * 16;
+  out[o] = c * ct;
+  out[o + 1] = s * ct;
+  out[o + 2] = -st;
+  out[o + 3] = 0;
+  out[o + 4] = -s;
+  out[o + 5] = c;
+  out[o + 6] = 0;
+  out[o + 7] = 0;
+  out[o + 8] = c * st;
+  out[o + 9] = s * st;
+  out[o + 10] = ct;
+  out[o + 11] = 0;
+  out[o + 12] = bx + c * tx;
+  out[o + 13] = by + s * tx;
+  out[o + 14] = bz + tz;
+  out[o + 15] = 1;
+}
+
+/**
  * A placement lying from one point to another: what stood up Z from the
  * origin, a unit tall and a unit across, now runs from `from` to `to`, `r`
  * across. For a leg's bone, drawn from a unit cylinder.
