@@ -321,11 +321,45 @@ test('the Warrens, reached by a save, has two holes that each bank, no belt, and
   expect(problems).toEqual([]);
 });
 
-test('a save in the West Gallery lands in the West Gallery', async ({ page }) => {
+test('a save in the West Gallery lands in the West Gallery, which has a way out to the Deep', async ({ page }) => {
   const problems = watch(page);
   await start(page, { seed: 1, paused: true, save: { cave: 'west-gallery' } });
   expect((await page.evaluate(() => window.pushminer!.state())).cave).toBe('west-gallery');
-  expect((await page.evaluate(() => window.pushminer!.content())).exit, 'the last cave, with no way out').toBeNull();
+  const exit = (await page.evaluate(() => window.pushminer!.content())).exit;
+  expect(exit, 'a way out, since it is no longer the last cave').not.toBeNull();
+  // out through it, and into the Deep
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.openExit();
+  });
+  await page.evaluate(
+    ([x, y, yaw]) => window.pushminer!.teleport(x, y, yaw),
+    [exit!.beyond.x, exit!.beyond.y, Math.atan2(exit!.out[1], exit!.out[0])],
+  );
+  await play(page, 3, 'out of the West Gallery');
+  const now = await page.evaluate(() => window.pushminer!.state());
+  expect(now.cave).toBe('deep');
+  const deep = await page.evaluate(() => window.pushminer!.content());
+  expect(deep.holes, 'three holes in the Deep').toHaveLength(3);
+  expect(deep.belts, 'two belts to buy in the Deep').toHaveLength(2);
+  expect(deep.exit, 'the last cave, with no way out').toBeNull();
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+test('a finished game in the West Gallery stays finished there, its vein running', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true, save: { cave: 'west-gallery', done: true } });
+  await page.evaluate(() => window.pushminer!.pause());
+  const state = await page.evaluate(() => window.pushminer!.state());
+  expect(state.cave).toBe('west-gallery');
+  expect(state.done).toBe(true);
+  expect(state.fountains, 'the floor cracks').toBe(1);
+  await page.evaluate(() => window.pushminer!.openExit());
+  await play(page, 30, 'a finished game in the West Gallery');
+  const after = await page.evaluate(() => window.pushminer!.state());
+  expect(after.cave).toBe('west-gallery');
+  expect(after.open, 'not sent on').toBe(false);
   expect(problems).toEqual([]);
 });
 
@@ -402,9 +436,9 @@ test('the East Gallery’s two belts are bought one at a time, by name, and both
   expect(problems).toEqual([]);
 });
 
-test('the end: the last cave cleared, and the vein runs', async ({ page }, info) => {
+test('the end: the last cave, the Deep, cleared, and the vein runs', async ({ page }, info) => {
   const problems = watch(page);
-  await start(page, { seed: 1, paused: true, save: { cave: 'west-gallery' } });
+  await start(page, { seed: 1, paused: true, save: { cave: 'deep' } });
   await page.evaluate(() => {
     window.pushminer!.pause();
     window.pushminer!.seed(1);

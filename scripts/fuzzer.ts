@@ -17,7 +17,7 @@ import { Autopilot } from '../src/autopilot';
 import { buildCave, tileCentre } from '../src/cave';
 import { RUN } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
-import { Game, KIND_CAPACITY, type GameEvents } from '../src/game';
+import { Game, type GameEvents } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { BARREL_KIND, KIND_NAME, KIND_RADIUS } from '../src/physics';
 import { wallTiles } from '../src/walls';
@@ -324,7 +324,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           game.stock.left.forEach((kinds, source) =>
             kinds.forEach((n, kind) => {
               const had = was.left[source]?.[kind] ?? 0;
-              const full = game.stock.kinds[kind] >= (KIND_CAPACITY[kind] || Infinity);
+              const full = game.stock.kinds[kind] >= (game.capacity.kinds[kind] || Infinity);
               if (n !== had && !(full && n < had))
                 problems.push(`reload: source ${source} had ${had} ${KIND_NAME[kind]}, came back ${n}`);
             }),

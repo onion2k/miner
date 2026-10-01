@@ -100,6 +100,7 @@ test('every way out swaps in under a second, and twenty swaps leave no more behi
     'north-vault',
     'warrens',
     'west-gallery',
+    'deep',
   ]);
 
   // the last cave, swapped into again and again
@@ -111,7 +112,7 @@ test('every way out swaps in under a second, and twenty swaps leave no more behi
   expect(last.buffers, 'renderer buffers and textures held').toBeLessThanOrEqual(first.buffers);
   expect(last.marks, 'track marks kept').toBeLessThanOrEqual(first.marks + 40);
   const state = await page.evaluate(() => window.pushminer!.state());
-  expect(state.cave).toBe('west-gallery');
+  expect(state.cave).toBe('deep');
   expect(state.live, 'the cave is whole again').toBeGreaterThan(300);
   expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
   expect(problems).toEqual([]);

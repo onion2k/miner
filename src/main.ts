@@ -14,7 +14,8 @@ import { Orbit } from 'artshape-render/gpu/camera';
 import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import type { Emit } from 'artshape-render/game/particles';
-import { BODY_CAPACITY, buildCave, nearHole, type Cave, type CaveSpec } from './cave';
+import { buildCave, nearHole, type Cave, type CaveSpec } from './cave';
+import { runCapacity } from './stock';
 import { RUN } from './caves';
 import { TRACK_GAUGE } from './dozer';
 import { Input } from './input';
@@ -40,7 +41,7 @@ import { Hud, placePointer, setupPad } from './hud';
 import { WALL_COLOUR, kindColour, type Rgb } from './palette';
 import * as fx from './effects';
 import { airParticle, biomeAt, featureParticle, lampColour } from './biomes';
-import { Game, KIND_CAPACITY, type GameEvents } from './game';
+import { Game, type GameEvents } from './game';
 import { createApi, type PushminerApi } from './debug';
 
 declare global {
@@ -280,9 +281,11 @@ async function main() {
       return tile < 0 || game.world.solid[tile] ? null : floorHeight(cave.holes, x, y);
     },
   });
+  const capacity = runCapacity(RUN);
   const scene = new DynamicScene(renderer, {
-    bodyCapacity: BODY_CAPACITY,
-    kindCapacity: KIND_CAPACITY,
+    // the renderer is sized to the biggest cave of the run, so that it draws any of them
+    bodyCapacity: capacity.bodies,
+    kindCapacity: capacity.kinds,
     belts: spec.belts.map((b) => b.spec),
     bots: MAX_DRONES,
     botScale: BOT_SCALE,

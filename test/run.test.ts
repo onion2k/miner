@@ -46,10 +46,12 @@ function told() {
 /** Everything in the cave that counts toward clearing it, sent down the hole. */
 function sendDown(game: Game) {
   const { world, stock } = game;
-  const hole = game.cave.holes[0];
+  const { holes } = game.cave;
   let n = 0;
   for (let i = 0; i < world.count; i++) {
     if (!world.alive[i] || stock.origin[i] !== 0) continue;
+    // shared out over the cave's holes, as a cave of many is cleared: one would be a queue of thousands
+    const hole = holes[n % holes.length];
     const a = n++ * 2.399;
     const r = 0.5 + (n % 9) * 0.3;
     world.x[i] = hole.x + Math.cos(a) * r;
@@ -386,6 +388,9 @@ describe('the last cave (criterion 5)', () => {
       expect(named('done')).toHaveLength(1);
       expect(named('exitOpened')).toHaveLength(0);
       expect(game.fountains).toHaveLength(1);
+      // the last tenth, which the player was left to chase, goes down too, so what is left is only what the vein brings
+      sendDown(game);
+      for (let f = 0; f < 60 * 10; f++) game.step(DT, still);
       const before = game.world.live;
       for (let f = 0; f < 60 * 12; f++) game.step(DT, still);
       expect(game.world.live, 'the vein has added something to push').toBeGreaterThan(before);

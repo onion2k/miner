@@ -5,12 +5,12 @@
  * the way of what is being looked at.
  */
 import { describe, expect, it } from 'vitest';
-import { BODY_CAPACITY, buildCave, type CaveSpec } from '../src/cave';
+import { buildCave, type CaveSpec } from '../src/cave';
 import { botHome } from '../src/game';
 import { Nav } from '../src/nav';
 import { makeWorld } from '../src/physics';
 import { Bot, Foreman } from '../src/tools';
-import { caveOf } from './helpers';
+import { TEST_BODIES, caveOf } from './helpers';
 
 const LONG_ROOM: CaveSpec = {
   id: 'long-room',
@@ -45,7 +45,7 @@ const DT = 1 / 60;
  */
 function choices(options: { west?: number; east?: number } = {}) {
   const solid = cave.solid(false);
-  const world = makeWorld(BODY_CAPACITY, solid, cave.grid, cave.holes);
+  const world = makeWorld(TEST_BODIES, solid, cave.grid, cave.holes);
   const stack = (x: number, y: number, n: number) => {
     for (let k = 0; k < n; k++) world.spawn(0, x + (k % 3) * 0.5, y + ((k / 3) | 0) * 0.5, 0.6);
   };
@@ -53,7 +53,7 @@ function choices(options: { west?: number; east?: number } = {}) {
   for (let k = 0; k < (options.east ?? 3); k++) stack(24, -16 + k * 16, 6);
   const nav = new Nav(solid, cave.grid, cave.holes);
   const bots = [new Bot(solid, cave.grid, 1, 0, -3), new Bot(solid, cave.grid, 2, 0, 3)];
-  const origin = new Uint8Array(BODY_CAPACITY);
+  const origin = new Uint8Array(TEST_BODIES);
   const foreman = new Foreman(world, nav, bots, origin, () => true);
   const picks = bots.map((bot) => {
     const i = foreman.choose(bot, 1);

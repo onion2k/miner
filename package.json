@@ -27,8 +27,9 @@
     "look": "playwright test smoke/look.spec.ts",
     "look:update": "playwright test smoke/look.spec.ts --update-snapshots",
     "check:quick": "prettier --check . --log-level warn && npm run --silent typecheck && eslint . && vitest run --reporter dot",
-    "check": "npm run --silent check:quick && npm run --silent test:slow && npm run --silent fuzz && npm run --silent determinism && npm run --silent leaks:check && npm run --silent sim:check && npm run --silent balance:check && npm run --silent bench && npm run --silent smoke",
-    "prepare": "git config core.hooksPath .githooks"
+    "check": "npm run --silent check:quick && npm run --silent test:slow && npm run --silent fuzz && npm run --silent determinism && npm run --silent leaks:check && npm run --silent sim:check && npm run --silent balance:check && npm run --silent bench && npm run --silent budgets && npm run --silent smoke",
+    "prepare": "git config core.hooksPath .githooks",
+    "budgets": "esbuild scripts/budgets.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim/budgets.mjs --log-level=warning && node node_modules/.cache/sim/budgets.mjs"
   },
   "dependencies": {
     "artshape-physics": "github:onion2k/artshape-physics#v0.1.0",

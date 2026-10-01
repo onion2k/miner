@@ -61,7 +61,7 @@ describe('the invariants of a run', () => {
   });
 
   it('notice a way out that is open in the last cave, or the game done short of it', () => {
-    const last = gameIn('west-gallery');
+    const last = gameIn('deep');
     last.economy.save.open = true;
     expect(checkInvariants(last).join('\n')).toContain('the last cave has its way out open');
     const first = newGame();

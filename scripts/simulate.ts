@@ -2,13 +2,14 @@
  * One run of the drones without the picture, from a seed: what `npm run sim`
  * reports and what `npm run sim:check` holds to its baseline. See sim.ts.
  */
-import { BODY_CAPACITY, arrival, buildCave, chamberCentre, nearestHole, type Heap } from '../src/cave';
+import { arrival, buildCave, chamberCentre, nearestHole, type Heap } from '../src/cave';
 import { RUN } from '../src/caves';
 import { BAR, KIND_VALUE, makeWorld, type Pusher } from '../src/physics';
 import { Dozer, BLADE_AT, separate } from '../src/dozer';
 import { botHome } from '../src/game';
 import { Bot, BOT_SCALE, BOT_SPEC, Foreman, beltOf } from '../src/tools';
 import { Nav } from '../src/nav';
+import { capacityOf } from '../src/stock';
 import { caveStock, sourcesOf } from '../src/economy';
 
 export interface SimOptions {
@@ -64,9 +65,9 @@ function runSeeded(opts: SimOptions, seed: number) {
   const secret = spec.secrets.length ? 0 : -1;
   const revealed = spec.secrets.map((_, k) => opts.secret && k === secret);
   // the way out shut, the walls standing: the drones work the cave, and go nowhere else
-  const world = makeWorld(BODY_CAPACITY, cave.solid(false, revealed), cave.grid, cave.holes);
+  const world = makeWorld(capacityOf(spec).bodies, cave.solid(false, revealed), cave.grid, cave.holes);
   // the cave's heaps, as the game drops them, and the chamber's loot if it is open
-  const origin = new Uint8Array(BODY_CAPACITY);
+  const origin = new Uint8Array(world.capacity);
   const dropHeap = (h: Heap, from: number) => {
     const R = Math.sqrt(h.coins) * 0.36 + 1.5,
       H = Math.sqrt(h.coins) * 0.3 + 1.5;

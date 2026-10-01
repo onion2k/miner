@@ -10,7 +10,7 @@ without breaking it.
 
     npm run dev            the game at http://localhost:5194
     npm run check:quick    formatting, types, lint, unit tests (the pre-commit hook; ~15 s)
-    npm run check          all of it: check:quick, fuzz, determinism, drone gate, balance gate, physics bench, smoke (~2.5 min)
+    npm run check          all of it: check:quick, fuzz, determinism, drone gate, balance gate, physics bench, budgets, smoke (~4 min)
     npm test               unit tests (Vitest, test/)
     npm run fuzz           the game played at random, rules checked (scripts/fuzz.ts)
     npm run fuzz -- --seed N           one failing seed again, with what led up to it
@@ -20,11 +20,13 @@ without breaking it.
     npm run balance        the whole game played through by the autopilot: cave times, purchases, bank
     npm run balance:check  the first two caves' pacing held to scripts/balance-baseline.json
     npm run bench          the physics' frame time held to scripts/bench-baseline.json
+    npm run budgets        each cave's terrain size and build time, and the nav's rebuild, held to scripts/budgets-baseline.json
+    npm run smoke -- smoke/budgets.spec.ts   each cave's swap and frame in the page, held the same way
     npm run smoke          the game in headless Chromium on the real GPU (Playwright, smoke/)
     npm run look           the scenes held to the pictures in smoke/screens
     npm run look:update    the pictures written again, after a change meant to alter them
 
-`--update` on `sim:check`, `balance:check` or `bench` writes a new baseline, and
+`--update` on `sim:check`, `balance:check`, `bench` or `budgets` writes a new baseline (`BUDGETS_UPDATE=1` for the page's swap), and
 `npm run look:update` writes the pictures again. Only do that when a change is
 meant to move the figures or alter the picture, and say so in the commit. Look
 at every picture you write; a baseline updated without being looked at holds

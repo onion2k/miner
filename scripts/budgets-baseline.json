@@ -1,0 +1,78 @@
+{
+  "caves": {
+    "hollow": {
+      "vertices": 105336,
+      "terrain": 0.586506,
+      "build": 0.008791
+    },
+    "south-gallery": {
+      "vertices": 247212,
+      "terrain": 1.652628,
+      "build": 0.029015
+    },
+    "east-gallery": {
+      "vertices": 331596,
+      "terrain": 2.125132,
+      "build": 0.045953
+    },
+    "north-vault": {
+      "vertices": 193002,
+      "terrain": 1.23465,
+      "build": 0.019488
+    },
+    "warrens": {
+      "vertices": 360702,
+      "terrain": 2.417992,
+      "build": 0.070304
+    },
+    "west-gallery": {
+      "vertices": 199080,
+      "terrain": 1.215868,
+      "build": 0.021354
+    },
+    "deep": {
+      "vertices": 894078,
+      "terrain": 5.934817,
+      "build": 0.185103
+    }
+  },
+  "nav": {
+    "cave": "deep",
+    "relative": 0.317263
+  },
+  "ms": {
+    "hollow terrain": 9.2,
+    "hollow build": 0.14,
+    "south-gallery terrain": 25.23,
+    "south-gallery build": 0.45,
+    "east-gallery terrain": 32.82,
+    "east-gallery build": 0.73,
+    "north-vault terrain": 18.96,
+    "north-vault build": 0.3,
+    "warrens terrain": 37.12,
+    "warrens build": 1.09,
+    "west-gallery terrain": 18.77,
+    "west-gallery build": 0.33,
+    "deep terrain": 91.99,
+    "deep build": 2.84,
+    "deep nav": 4.95
+  },
+  "swap": {
+    "hollow": 21.284916,
+    "south-gallery": 27.150838,
+    "east-gallery": 20.837989,
+    "north-vault": 29.441341,
+    "warrens": 18.715084,
+    "west-gallery": 19.944134,
+    "deep": 29.385475
+  },
+  "swapMs": {
+    "hollow": 381,
+    "south-gallery": 486,
+    "east-gallery": 373,
+    "north-vault": 527,
+    "warrens": 335,
+    "west-gallery": 357,
+    "deep": 526
+  }
+}

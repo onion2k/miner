@@ -74,7 +74,7 @@ Taken on judgement, as asked; each can be put back to the user.
 | 2     | One cave after another                          | yes           | landed  |
 | 3     | Several holes and belts in a cave, in content   | yes           | landed  |
 | 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | landed  |
-| 5     | Bigger caves, measured first                    | yes           | agreed  |
+| 5     | Bigger caves, measured first                    | yes           | landed  |
 | 6     | New biomes, one feature each                    | yes           | planned |
 
 Phase 1 is the foundation, built now. Phases 2 to 6 are each put through
@@ -1195,6 +1195,50 @@ with the coins, not the area.
   The whole run's figures are reported.
 - Pictures of the Deep, its hall at full zoom-out, and the phone.
 - Leaks through the whole run, with the Deep's bodies inside their ceilings.
+
+### How it landed (2026-10-01)
+
+The work paused part way, and was picked up again by two Sonnet builders side
+by side, one on the page and one in Node, each in a worktree made from the
+paused tree. Their work was merged and checked on Opus.
+
+- **The gates, each seen failing against a fault put in on purpose:**
+  - `npm run budgets` holds each cave's terrain vertices exactly, and its
+    terrain and build times and the nav's rebuild in the biggest cave, as
+    multiples of a reference sum timed beside them. It is now part of
+    `npm run check`.
+  - `smoke/budgets.spec.ts` holds each cave's swap, and its frame in three
+    views, against the worst of the caves before this phase.
+  - It does not catch a doubled cheap scan in `placeBarrels`, since a cave
+    builds in 1 to 3 ms, inside the slack, but it does catch the expensive
+    per-tile checks coming back (+325%).
+  - The frame gate catches a cave about twice as heavy as the worst, but not
+    less: a Deep with twice its lamps and dressing passed. A finer instrument,
+    GPU timestamps, would be needed to do better.
+  - A fault found at the merge: `budgets --update` wrote only its own figures,
+    which took away the page's swap baseline. It now keeps what else is in the
+    file.
+- **The Deep** is the new last cave: a future-biome hall with pillars and rock
+  islands, side passages, three holes, two belts, a side room and a chamber.
+  Its worst haul is 157 against 160. The West Gallery gains a way out, and a
+  done save there stays done.
+- **The swap into the Deep** is 526 to 553 ms in the page, under 1 s, with no
+  lever pulled. Every cave's swap is 335 to 553 ms, most of it the page's
+  rebuild.
+- **The nav's rebuild** in the Deep went from 14.1 ms to 5.0 ms, and the
+  Warrens' from 2.8 to 0.9. There is now one pass for each hole, with the
+  nearest-hole and drop fields made from those, which gives identical fields
+  in every cave. The drone gate is unchanged.
+- **Each cave has its own body capacities,** and the renderer is sized to the
+  largest in the run.
+- **The camera at full zoom-out:** the shadow box covers the whole view, and
+  the sun lights nothing, so nothing was changed.
+- **Skipped by the user's choice:** the hour-long leaks run, the 12-seed
+  balance run, fuzz on 24 seeds, 16-seed sim runs, and re-looking at pictures
+  that did not move. The full check ran once, as one command, with its own
+  fuzz, `leaks:check`, balance gate and budgets.
+- **Open:** one unit test failed once, unnamed, in the Node builder's first
+  run, and passed in every run after.
 
 ## Phase 6: new biomes
 

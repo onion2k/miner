@@ -224,6 +224,13 @@ export interface CaveSpec {
    * lamps of a cave of one ring.
    */
   lampSpacing?: number;
+  /**
+   * How many steps of a sixtieth of a second the heaps are let fall and settle before anyone sees the cave; left
+   * out, `SETTLE_STEPS`. The physics is the same steps whichever way they are split, so a heap at rest is the
+   * same heap: a cave with a great many bodies takes fewer here, and the rest of the settling is done in the
+   * frames after, where it is a few milliseconds a frame and not a pause in the swap.
+   */
+  settle?: number;
   /** What share of the usual stones, plants and crystals the biome stands on its rock, 0 to 1; left out, all of it. */
   dressing?: number;
 }
@@ -294,9 +301,6 @@ export function chamberCentre(cave: Cave, k: number): [number, number] {
   const { cx, cy } = cave.spec.secrets[k].chamber;
   return tileCentre(cave.grid, cx, cy);
 }
-
-/** The most bodies the cave can hold: every heap plus what the veins add. */
-export const BODY_CAPACITY = 10000;
 
 /** Whether a cell is rock to look at: rock, the way out before it opens, or a chamber not yet broken into. A brick wall is drawn as bricks, on floor. */
 export function rockish(cell: number, revealed: boolean[], open = false): boolean {
@@ -667,7 +671,11 @@ function placeBarrels(cells: Uint8Array, spec: CaveSpec, grid: Grid, lamps: read
     if (t >= cols) stack.push(t - cols);
     if (t < cols * (rows - 1)) stack.push(t + cols);
   }
-  const candidates: { x: number; y: number; rank: number }[] = [];
+  // Every tile with floor all round it, ranked, and only then asked the expensive things (how near a hole, a heap, a
+  // belt, a cutting or a lamp it is) in rank order, until there are barrels enough: a cave with thousands of such
+  // tiles and a handful of barrels asks of a few dozen. The answer is the same as asking every tile first, since
+  // asking does not depend on the order and a stable sort keeps the order of equal ranks.
+  const candidates: { tx: number; ty: number; rank: number }[] = [];
   for (let ty = 2; ty < rows - 2; ty++) {
     for (let tx = 2; tx < cols - 2; tx++) {
       if (!joined[ty * cols + tx] || at(tx, ty) !== OPEN) continue;
@@ -675,19 +683,19 @@ function placeBarrels(cells: Uint8Array, spec: CaveSpec, grid: Grid, lamps: read
       for (let oy = -1; oy <= 1 && clear; oy++)
         for (let ox = -1; ox <= 1; ox++) if (at(tx + ox, ty + oy) !== OPEN) clear = false;
       if (!clear) continue;
-      const [x, y] = tileCentre(grid, tx, ty);
-      if (nearHole(spec.holes, x, y, 12) || nearHeap(spec, x, y, 5) || nearBelt(spec, x, y, 4)) continue;
-      if (nearCutting(grid, spec, x, y, 2)) continue;
-      if (lamps.some((l) => Math.hypot(l.x - x, l.y - y) < 5)) continue;
-      candidates.push({ x, y, rank: hash(tx, ty, 91) });
+      candidates.push({ tx, ty, rank: hash(tx, ty, 91) });
     }
   }
   candidates.sort((a, b) => a.rank - b.rank);
   const out: BarrelSpot[] = [];
-  for (const c of candidates) {
+  for (const { tx, ty } of candidates) {
     if (out.length >= spec.barrels) break;
-    if (out.some((b) => Math.hypot(b.x - c.x, b.y - c.y) < BARREL_SPACING)) continue;
-    out.push({ x: c.x, y: c.y });
+    const [x, y] = tileCentre(grid, tx, ty);
+    if (nearHole(spec.holes, x, y, 12) || nearHeap(spec, x, y, 5) || nearBelt(spec, x, y, 4)) continue;
+    if (nearCutting(grid, spec, x, y, 2)) continue;
+    if (lamps.some((l) => Math.hypot(l.x - x, l.y - y) < 5)) continue;
+    if (out.some((b) => Math.hypot(b.x - x, b.y - y) < BARREL_SPACING)) continue;
+    out.push({ x, y });
   }
   return out;
 }

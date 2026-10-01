@@ -12,7 +12,7 @@
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
 import { EXIT, TILE } from './cave';
-import { CLEAR_SHARE } from './economy';
+import { CLEAR_SHARE, FORMER_LAST } from './economy';
 import type { Game } from './game';
 import { BARREL_KIND, KINDS, KIND_NAME } from './physics';
 import { NO_SOURCE } from './stock';
@@ -111,7 +111,9 @@ export function checkInvariants(game: Game): string[] {
     if (!spec.belts.some((b) => b.id === id)) out.push(`a belt bought that the cave has not: ${id}`);
   // the way out is open only when enough is banked, and never in the last cave, which ends instead
   if (save.open && economy.isLast()) out.push('the last cave has its way out open, and has none');
-  if (save.done && !economy.isLast()) out.push(`the game is done in ${spec.id}, which is not the last cave`);
+  // a game finished in the cave the run used to end in stays finished there, its way out shut
+  if (save.done && !economy.isLast() && (spec.id !== FORMER_LAST || save.open))
+    out.push(`the game is done in ${spec.id}, which is not the last cave`);
   // a game not yet stepped has not had the chance to notice that a save it was given has cleared the cave
   if (game.t > 0 && stock.banked() >= CLEAR_SHARE && !save.open && !save.done)
     out.push(`enough is banked (${Math.floor(stock.banked() * 100)}%) and the way out is shut`);

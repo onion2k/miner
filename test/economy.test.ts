@@ -19,6 +19,32 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe('travelling to a cave, for the page’s gates', () => {
+  it('puts the save in any cave of the run afresh, keeping what the player carries', () => {
+    const e = newEconomy();
+    e.deposit(700);
+    e.buy('engine');
+    e.save.lampsBroken.push(3);
+    e.travel('warrens');
+    expect(e.cave().id).toBe('warrens');
+    expect(e.save.cave).toBe('warrens');
+    expect(e.save.open).toBe(false);
+    expect(e.save.lampsBroken).toEqual([]);
+    expect(e.save.secrets).toHaveLength(specOf('warrens').secrets.length);
+    expect(e.save.engine, 'the engine goes on').toBe(1);
+    expect(e.bank).toBe(650);
+    // and back to the first, which is the same as any other
+    e.travel('hollow');
+    expect(e.index()).toBe(0);
+  });
+
+  it('refuses a cave that is not in the run, by name', () => {
+    const e = newEconomy();
+    expect(() => e.travel('nowhere')).toThrow(/nowhere/);
+    expect(e.save.cave).toBe('hollow');
+  });
+});
+
 describe('the economy', () => {
   it('starts in the first cave with nothing', () => {
     const e = newEconomy();

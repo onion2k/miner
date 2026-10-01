@@ -137,6 +137,8 @@ export interface PushminerApi {
   openExit(): void;
   /** The page's swap done again for the cave the save is in, as a change of cave does it: for seeing what a run of changes leaves behind. */
   rebuild(): void;
+  /** Into any cave of the run, begun afresh, by the page's swap: for measuring every cave one after another in one page. */
+  goto(id: string): void;
   reveal(chamber: number): void;
   hitWall(wall: number, damage: number): number;
   lightBarrel(slot: number, seconds?: number): boolean;
@@ -313,6 +315,10 @@ export function createApi(host: DebugHost): PushminerApi {
     buy: (id) => game().economy.buy(id),
     openExit: () => game().economy.open(),
     rebuild: () => host.rebuild(),
+    goto(id) {
+      game().economy.travel(id);
+      host.rebuild();
+    },
     reveal: (k) => game().economy.reveal(k),
     hitWall: (w, damage) => game().economy.hitWall(w, damage),
     lightBarrel: (slot, seconds) => game().barrels.light(slot, seconds),

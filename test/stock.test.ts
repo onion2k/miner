@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BODY_CAPACITY } from '../src/cave';
 import { caveStock, sourcesOf } from '../src/economy';
 import { BARREL_KIND, BRICK_KIND, KINDS, KIND_VALUE, makeWorld, type World } from '../src/physics';
 import { NO_SOURCE, Stock, lootHeap, type SavedStock } from '../src/stock';
-import { IDS, caveOf, withSeed } from './helpers';
+import { IDS, TEST_BODIES, caveOf, withSeed } from './helpers';
 
 const CAPACITY = [0, 320, 240, 260, 160, 60, 900];
 /** The South Gallery: a belt, a chamber, a side room behind a wall, and barrels. */
@@ -11,7 +10,7 @@ const cave = caveOf('south-gallery');
 const spec = cave.spec;
 const SOURCES = sourcesOf(spec);
 const HOLE = cave.holes[0];
-const fresh = () => makeWorld(BODY_CAPACITY, cave.solid(true), cave.grid, cave.holes);
+const fresh = () => makeWorld(TEST_BODIES, cave.solid(true), cave.grid, cave.holes);
 const nothingSaved = (over: Partial<SavedStock> = {}): SavedStock => ({
   left: [],
   done: false,
@@ -58,7 +57,7 @@ describe('the stock', () => {
       const left: number[][] = Array.from({ length: sources.count }, () => new Array<number>(KINDS).fill(0));
       // odd numbers of each, that no share of the heaps comes to evenly
       left[0] = caveStock(c.spec).kinds.map((n, k) => Math.max(0, Math.floor(n * 0.37) - (k % 2)));
-      const world = makeWorld(BODY_CAPACITY, c.solid(true), c.grid, c.holes);
+      const world = makeWorld(TEST_BODIES, c.solid(true), c.grid, c.holes);
       const stock = new Stock(c, world, CAPACITY);
       stock.restore({
         ...nothingSaved({ left }),
@@ -83,7 +82,7 @@ describe('the stock', () => {
 
   it('does not put a cleared cave back when the game is done and it was emptied long ago', () => {
     const last = caveOf('west-gallery');
-    const world = makeWorld(BODY_CAPACITY, last.solid(true), last.grid, last.holes);
+    const world = makeWorld(TEST_BODIES, last.solid(true), last.grid, last.holes);
     const stock = new Stock(last, world, CAPACITY);
     stock.restore({
       ...nothingSaved(),

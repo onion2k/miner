@@ -35,6 +35,7 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '10-spider.json': { body: 'spider' },
   '11-linear.json': { cave: 'east-gallery', open: true },
   '12-two-belts.json': { cave: 'east-gallery', belts: ['east-belt', 'east-belt-bottom'] },
+  '13-deep.json': { cave: 'deep', belts: ['deep-belt-north'], engine: 4 },
 };
 
 /**
@@ -164,11 +165,20 @@ const LANDS: Record<
     walls: [false],
     wallDamage: [0],
   },
+  '13-deep.json': {
+    cave: 'deep',
+    open: false,
+    left: [2536, 0, 0, 72, 36, 0, 0, 0],
+    belts: ['deep-belt-north'],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
 };
 
 describe('saves from every shape the game has written', () => {
   it('has a file for every shape, oldest first, and says where each lands', () => {
-    expect(files.length).toBeGreaterThanOrEqual(12);
+    expect(files.length).toBeGreaterThanOrEqual(13);
     expect(files).toEqual(Object.keys(KEPT).sort());
     expect(Object.keys(LANDS).sort()).toEqual(files);
   });
@@ -194,7 +204,10 @@ describe('saves from every shape the game has written', () => {
         // an old save's rubble, lamps and barrels were in the old map's coordinates: they start afresh; a new one's are kept
         if (file.startsWith('11')) expect(save.lampsBroken).toEqual([4, 9]);
         else if (file.startsWith('12')) expect(save.lampsBroken).toEqual([2, 7]);
-        else {
+        else if (file.startsWith('13')) {
+          expect(save.lampsBroken).toEqual([3, 9]);
+          expect(save.barrels, 'the barrels where they stood').toHaveLength(18);
+        } else {
           expect(save.lampsBroken, 'lamps start afresh').toEqual([]);
           expect(save.barrels, 'barrels start afresh').toBeNull();
         }
@@ -243,7 +256,7 @@ describe('saves from every shape the game has written', () => {
     const e = new Economy(memoryStore(JSON.stringify(old)), RUN);
     expect(e.save.cave).toBe('west-gallery');
     expect(e.save.done).toBe(true);
-    expect(e.isLast()).toBe(true);
+    expect(e.save.open, 'not sent on through the way out it has since been given').toBe(false);
   });
 
   it('refuses a cave it does not know, by name, and starts the run from its first', () => {

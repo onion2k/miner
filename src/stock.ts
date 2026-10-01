@@ -7,9 +7,76 @@
  * It keeps its own counts rather than asking the world, and hands the counts
  * of what is left to the save as they are, so the save is never behind.
  */
-import { chamberCentre, stashCentre, tileCentre, type BarrelSpot, type Cave, type Heap } from './cave';
+import {
+  TILE,
+  chamberCentre,
+  stashCentre,
+  tileCentre,
+  type BarrelSpot,
+  type Cave,
+  type CaveSpec,
+  type GemKind,
+  type Heap,
+} from './cave';
 import { caveStock, sourcesOf, type Sources } from './economy';
 import { BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, KIND_VALUE, type World } from './physics';
+
+/**
+ * Room the vein and the cracking floors have in a cave, in bodies, once the game is done: they stop adding
+ * when the world is within sixty of full, and this is what they may add to what the cave held.
+ */
+export const VEIN_ROOM = 2500;
+/** Room for the gems the vein brings, by kind (ruby to gold bar), over what the cave holds of each. */
+const VEIN_GEMS = [0, 60, 60, 60, 40, 10];
+/** Barrels over the ones a cave stands, for one set down by hand. */
+const BARREL_SPARE = 4;
+/** Bricks over the ones its walls are laid with, for the fall of one being a little more than its count. */
+const BRICK_SPARE = 60;
+
+/** What a cave can hold at once: bodies in all, and of each kind past the coins, for the world and for what draws them. */
+export interface Capacity {
+  bodies: number;
+  /** By kind; coins are not capped apart from the bodies, so the first is 0. The last three are bricks and barrels. */
+  kinds: number[];
+}
+
+/**
+ * A cave's capacity, worked out from its content: every heap, every hidden chamber and side room opened, and
+ * every wall's treasure; the bricks its walls are laid with, and the barrels it stands; and room for the vein.
+ * The renderer is sized to the largest of the run (`runCapacity`).
+ */
+export function capacityOf(spec: CaveSpec): Capacity {
+  const coins = { n: 0 };
+  const gems = [0, 0, 0, 0, 0, 0];
+  const add = (c: number, list: [GemKind, number][]) => {
+    coins.n += c;
+    for (const [k, n] of list) gems[k] += n;
+  };
+  for (const h of spec.heaps) add(h.coins, h.gems);
+  for (const s of spec.secrets) add(s.loot.coins, s.loot.gems);
+  for (const s of spec.stashes) add(s.loot.coins, s.loot.gems);
+  for (const w of spec.walls) add(0, w.treasure);
+  // a wall of n tiles is laid as four courses of a brick and a half a side, two deep, about a brick to two units
+  const bricks = spec.walls.reduce((n, { tiles: [x0, y0, x1, y1] }) => {
+    const span = (Math.max(x1 - x0, y1 - y0) + 1) * TILE;
+    return n + 8 * (Math.ceil(span / 1.9) + 1);
+  }, 0);
+  const kinds = [0, ...VEIN_GEMS.slice(1).map((room, k) => gems[k + 1] + room)];
+  kinds[BRICK_KIND] = spec.walls.length ? bricks + BRICK_SPARE : 0;
+  kinds[BARREL_KIND] = spec.barrels + BARREL_SPARE;
+  const held = coins.n + gems.reduce((a, b) => a + b, 0) + kinds[BRICK_KIND] + spec.barrels;
+  // to the next five hundred, so a small change in a heap does not move the world's size
+  return { bodies: Math.ceil((held + VEIN_ROOM) / 500) * 500, kinds };
+}
+
+/** The most of each over a run: what the renderer is sized to, so that it draws any cave in it. */
+export function runCapacity(run: readonly CaveSpec[]): Capacity {
+  const all = run.map(capacityOf);
+  return {
+    bodies: Math.max(...all.map((c) => c.bodies)),
+    kinds: all[0].kinds.map((_, k) => Math.max(...all.map((c) => c.kinds[k]))),
+  };
+}
 
 /** Where a body came from when it came from nowhere that counts: a brick. */
 export const NO_SOURCE = 255;

@@ -266,7 +266,9 @@ describe('every cave carved before the shapes were bounded', () => {
   for (const [id, hash] of Object.entries(CELLS_BEFORE)) {
     it(`${id} has the very same cells`, () => {
       const spec = RUN.find((c) => c.id === id)!;
-      const cells = buildCave(spec).cells;
+      // the West Gallery gained a way out in Phase 5: its cells are held as they were with that taken off, so that the way
+      // out, which only ever takes rock, is all that moved
+      const cells = buildCave(id === 'west-gallery' ? { ...spec, exit: null } : spec).cells;
       expect(createHash('sha256').update(cells).digest('hex').slice(0, 16)).toBe(hash);
     });
   }

@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { BODY_CAPACITY } from '../src/cave';
 import { KIND_RADIUS, KIND_VALUE, makeWorld, type Pusher, type World } from '../src/physics';
 import { beltOf } from '../src/tools';
 import { Dozer } from '../src/dozer';
 import { TILE } from '../src/cave';
-import { COLS, ORIGIN_X, TEST_GRID, caveOf, grid, tileAt, tileIn, withSeed } from './helpers';
+import { COLS, ORIGIN_X, TEST_BODIES, TEST_GRID, caveOf, grid, tileAt, tileIn, withSeed } from './helpers';
 
 const DT = 1 / 60;
 /** The Hollow, where the hole is at the origin and the floor is open all round it. */
@@ -118,7 +117,7 @@ describe('the physics', () => {
 
   it('keeps its sleep bookkeeping straight, and every body out of the rock, while blades churn a heap', () => {
     withSeed(7, () => {
-      const world = makeWorld(BODY_CAPACITY, openSolid(), GRID, holes);
+      const world = makeWorld(TEST_BODIES, openSolid(), GRID, holes);
       const heap = cave.spec.heaps[0];
       for (let k = 0; k < 900; k++) {
         const r = Math.sqrt(Math.random()) * 9,

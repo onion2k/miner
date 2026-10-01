@@ -36,8 +36,11 @@ const BEFORE: Record<string, { lamps: string; props: string; lights: string }> =
 
 describe('every cave placed before the Warrens', () => {
   for (const [id, want] of Object.entries(BEFORE)) {
-    it(`${id} has the very same lamps, props and feature lights`, () => {
-      const { cave, decor } = dressed(specOf(id));
+    // the West Gallery gained a way out in Phase 5, and no lamp, prop or light stands on or by a cutting: it is held as it
+    // stood before, with the way out taken off, so that the way out is the only thing that moved it
+    it(`${id} has the very same lamps, props and feature lights${id === 'west-gallery' ? ', the way out aside' : ''}`, () => {
+      const spec = specOf(id);
+      const { cave, decor } = dressed(id === 'west-gallery' ? { ...spec, exit: null } : spec);
       expect({ lamps: digest(cave.lamps), props: digest(decor.props), lights: digest(decor.lights) }).toEqual(want);
     });
   }

@@ -547,7 +547,7 @@ const warrens = (() => {
   } satisfies CaveSpec;
 })();
 
-// ---- 6. The West Gallery: a long hall with two rows of pillars, the hole at its near end ----
+// ---- 6. The West Gallery: a long hall with two rows of pillars, the hole at its near end, and a way out to the Deep ----
 
 const westGallery = (() => {
   const p = plan(54, 56, 11, 27);
@@ -620,7 +620,8 @@ const westGallery = (() => {
     cracks: [p.spot(60, -20), p.spot(100, 10), p.spot(150, 24)],
     belts: [belt],
     entry: p.cutting(-4, -25, -1, -10, [0, -1]),
-    exit: null,
+    // up out of the hall's north wall, in the middle of it, clear of the annex's room to the east and the pillars to the south
+    exit: p.cutting(18, 10, 21, 26, [0, 1]),
     secrets: [
       {
         wall: p.tiles(22, -12, 25, -11),
@@ -640,5 +641,171 @@ const westGallery = (() => {
   } satisfies CaveSpec;
 })();
 
+// ---- 7. The Deep: a great hall with pillars and islands, winding side passages, three holes, the last cave ----
+
+const deep = (() => {
+  // the hole by the way in is the plan's; every other place is counted in tiles from it: the hall is 124 wide, so the grid is
+  // 160 by 84, twice the East Gallery's area
+  const p = plan(160, 84, 30, 42);
+  const vault = sideRoom(
+    'Deep Vault',
+    3,
+    p.tiles(84, 18, 87, 33),
+    p.tiles(84, 26, 87, 26),
+    { cx: p.mid(85.5, 35)[0], cy: p.mid(85.5, 35)[1], rx: 8, ry: 3.4, seed: 6.1 },
+    {
+      coins: 600,
+      gems: [
+        [4, 14],
+        [5, 6],
+      ],
+    },
+    [
+      [4, 4],
+      [5, 2],
+    ],
+  );
+  // a heap's gems: the richest in the game, sapphires and diamonds
+  const richHeap = (a: number, b: number, coins: number, sapphires: number, diamonds: number) => ({
+    ...p.pt(a * 4, b * 4),
+    coins,
+    gems: [
+      [3, sapphires],
+      [4, diamonds],
+    ] as [3 | 4, number][],
+  });
+  const h1 = p.hole,
+    h2 = p.holeAt(58, -10),
+    h3 = p.holeAt(108, 4);
+  /** A belt from a heap to a hole, ending a little past the rim on the heap's side so what it carries goes over. */
+  const beltTo = (id: string, label: string, from: [number, number], hole: { x: number; y: number }, cost: number) => {
+    const start = p.pt(from[0] * 4, from[1] * 4);
+    const len = Math.hypot(start.x - hole.x, start.y - hole.y);
+    const end = { x: hole.x + ((start.x - hole.x) / len) * 7.5, y: hole.y + ((start.y - hole.y) / len) * 7.5 };
+    return {
+      id,
+      label,
+      spec: { x0: start.x, y0: start.y, x1: end.x, y1: end.y, width: 7, speed: 10 },
+      cost,
+    } satisfies BeltOffer;
+  };
+  return {
+    id: 'deep',
+    name: 'The Deep',
+    blurb: 'diamonds and gold bars, in a great hall',
+    biome: 'future',
+    cols: p.cols,
+    rows: p.rows,
+    shapes: [
+      p.rect(-14, -8, 14, 8),
+      p.ellipse(56, 0, 62, 24, 1.3),
+      // the side passages, each a winding way out of the hall into a cavern of its own
+      p.tunnel(
+        [
+          [6, 6],
+          [4, 14],
+          [10, 22],
+          [12, 28],
+        ],
+        4,
+        2.1,
+      ),
+      p.cavern(-2, 26, 28, 38, 3.2, 0.62),
+      p.tunnel(
+        [
+          [58, -14],
+          [54, -22],
+          [60, -28],
+        ],
+        4,
+        4.3,
+      ),
+      p.cavern(44, -38, 76, -27, 5.4, 0.62),
+      p.tunnel(
+        [
+          [108, 12],
+          [112, 20],
+          [106, 28],
+        ],
+        4,
+        6.5,
+      ),
+      p.cavern(96, 26, 124, 38, 7.6, 0.62),
+      p.tunnel(
+        [
+          [98, -8],
+          [104, -22],
+          [100, -30],
+        ],
+        4,
+        8.7,
+      ),
+      p.cavern(88, -38, 118, -28, 9.8, 0.62),
+      // the pillars and islands of the hall, put back in rock
+      p.rect(46, 10, 49, 13, true),
+      p.rect(62, 14, 65, 17, true),
+      p.rect(82, 10, 85, 13, true),
+      p.rect(98, 14, 101, 17, true),
+      p.rect(24, -19, 27, -16, true),
+      p.rect(40, -16, 43, -13, true),
+      p.rect(76, -20, 79, -17, true),
+      p.rect(96, -14, 99, -11, true),
+      p.ellipse(80, 2, 7, 5, 2.9, true),
+      p.ellipse(34, -2, 5, 4, 3.7, true),
+    ],
+    holes: [h1, h2, h3],
+    heaps: [
+      richHeap(24, -12, 450, 12, 6),
+      richHeap(30, 16, 450, 12, 6),
+      richHeap(84, -16, 450, 12, 6),
+      richHeap(92, 13, 450, 12, 6),
+      richHeap(12, 32, 450, 12, 6),
+      richHeap(60, -33, 450, 12, 6),
+      richHeap(110, 32, 450, 12, 6),
+      richHeap(100, -31, 450, 12, 6),
+    ],
+    vein: {
+      ...p.pt(464, -24),
+      every: 0.6,
+      coins: 1,
+      gems: [
+        [3, 0.06],
+        [4, 0.03],
+      ],
+    },
+    cracks: [p.spot(120, -60), p.spot(280, -24), p.spot(400, -20), p.spot(280, -56)],
+    belts: [
+      beltTo('deep-belt-north', 'Conveyor, north-west hall', [30, 16], h1, 700),
+      beltTo('deep-belt-south', 'Conveyor, south-east hall', [84, -16], h2, 800),
+    ],
+    entry: p.cutting(-28, -2, -12, 1, [-1, 0]),
+    exit: null,
+    secrets: [
+      {
+        wall: p.tiles(-12, 9, -9, 10),
+        chamber: { cx: p.mid(-10.5, 13.5)[0], cy: p.mid(-10.5, 13.5)[1], rx: 4.5, ry: 3, seed: 7.3 },
+        loot: {
+          coins: 120,
+          gems: [
+            [4, 6],
+            [5, 8],
+          ],
+        },
+      },
+    ],
+    walls: [vault.wall],
+    stashes: [vault.stash],
+    barrels: 6,
+    // twice the bodies of the East Gallery: the rest of the settling is done in the frames after, and the heaps are far
+    // down the way in from where the machine arrives
+    settle: 45,
+    // a great length of rock face for its floor, with three times the lamps and four times the dressing of the East Gallery
+    // at the usual spacing, and a frame over a third heavier to draw from high up; at these it draws no heavier than the East
+    // Gallery does (see `smoke/budgets.spec.ts`), and keeps its neon, which goes from the future altogether below a share of 0.35
+    lampSpacing: 26,
+    dressing: 0.4,
+  } satisfies CaveSpec;
+})();
+
 /** The caves in order, from the first to the last: the run. */
-export const RUN: CaveSpec[] = [hollow, southGallery, eastGallery, northVault, warrens, westGallery];
+export const RUN: CaveSpec[] = [hollow, southGallery, eastGallery, northVault, warrens, westGallery, deep];

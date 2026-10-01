@@ -66,6 +66,13 @@ export class Nav {
   /** The same for a load that is for one hole only, by the hole's place in the list: that hole, or a running belt. One hole has only `toDrop`. */
   readonly toDropEach: Float32Array[];
   private belts: Belt[] = [];
+  /**
+   * How far each tile is from a running belt alone, handover and ride counted, as last laid. The drop fields
+   * are the nearer of this and the hole's own field, so a belt bought or sold is one pass and not one for each hole.
+   */
+  private readonly toBelt: Float32Array;
+  /** The tiles by each hole, as last found: they change only with the rock. */
+  private seeds: number[][] = [];
   private readonly heap: Int32Array;
   private readonly heapKey: Float32Array;
 
@@ -84,6 +91,7 @@ export class Nav {
     this.toEach = holes.length > 1 ? holes.map(() => new Float32Array(tiles)) : [this.toHole];
     this.toDrop = new Float32Array(tiles);
     this.toDropEach = holes.length > 1 ? holes.map(() => new Float32Array(tiles)) : [this.toDrop];
+    this.toBelt = new Float32Array(tiles);
     this.heap = new Int32Array(tiles * 8);
     this.heapKey = new Float32Array(tiles * 8);
     this.rebuild(solid);
@@ -110,8 +118,12 @@ export class Nav {
         this.cost[t] = 1 + (near === 2 ? BESIDE_ROCK : near === 1 ? NEAR_ROCK : 0);
       }
     }
-    this.fill(this.toHole, this.holeTiles(), false);
-    if (this.holes.length > 1) this.holes.forEach((_, k) => this.fill(this.toEach[k], this.holeTiles(k), false));
+    this.seeds = this.holeTiles();
+    // One pass for each hole. The nearest hole's field, and the field to the holes and belts together,
+    // are the nearer of those, and need no pass of their own: a shortest way from a set of places is
+    // the shortest of the ways from each.
+    if (!this.holes.length) this.toHole.fill(Infinity);
+    this.holes.forEach((_, k) => this.fill(this.toEach[k], this.seeds[k], false));
     this.fillDrop();
   }
 
@@ -168,37 +180,58 @@ export class Nav {
     return null;
   }
 
-  /** The tiles by the holes, or by the one hole `only`, that a field runs out from. */
-  private holeTiles(only?: number): number[] {
-    const seeds: number[] = [];
-    const tiles = this.cols * this.rows;
-    const holes = only === undefined ? this.holes : [this.holes[only]];
+  /** The open tiles by each hole, in one pass over the floor, that its field runs out from. */
+  private holeTiles(): number[][] {
+    const { cols, grid } = this;
+    const seeds: number[][] = this.holes.map(() => []);
+    const tiles = cols * this.rows;
     for (let t = 0; t < tiles; t++) {
       if (this.solid[t]) continue;
-      const [x, y] = this.centre(t);
-      if (holes.some((h) => Math.hypot(x - h.x, y - h.y) < h.radius + TILE)) seeds.push(t);
+      const x = grid.originX + ((t % cols) + 0.5) * TILE,
+        y = grid.originY + (((t / cols) | 0) + 0.5) * TILE;
+      for (let k = 0; k < seeds.length; k++) {
+        const h = this.holes[k];
+        if (Math.hypot(x - h.x, y - h.y) < h.radius + TILE) seeds[k].push(t);
+      }
     }
     return seeds;
   }
 
+  /** The nearest-hole field, and the drop fields, from the holes' own fields and the belts'. */
   private fillDrop() {
     const beltTiles: number[] = [],
       beltValues: number[] = [];
-    const tiles = this.cols * this.rows;
-    for (let t = 0; t < tiles; t++) {
-      if (this.solid[t]) continue;
-      const [x, y] = this.centre(t);
-      const b = this.onBelt(x, y);
-      if (!b) continue;
-      // how far it has to ride, from here to the belt's end
-      const along = (x - b.cx) * b.dx + (y - b.cy) * b.dy;
-      beltTiles.push(t);
-      beltValues.push(BELT_HANDOVER + ((b.half - along) / TILE) * BELT_RIDE);
+    if (this.belts.length) {
+      const { cols, grid } = this;
+      const tiles = cols * this.rows;
+      for (let t = 0; t < tiles; t++) {
+        if (this.solid[t]) continue;
+        const x = grid.originX + ((t % cols) + 0.5) * TILE,
+          y = grid.originY + (((t / cols) | 0) + 0.5) * TILE;
+        const b = this.onBelt(x, y);
+        if (!b) continue;
+        // how far it has to ride, from here to the belt's end
+        const along = (x - b.cx) * b.dx + (y - b.cy) * b.dy;
+        beltTiles.push(t);
+        beltValues.push(BELT_HANDOVER + ((b.half - along) / TILE) * BELT_RIDE);
+      }
     }
-    const drop = (field: Float32Array, holeTiles: number[]) =>
-      this.fill(field, [...holeTiles, ...beltTiles], false, [...holeTiles.map(() => 0), ...beltValues]);
-    drop(this.toDrop, this.holeTiles());
-    if (this.holes.length > 1) this.holes.forEach((_, k) => drop(this.toDropEach[k], this.holeTiles(k)));
+    if (beltTiles.length) this.fill(this.toBelt, beltTiles, false, beltValues);
+    else this.toBelt.fill(Infinity);
+    const { toBelt } = this;
+    const n = toBelt.length;
+    if (this.holes.length > 1) {
+      for (let k = 0; k < this.holes.length; k++) {
+        const each = this.toEach[k],
+          dropEach = this.toDropEach[k];
+        for (let t = 0; t < n; t++) dropEach[t] = Math.min(each[t], toBelt[t]);
+      }
+      this.toHole.fill(Infinity);
+      for (const each of this.toEach)
+        for (let t = 0; t < n; t++) if (each[t] < this.toHole[t]) this.toHole[t] = each[t];
+    }
+    const { toHole, toDrop } = this;
+    for (let t = 0; t < n; t++) toDrop[t] = Math.min(toHole[t], toBelt[t]);
   }
 
   /** Count the coins onto the tiles again. */

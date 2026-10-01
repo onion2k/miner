@@ -147,6 +147,47 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  // the Deep: its great hall with the first hole by the way in, and then the whole of the hall from as high as the camera goes,
+  // where the shadows must not run out inside the picture
+  test('the deep, its hall and the hole by the way in', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('deep'));
+    const [hole] = await page.evaluate(() => window.pushminer!.content().holes);
+    await scene(page, { x: hole.x + 20, y: hole.y, radius: 90 }, 180, [hole.x, hole.y - 14, Math.PI / 2]);
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('deep.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the deep, its hall from as high as the camera goes', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('deep'));
+    await scene(page, { x: 0, y: 0, radius: 170, polar: 0.5 }, 120);
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('deep-hall.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  // the West Gallery's way out, opened, with its burst: the way on to the Deep
+  test('the west gallery, its way out opening', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('west-gallery'));
+    await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      const { mouth, out } = api.content().exit!;
+      api.teleport(mouth.x - out[0] * 40, mouth.y - out[1] * 40, Math.atan2(out[1], out[0]));
+      api.step(60);
+      api.openExit();
+      api.step(14);
+      api.look(mouth.x - out[0] * 20, mouth.y - out[1] * 20, { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 });
+      api.step(1);
+    });
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('west-exit.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   // several holes and belts in a cave: the North Vault's second hole among its heaps, and the East Gallery's two belts
   // running, each with the bar across where it ends
   test('the north vault, both its holes', async ({ page }) => {
@@ -312,7 +353,7 @@ test.describe('what it looks like', () => {
 
   test('the cave done, with the vein running', async ({ page }) => {
     const problems = watch(page);
-    await begin(page, inCave('west-gallery', { done: true, drones: 2, bank: 3000 }));
+    await begin(page, inCave('deep', { done: true, drones: 2, bank: 3000 }));
     const { x, y } = (await page.evaluate(() => window.pushminer!.content())).vein;
     await scene(page, { x, y, radius: 60 }, 240, [x - 10, y - 14, Math.PI / 2]);
     await hideStats(page);
@@ -478,6 +519,17 @@ test.describe('what it looks like on a phone', () => {
     expect(fits, 'both belt buttons fit the screen, names and all').toEqual([true, true]);
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone-workshop-east.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the deep on a phone, its first hole and the hall', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('deep', { bank: 500 }));
+    const [hole] = await page.evaluate(() => window.pushminer!.content().holes);
+    await scene(page, { x: hole.x + 14, y: hole.y, radius: 84 }, 120, [hole.x, hole.y - 14, Math.PI / 2]);
+    await expect(page.locator('#pad')).toBeVisible();
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('phone-deep.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 

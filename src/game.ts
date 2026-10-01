@@ -11,17 +11,7 @@
  * there, so the same game runs in the page and in Node, and what the tests
  * try is what is played.
  */
-import {
-  BODY_CAPACITY,
-  SECRET,
-  arrival,
-  darkness,
-  exitFaces,
-  nearestHole,
-  pastLeavingLine,
-  tileCentre,
-  type Cave,
-} from './cave';
+import { SECRET, arrival, darkness, exitFaces, nearestHole, pastLeavingLine, tileCentre, type Cave } from './cave';
 import { Barrels, type Blast } from './barrels';
 import { BLADE_AT, Dozer, separate } from './dozer';
 import { CLEAR_SHARE, Economy, WALL_STRENGTH } from './economy';
@@ -30,14 +20,14 @@ import type { Drive } from './input';
 import { lampOn, lampsHit } from './lamps';
 import { Nav } from './nav';
 import { BARREL_KIND, BRICK_KIND, KIND_RADIUS, makeWorld, type Pusher, type World } from './physics';
-import { NO_SOURCE, Stock, lootHeap } from './stock';
+import { NO_SOURCE, Stock, capacityOf, lootHeap, type Capacity } from './stock';
 import { Tally } from './tally';
 import { BOT_SCALE, BOT_SPEC, Bot, Foreman, Fountain, beltOf } from './tools';
 import { VeinTrickle } from './vein';
 import { looseBricks } from './walls';
 
-/** How many of each kind the cave can hold at once, past the coins; the last three are gold bars, bricks and barrels. */
-export const KIND_CAPACITY = [0, 320, 240, 260, 160, 60, 900, 40];
+/** How many steps the heaps settle for before anyone sees a cave, unless the cave's own content says otherwise. */
+export const SETTLE_STEPS = 90;
 /** How often where the bricks and barrels lie is written into the save, in seconds. */
 const RECORD_EVERY = 1;
 
@@ -85,6 +75,8 @@ export interface Controls {
 
 export class Game {
   readonly cave: Cave;
+  /** What the cave can hold at once, worked out from its content. */
+  readonly capacity: Capacity;
   readonly world: World;
   readonly dozer: Dozer;
   readonly nav: Nav;
@@ -118,8 +110,14 @@ export class Game {
   ) {
     const save = economy.save;
     this.cave = cave;
+    this.capacity = capacityOf(cave.spec);
     this.tally = new Tally(cave.holes.length);
-    this.world = makeWorld(BODY_CAPACITY, cave.solid(save.open, save.secrets, save.walls), cave.grid, cave.holes);
+    this.world = makeWorld(
+      this.capacity.bodies,
+      cave.solid(save.open, save.secrets, save.walls),
+      cave.grid,
+      cave.holes,
+    );
     this.dozer = new Dozer(this.world.solid, cave.grid);
     const at = arrival(cave);
     Object.assign(this.dozer, { x: at.x, y: at.y, yaw: at.yaw, speed: arrived?.speed ?? 0 });
@@ -130,14 +128,14 @@ export class Game {
       this.bots.push(new Bot(this.world.solid, cave.grid, i + 1, ...botHome(cave, i)));
     this.runBelts();
 
-    this.stock = new Stock(cave, this.world, KIND_CAPACITY, cave.barrels);
+    this.stock = new Stock(cave, this.world, this.capacity.kinds, cave.barrels);
     this.barrels = new Barrels(this.world);
     const saved = { ...save, left: save.left };
     // the save keeps the live counts from here on, so it is never behind
     save.left = this.stock.left;
     this.stock.restore(saved);
     // a moment of settling before anyone sees it, so the heaps are heaps
-    for (let i = 0; i < 90; i++) this.world.step(1 / 60, () => {});
+    for (let i = 0; i < (cave.spec.settle ?? SETTLE_STEPS); i++) this.world.step(1 / 60, () => {});
     economy.persist();
 
     this.impacts = new Impacts(cave.cells, cave.grid, cave.spec);
@@ -218,7 +216,7 @@ export class Game {
     world.wakeNear(mx, my, spec.magnetRadius);
 
     // the vein and the cracking floors, once the game is done
-    if (save.done && world.live <= BODY_CAPACITY - 60)
+    if (save.done && world.live <= this.capacity.bodies - 60)
       this.vein.update(dt, (kind, x, y, z, vx, vy, vz) => this.stock.spawn(kind, x, y, z, vx, vy, vz));
     for (const f of this.fountains) {
       f.update(

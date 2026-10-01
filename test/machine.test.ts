@@ -15,10 +15,9 @@ import { SceneLights } from '../src/lighting';
 import { ANCHORS, ENVELOPE, TRIANGLE_BUDGET, bladeMesh, machineMeshes } from '../src/machine';
 import { DynamicScene } from '../src/scene-dynamic';
 import { PAINTS } from '../src/economy';
-import { KIND_CAPACITY } from '../src/game';
-import { BODY_CAPACITY } from '../src/cave';
+import { runCapacity } from '../src/stock';
 import { holeLamps } from '../src/lamps';
-import { caveOf, gameIn } from './helpers';
+import { RUN, caveOf, gameIn } from './helpers';
 
 const machine = machineMeshes();
 const tris = (m: Mesh) => m.indices.length / 3;
@@ -151,8 +150,8 @@ describe('the dynamic scene’s machines', () => {
       tint: (group: number) => tints.push(group),
     };
     const scene = new DynamicScene(target, {
-      bodyCapacity: BODY_CAPACITY,
-      kindCapacity: KIND_CAPACITY,
+      bodyCapacity: runCapacity(RUN).bodies,
+      kindCapacity: runCapacity(RUN).kinds,
       belts: caveOf('south-gallery').spec.belts.map((b) => b.spec),
       bots: 3,
       botScale: BOT_SCALE,
@@ -197,8 +196,8 @@ describe('the Spiderdozer as drawn', () => {
       tint: (group: number) => tints.push(group),
     };
     const scene = new DynamicScene(target, {
-      bodyCapacity: BODY_CAPACITY,
-      kindCapacity: KIND_CAPACITY,
+      bodyCapacity: runCapacity(RUN).bodies,
+      kindCapacity: runCapacity(RUN).kinds,
       belts: caveOf('south-gallery').spec.belts.map((b) => b.spec),
       bots: 3,
       botScale: BOT_SCALE,
@@ -243,8 +242,8 @@ describe('the belts of the cave being played', () => {
       tint: () => undefined,
     };
     const scene = new DynamicScene(target, {
-      bodyCapacity: BODY_CAPACITY,
-      kindCapacity: KIND_CAPACITY,
+      bodyCapacity: runCapacity(RUN).bodies,
+      kindCapacity: runCapacity(RUN).kinds,
       belts: caveOf('south-gallery').spec.belts.map((b) => b.spec),
       bots: 3,
       botScale: BOT_SCALE,

@@ -240,7 +240,7 @@ describe('several holes and belts in a cave', () => {
     expect(belts[1].cost, 'about the first belt’s price').toBeGreaterThan(belts[0].cost * 0.7);
     expect(belts[1].cost).toBeLessThan(belts[0].cost * 1.5);
     // the caves with one belt have no label: their names read as they did
-    for (const c of RUN) if (c.id !== 'east-gallery') for (const o of c.belts) expect(o.label).toBeUndefined();
+    for (const c of RUN) if (c.belts.length === 1) expect(c.belts[0].label).toBeUndefined();
   });
 
   it('carries a load off either belt of the East Gallery to the hole, both running at once', () => {

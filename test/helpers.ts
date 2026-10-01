@@ -11,6 +11,9 @@ import { Game, type GameEvents } from '../src/game';
 
 export { RUN };
 
+/** A world's size, in bodies, for the tests that want a world and not a cave's own. */
+export const TEST_BODIES = 10000;
+
 /** The spec of a cave in the run, by its id. */
 export function specOf(id: string): CaveSpec {
   const spec = RUN.find((c) => c.id === id);

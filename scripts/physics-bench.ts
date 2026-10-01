@@ -19,9 +19,11 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { BODY_CAPACITY, buildCave, type Heap } from '../src/cave';
+import { buildCave, type Heap } from '../src/cave';
+import { capacityOf } from '../src/stock';
 import { RUN } from '../src/caves';
 import { makeWorld, type Pusher, type World } from '../src/physics';
+import { reference } from './reference';
 
 const BASELINE = 'scripts/bench-baseline.json';
 /**
@@ -68,7 +70,7 @@ const HOLE = SPEC.holes[0];
 /** A world over the cave with its way out open. */
 function inCave(): World {
   const cave = buildCave(SPEC);
-  return makeWorld(BODY_CAPACITY, cave.solid(true), cave.grid, cave.holes);
+  return makeWorld(capacityOf(SPEC).bodies, cave.solid(true), cave.grid, cave.holes);
 }
 
 /** Every heap dropped as the game drops them, settled. */
@@ -168,26 +170,6 @@ const SCENARIOS: Scenario[] = [
 
 function pusher(owner: number): Pusher {
   return { x: 0, y: 0, z: 1.2, yaw: 0, hx: 0.4, hy: 4, hz: 1.2, vx: 0, vy: 0, spin: 0, px: 0, py: 0, owner };
-}
-
-/**
- * The reference: typed-array arithmetic of the physics' own kind, a pass of
- * springs over a grid of points, the same work every time.
- */
-function reference(): number {
-  const n = 200_000;
-  const x = new Float32Array(n),
-    v = new Float32Array(n);
-  for (let i = 0; i < n; i++) x[i] = Math.sin(i * 0.37) * 3;
-  const t = performance.now();
-  for (let pass = 0; pass < 40; pass++) {
-    for (let i = 1; i < n - 1; i++) {
-      const f = x[i - 1] + x[i + 1] - 2 * x[i];
-      v[i] = v[i] * 0.99 + f * 0.1;
-    }
-    for (let i = 0; i < n; i++) x[i] += Math.sqrt(v[i] * v[i] + 1e-6) * Math.sign(v[i]) * 0.01;
-  }
-  return performance.now() - t;
 }
 
 function measure(s: Scenario): Result {

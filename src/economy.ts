@@ -77,6 +77,12 @@ export interface Save {
   barrels: number[] | null;
 }
 
+/**
+ * The cave the game used to end in, before the Deep: a game finished there stays finished, where it is, and is not
+ * sent on through the way out the cave has since been given.
+ */
+export const FORMER_LAST = 'west-gallery';
+
 /** The share of a cave's value that has to be banked before its way out opens: the last tenth is the player's to chase or leave. */
 export const CLEAR_SHARE = 0.9;
 
@@ -441,6 +447,18 @@ export class Economy {
     this.current = { spec: next, sources: sourcesOf(next) };
     this.persist();
     for (const fn of [...this.listeners]) fn(`left:${old.id}`);
+  }
+
+  /**
+   * Straight to any cave of the run, begun afresh, with what the player carries kept: for the test API and the
+   * gates, which measure every cave one after another in one page. Nothing in play goes anywhere but on.
+   */
+  travel(id: string) {
+    const next = this.run.find((c) => c.id === id);
+    if (!next) throw new Error(`no cave called ${id} in the run`);
+    Object.assign(this.save, this.perCave(next));
+    this.current = { spec: next, sources: sourcesOf(next) };
+    this.persist();
   }
 
   deposit(value: number) {

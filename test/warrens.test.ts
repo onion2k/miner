@@ -56,7 +56,10 @@ describe('the Warrens', () => {
   it('stands in the run between the North Vault and the West Gallery, by the id it is saved under', () => {
     expect(IDS.indexOf('warrens')).toBe(IDS.indexOf('north-vault') + 1);
     expect(IDS.indexOf('west-gallery')).toBe(IDS.indexOf('warrens') + 1);
-    expect(IDS.at(-1), 'the West Gallery is still the last cave').toBe('west-gallery');
+    expect(IDS.indexOf('deep'), 'the Deep follows the West Gallery, the last cave').toBe(
+      IDS.indexOf('west-gallery') + 1,
+    );
+    expect(IDS.at(-1)).toBe('deep');
     expect(spec.name).toBe('The Warrens');
   });
 
@@ -202,13 +205,13 @@ describe('the run with the Warrens in it', () => {
     expect(newEconomy(saveIn('north-vault')).cave().id).toBe('north-vault');
   });
 
-  it('goes from the North Vault to the Warrens and on to the West Gallery', () => {
+  it('goes from the North Vault to the Warrens and on to the West Gallery, which is no longer the last', () => {
     const e = newEconomy(saveIn('north-vault', { open: true }));
     e.moveOn();
     expect(e.cave().id).toBe('warrens');
     e.open();
     e.moveOn();
     expect(e.cave().id).toBe('west-gallery');
-    expect(e.isLast()).toBe(true);
+    expect(e.isLast()).toBe(false);
   });
 });

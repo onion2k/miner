@@ -63,6 +63,36 @@ describe.each(IDS)('the way round the rock in %s', (id) => {
     }
   });
 
+  it('has the fields of the holes together exactly the nearer of those each hole has alone, with belts and without', () => {
+    // The drop fields are made from the holes' own fields and the belts', not by a pass of their own, so
+    // each is held to the same field made the long way: a nav that has only that one hole.
+    const alone = holes.map((h) => new Nav(solid, cave.grid, [h]));
+    const belt = beltOf({ x0: hole.x + 14, y0: hole.y, x1: hole.x + 34, y1: hole.y, width: 6, speed: 4 });
+    const same = (a: Float32Array, b: Float32Array, what: string) => {
+      for (let t = 0; t < a.length; t++) if (!Object.is(a[t], b[t])) expect(a[t], `${what}, tile ${t}`).toBe(b[t]);
+    };
+    for (const belts of [[], [belt]]) {
+      nav.setBelts(belts);
+      alone.forEach((n) => n.setBelts(belts));
+      try {
+        const nearest = new Float32Array(solid.length).fill(Infinity),
+          nearestDrop = new Float32Array(solid.length).fill(Infinity);
+        alone.forEach((n, k) => {
+          same(nav.toEach[k], n.toHole, `hole ${k}`);
+          same(nav.toDropEach[k], n.toDrop, `hole ${k} or a belt`);
+          for (let t = 0; t < nearest.length; t++) {
+            nearest[t] = Math.min(nearest[t], n.toHole[t]);
+            nearestDrop[t] = Math.min(nearestDrop[t], n.toDrop[t]);
+          }
+        });
+        same(nav.toHole, nearest, 'the nearest hole');
+        same(nav.toDrop, nearestDrop, 'the nearest hole or belt');
+      } finally {
+        nav.setBelts([]);
+      }
+    }
+  });
+
   it('has no way toward a point in the rock', () => {
     const rock = solid.findIndex((s, t) => s === 1 && t > cave.grid.cols);
     const [x, y] = nav.centre(rock);

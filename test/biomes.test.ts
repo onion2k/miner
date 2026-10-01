@@ -24,6 +24,7 @@ const BIOME: Record<string, BiomeName | null> = {
   'north-vault': 'ice',
   warrens: 'jungle',
   'west-gallery': 'future',
+  deep: 'future',
 };
 
 /** Every cave built once, with the terrain it is drawn from and what stands in it. */

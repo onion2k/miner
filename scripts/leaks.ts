@@ -15,10 +15,12 @@
  * alone, and one that creeps all the way through is not.
  */
 import { Autopilot, PATCH, type Profile } from '../src/autopilot';
-import { BODY_CAPACITY, TILE, buildCave, type CaveSpec } from '../src/cave';
+import { TILE, buildCave, type CaveSpec } from '../src/cave';
 import { RUN } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
-import { KIND_CAPACITY, Game } from '../src/game';
+import { Game } from '../src/game';
+import { BARREL_KIND } from '../src/physics';
+import { runCapacity } from '../src/stock';
 import { onward } from './run';
 
 const DT = 1 / 60;
@@ -64,9 +66,11 @@ export function sweptCeiling(run: readonly CaveSpec[]): number {
 }
 
 export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }>> = {
-  bodies: { ceiling: BODY_CAPACITY },
-  slots: { ceiling: BODY_CAPACITY },
-  'fuses lit': { ceiling: KIND_CAPACITY[7] || 200 },
+  // the most any cave of the run is sized for; and what share of its own cave's room is used, which can never pass all of it
+  bodies: { ceiling: runCapacity(RUN).bodies },
+  slots: { ceiling: runCapacity(RUN).bodies },
+  'room used, %': { ceiling: 100 },
+  'fuses lit': { ceiling: runCapacity(RUN).kinds[BARREL_KIND] },
   rubble: { ceiling: 4000 },
   'lamps broken': { ceiling: 200 },
   'barrels saved': { ceiling: 400 },
@@ -93,6 +97,7 @@ export function sizes(game: Game, pilot?: Autopilot): Record<string, number> {
   return {
     bodies: world.live,
     slots: world.count,
+    'room used, %': Math.round((world.count / game.capacity.bodies) * 100),
     'fuses lit': game.barrels.lit.length,
     rubble: save.rubble.length,
     'lamps broken': save.lampsBroken.length,
