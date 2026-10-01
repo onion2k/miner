@@ -8,7 +8,8 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules'] },
+  // `.claude` holds the worktrees agents build in: each is a checkout of its own, linted from its own root
+  { ignores: ['dist', 'node_modules', '.claude'] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
