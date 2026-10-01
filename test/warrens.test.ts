@@ -63,8 +63,8 @@ describe('the Warrens', () => {
     expect(spec.name).toBe('The Warrens');
   });
 
-  it('is a jungle of about the East Gallery’s area, with a little more than its floor and none of its belts', () => {
-    expect(spec.biome).toBe('jungle');
+  it('is a fungal cave of about the East Gallery’s area, with a little more than its floor and none of its belts', () => {
+    expect(spec.biome).toBe('fungal');
     expect((spec.cols * spec.rows) / (specOf('east-gallery').cols * specOf('east-gallery').rows)).toBeGreaterThan(0.85);
     expect((spec.cols * spec.rows) / (specOf('east-gallery').cols * specOf('east-gallery').rows)).toBeLessThan(1.25);
     const floor = (id: string) => caveOf(id).cells.filter((c) => c === OPEN).length;

@@ -22,9 +22,9 @@ const BIOME: Record<string, BiomeName | null> = {
   'south-gallery': 'jungle',
   'east-gallery': 'lava',
   'north-vault': 'ice',
-  warrens: 'jungle',
+  warrens: 'fungal',
   'west-gallery': 'future',
-  deep: 'future',
+  deep: 'geode',
 };
 
 /** Every cave built once, with the terrain it is drawn from and what stands in it. */
@@ -41,7 +41,7 @@ describe('the biomes', () => {
   it('give each cave its own, and leave the Hollow as it was', () => {
     for (const id of IDS) expect(biomeOf(caveOf(id).spec)?.name ?? null, id).toBe(BIOME[id]);
     expect(new Set(IDS.slice(1).map((id) => biomeOf(caveOf(id).spec)?.name))).toEqual(
-      new Set(['jungle', 'ice', 'lava', 'future']),
+      new Set(['jungle', 'ice', 'lava', 'future', 'fungal', 'geode']),
     );
   });
 

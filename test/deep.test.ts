@@ -25,8 +25,8 @@ describe('the Deep', () => {
     expect(newEconomy(saveIn('deep')).isLast()).toBe(true);
   });
 
-  it('is a future cave of about twice the East Gallery’s area', () => {
-    expect(deep.biome).toBe('future');
+  it('is a geode cave of about twice the East Gallery’s area', () => {
+    expect(deep.biome).toBe('geode');
     const east = specOf('east-gallery');
     const ratio = (deep.cols * deep.rows) / (east.cols * east.rows);
     expect(ratio).toBeGreaterThan(1.8);

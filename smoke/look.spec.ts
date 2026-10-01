@@ -295,6 +295,8 @@ test.describe('what it looks like', () => {
     ['ice', 'north-vault'],
     ['lava', 'east-gallery'],
     ['future', 'west-gallery'],
+    ['fungal', 'warrens'],
+    ['geode', 'deep'],
   ] as const) {
     test(`the foot of the rock in the ${name}`, async ({ page }) => {
       const problems = watch(page);

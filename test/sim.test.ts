@@ -22,7 +22,10 @@ describe('the drone simulation', () => {
     const one = simulate({ ...SIM_DEFAULTS, cave: 'hollow', seconds: 14 }, 1);
     expect(one.banked).toBeGreaterThan(0);
     expect(one.holeShare).toBe(0);
-    const two = simulate({ ...SIM_DEFAULTS, cave: 'north-vault', drones: 2, seconds: 30 }, 1);
+    // Twenty seconds is the least that banks anything on this seed (ten and fourteen bank nothing, and a share of
+    // nothing proves nothing); thirty took long enough to pass five seconds with the rest of the suite running.
+    const two = simulate({ ...SIM_DEFAULTS, cave: 'north-vault', drones: 2, seconds: 20 }, 1);
+    expect(two.banked).toBeGreaterThan(0);
     expect(two.holeShare).toBeGreaterThanOrEqual(0);
     expect(two.holeShare).toBeLessThanOrEqual(0.5);
   });

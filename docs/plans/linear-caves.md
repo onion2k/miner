@@ -68,14 +68,14 @@ Taken on judgement, as asked; each can be put back to the user.
 
 ## Phases
 
-| Phase | What                                            | Changes play? | State   |
-| ----- | ----------------------------------------------- | ------------- | ------- |
-| 1     | The cave as a value, holes as a list (refactor) | no            | landed  |
-| 2     | One cave after another                          | yes           | landed  |
-| 3     | Several holes and belts in a cave, in content   | yes           | landed  |
-| 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | landed  |
-| 5     | Bigger caves, measured first                    | yes           | landed  |
-| 6     | New biomes, one feature each                    | yes           | planned |
+| Phase | What                                            | Changes play? | State  |
+| ----- | ----------------------------------------------- | ------------- | ------ |
+| 1     | The cave as a value, holes as a list (refactor) | no            | landed |
+| 2     | One cave after another                          | yes           | landed |
+| 3     | Several holes and belts in a cave, in content   | yes           | landed |
+| 4     | Cave shapes: carving beyond ellipses and boxes  | yes           | landed |
+| 5     | Bigger caves, measured first                    | yes           | landed |
+| 6     | New biomes, one feature each                    | yes           | landed |
 
 Phase 1 is the foundation, built now. Phases 2 to 6 are each put through
 `/feature`, with their spec agreed before they are built; what follows for
@@ -1242,7 +1242,125 @@ paused tree. Their work was merged and checked on Opus.
 
 ## Phase 6: new biomes
 
-One feature each, on the pattern of the four there are (`biomes.ts`: rock,
-floor, dressing, air particles, feature lights, lamp colour, and a picture).
-Ideas to put to the user: fungal, flooded, crystal geode, desert ruin,
-clockwork.
+Specified on Opus on 2026-10-01, after the user was shown in-engine mocks of
+five candidates. The mocks were drawn in the Warrens, each with its own
+palette, rock shape and lamp colour, and dressing borrowed from an existing
+biome and recoloured. They are in a throwaway worktree, `../pm-biome-mock`:
+`git diff` there shows the mock biomes, and `smoke/biome-mock.spec.ts`
+draws them.
+
+### What
+
+The run has six caves with a biome but only four biomes: the Warrens
+repeats the South Gallery's jungle, and the Deep repeats the West Gallery's
+future. **The user chose to give those two caves biomes of their own**, one
+`/feature` each, built one after the other:
+
+1. **Fungal, for the Warrens.**
+   - **From the mock:** purple-grey spongy rock, a plum floor, and pale
+     violet-green lamps. The mock's palette is the start. Its rock shape is
+     rough 1.5, ledge 0.7, beds 0.15, top 1.15.
+   - **Dressing of its own:** giant mushrooms in several sizes, shelf fungi
+     on the rock, and caps that pulse with light.
+   - **In the air:** drifting spores.
+2. **Crystal geode, for the Deep.**
+   - **From the mock:** violet crystal-faced rock, a slate floor, and
+     magenta-white lamps. Its rock shape is rough 0.6, ledge 0.9, beds 0.1,
+     top 1.25.
+   - **Dressing of its own:** amethyst clusters in the walls, tall crystal
+     spires lit from inside with a slow shimmer, and glints on the floor.
+   - **In the air:** slow motes.
+   - The Deep's vein and cracks run in it at the end.
+
+Desert ruin, flooded and clockwork brass are kept for caves still to come.
+From the mocks: a flooded floor wants a sheen (roughness about 0.4), not a
+mirror, or each floor facet throws back a hard square of lamplight.
+
+### Acceptance criteria, for each biome
+
+1. Its name works in every path that picks by biome:
+   - `biomeStyle`;
+   - `decorate`;
+   - `airParticle`;
+   - `featureParticle`;
+   - `beat`;
+   - the lamp colour;
+   - and any other `switch` on a biome's name.
+2. It has props and feature lights of its own, not borrowed or recoloured.
+3. Every other cave's props, lamps, feature lights and pictures are
+   identical, which the hashes in `test/dressing.test.ts` and the look
+   tests hold.
+4. Its cuttings stay bare and dark.
+5. Its cave passes the relative frame gate in every view. Its prop and lamp
+   counts are no higher than the cave has now: the Warrens has 2,463 props
+   and 84 lamps; the Deep's are measured before the change.
+6. Its cave's pictures are written again and looked at: the cave, the foot of
+   the rock, the phone, and for the Deep, the hall from high and the end.
+
+### Edge cases
+
+- **Rooms:** only its own cave changes.
+- **Rock:** the cuttings stay bare and dark.
+- **Scale:** dressing density follows the cave's `dressing` and
+  `lampSpacing`.
+- **Phone:** the phone scene is checked.
+- **The end:** the vein runs in the geode.
+- **Not reachable:** saves, drones, holes, belts, walls and chambers, since
+  a biome is only how a cave looks. The terrain's vertex counts should not
+  move, since the grid is unchanged; the budgets gate holds them exactly.
+
+### Performance risk
+
+New prop meshes and more feature lights. They are held by the frame gate, by
+prop and light counts, and by the budgets gate.
+
+### Tests
+
+- unit tests on each dressing: the kinds it places, its density, and the
+  cuttings left bare;
+- the older caves' hashes;
+- the look scenes;
+- the frame gate;
+- a mutation check on each new test.
+
+The full check runs once for each biome. The long runs (leaks for an hour,
+12-seed balance, 24-seed fuzz) are skipped unless asked for, as in Phase 5.
+
+### How it landed (2026-10-01)
+
+Built by two Sonnet builders side by side, one for each biome, on a shared
+scaffold laid on Opus first. The scaffold gave each biome a module of its
+own (`src/fungal.ts`, `src/geode.ts`), wired into every path that picks by
+biome, so the two builders' work never touched the same lines. It was
+merged and checked on Opus.
+
+- **The fungal Warrens:**
+  - giant mushrooms against the rock, clusters at its foot, shelf fungi up
+    its face, and spore puffs and gills at the floor's edge;
+  - 33 caps glowing violet, teal and green, with a pulse;
+  - slow rising spores, and a puff off a glowing cap;
+  - 989 props, from 2,463;
+  - frames of 3.2, 3.9 and 4.4 ms at the hole, at the heaps and from high,
+    against the old worst cave's 3.7, 6.2 and 7.8.
+- **The geode Deep:**
+  - amethyst clusters fanned out of the walls, tall spires against the rock,
+    and glints and grit at the floor's edge;
+  - 39 lit crystals in magenta, violet and pink-white;
+  - slow violet motes, and a glint off a lit crystal;
+  - 1,077 props, from 4,154, and 39 feature lights, from 196;
+  - frames of 4.7, 5.5 and 7.7 ms against the old worst's 3.5, 6.1 and
+    6.9, inside the gate's allowance but closest from high;
+  - its swap 545 ms.
+  - More lit crystals (about 70) pushed the frame from high to 12.1 ms and
+    failed the gate, so it glows less than the mock did.
+- **A fault found and put right on the way:** the drone sim's hole-share
+  test was the one-off failure seen in Phase 5. Its 30-second run could pass
+  five seconds with the suite running. It now runs 20 seconds, the least that
+  banks anything on its seed, and checks that something was banked, so a
+  share of nothing cannot pass it.
+- **Skipped by the user's choice:** the hour-long leaks run, the balance
+  runs, and wide fuzz. The full check ran once, green.
+- **Open, a matter of taste:**
+  - the geode's glow, against its frame cost;
+  - the fungal caps reading paler than the mock;
+  - the low floor-edge puffs barely showing.

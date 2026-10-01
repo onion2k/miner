@@ -433,7 +433,7 @@ const warrens = (() => {
     id: 'warrens',
     name: 'The Warrens',
     blurb: 'emeralds and sapphires, in caverns joined by tunnels',
-    biome: 'jungle',
+    biome: 'fungal',
     cols: p.cols,
     rows: p.rows,
     shapes: [
@@ -693,7 +693,7 @@ const deep = (() => {
     id: 'deep',
     name: 'The Deep',
     blurb: 'diamonds and gold bars, in a great hall',
-    biome: 'future',
+    biome: 'geode',
     cols: p.cols,
     rows: p.rows,
     shapes: [

@@ -20,12 +20,14 @@ import { TILE, gridOf, hash, nearCutting, type CaveSpec } from './cave';
 import { ball, box, cone, cylinder, frond, gem, lump, moved, scaled, tuft } from './meshes';
 import { noise } from './noise';
 import { FLOOR_TONES, ROCK_TONES, type Rgb } from './palette';
+import { FUNGAL, FUNGAL_MESHES, fungal, fungalAir, fungalParticle, type FungalPropKind } from './fungal';
+import { GEODE, GEODE_MESHES, geode, geodeAir, geodeParticle, type GeodePropKind } from './geode';
 import { FOOT_TONE, PLAIN_ROCK, type RockShape, type Samples, type TerrainStyle } from './terrain';
 
 /** A shade: colour and roughness. */
 export type Tone = [number, number, number, number];
 
-export type BiomeName = 'jungle' | 'ice' | 'lava' | 'future';
+export type BiomeName = 'jungle' | 'ice' | 'lava' | 'future' | 'fungal' | 'geode';
 
 export interface Biome {
   name: BiomeName;
@@ -126,7 +128,14 @@ const FUTURE: Biome = {
   shape: { rough: 0.15, ledge: 0.25, beds: 1, top: 1 },
 };
 
-const BIOMES: Record<BiomeName, Biome> = { jungle: JUNGLE, ice: ICE, lava: LAVA, future: FUTURE };
+const BIOMES: Record<BiomeName, Biome> = {
+  jungle: JUNGLE,
+  ice: ICE,
+  lava: LAVA,
+  future: FUTURE,
+  fungal: FUNGAL,
+  geode: GEODE,
+};
 
 /** The biome of a cave, or null for the plain one. */
 export function biomeOf(spec: CaveSpec): Biome | null {
@@ -202,7 +211,9 @@ export type PropKind =
   | 'seep'
   | 'crate'
   | 'pylon'
-  | 'neon';
+  | 'neon'
+  | FungalPropKind
+  | GeodePropKind;
 
 /** The shape of each kind of prop, at unit size, standing on z = 0 unless said. */
 export const PROP_MESHES: Record<PropKind, () => Mesh> = {
@@ -223,6 +234,8 @@ export const PROP_MESHES: Record<PropKind, () => Mesh> = {
   crate: () => box(1, 1, 1),
   pylon: () => box(1, 1, 1),
   neon: () => box(1, 1, 1, true),
+  ...FUNGAL_MESHES,
+  ...GEODE_MESHES,
 };
 
 export interface Prop {
@@ -294,13 +307,15 @@ export function decorate(spec: CaveSpec, s: Samples): Decor {
       if (biome.name === 'ice') ice(at, r, props, lights);
       else if (biome.name === 'jungle') jungle(at, r, props, lights, s);
       else if (biome.name === 'lava') lava(at, r, props, lights, s);
+      else if (biome.name === 'fungal') fungal(at, r, props, lights, s);
+      else if (biome.name === 'geode') geode(at, r, props, lights, s);
       else future(at, r, props, lights);
     }
   }
   return { props, lights };
 }
 
-interface Place {
+export interface Place {
   x: number;
   y: number;
   /** The surface's height here. */
@@ -743,6 +758,10 @@ export function airParticle(spec: CaveSpec, x: number, y: number, random: () => 
         gravity: 0,
         floor: -1,
       };
+    case 'fungal':
+      return fungalAir(x, y, random);
+    case 'geode':
+      return geodeAir(x, y, random);
     case undefined:
       return null;
   }
@@ -795,6 +814,10 @@ export function featureParticle(l: FeatureLight): Emit | null {
       };
     case 'future':
       return null;
+    case 'fungal':
+      return fungalParticle(l);
+    case 'geode':
+      return geodeParticle(l);
   }
 }
 

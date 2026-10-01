@@ -194,7 +194,7 @@ export interface CaveSpec {
   /** What is in it, said on arriving. */
   blurb: string;
   /** The look of the whole cave: null for the plain one. */
-  biome: 'jungle' | 'ice' | 'lava' | 'future' | null;
+  biome: 'jungle' | 'ice' | 'lava' | 'future' | 'fungal' | 'geode' | null;
   cols: number;
   rows: number;
   /** Carved in order; `rock: true` puts rock back (pillars, the island a ring of floor goes round). */
