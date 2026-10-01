@@ -16,9 +16,10 @@
  */
 import type { Emit } from 'artshape-render/game/particles';
 import type { Mesh } from 'artshape-render/mesh/types';
-import { TILE, gridOf, hash, nearCutting, type CaveSpec } from './cave';
+import { TILE, gridOf, hash, nearCutting, type Cave, type CaveSpec } from './cave';
 import { ball, box, cone, cylinder, frond, gem, lump, moved, scaled, tuft } from './meshes';
 import { noise } from './noise';
+import { runwayBeat, runwayLights } from './runway';
 import { FLOOR_TONES, ROCK_TONES, type Rgb } from './palette';
 import { FUNGAL, FUNGAL_MESHES, fungal, fungalAir, fungalParticle, type FungalPropKind } from './fungal';
 import { GEODE, GEODE_MESHES, geode, geodeAir, geodeParticle, type GeodePropKind } from './geode';
@@ -260,12 +261,15 @@ export interface FeatureLight {
   colour: Rgb;
   radius: number;
   intensity: number;
-  beat: 'steady' | 'flicker' | 'pulse' | 'blink';
+  beat: 'steady' | 'flicker' | 'pulse' | 'blink' | 'runway';
   /** How big its glow is on the screen, at a unit distance; 0 for none. */
   glow: number;
   /** A phase for its beat, so no two beat together. */
   phase: number;
-  biome: BiomeName;
+  /** The biome it is part of, or null for a light that belongs to the cave and not a biome: the runway's. */
+  biome: BiomeName | null;
+  /** For a runway light, which cutting it is in: its phase is its place along, and the pulse's direction is the cutting's. */
+  cutting?: 'in' | 'out';
 }
 
 export interface Decor {
@@ -770,6 +774,8 @@ export function airParticle(spec: CaveSpec, x: number, y: number, random: () => 
 /** Something off a feature now and then: embers up off a lava pool, a glint off a crystal, spores off a mushroom. */
 export function featureParticle(l: FeatureLight): Emit | null {
   switch (l.biome) {
+    case null:
+      return null;
     case 'lava':
       return {
         position: [l.x, l.y, l.z - 1.6],
@@ -831,7 +837,26 @@ export function beat(l: FeatureLight, t: number): number {
       return 0.7 + 0.3 * Math.sin(t * 1.6 + p);
     case 'blink':
       return (t * 0.8 + p) % 1 < 0.15 ? 1 : 0.05;
+    case 'runway':
+      return runwayBeat({ cutting: l.cutting ?? 'in', along: p }, t);
     case 'steady':
       return 1;
   }
+}
+
+/** The colour of a runway light's amber, and how far it reaches and how bright it is. */
+const RUNWAY_LIGHT = { colour: [1.0, 0.7, 0.25] as Rgb, radius: 8, intensity: 9, glow: 6 };
+
+/** The runway's lights as the lighting takes them, alongside the biome's: the cave's own, whatever its biome. */
+export function runwayFeatures(cave: Cave, open: boolean): FeatureLight[] {
+  return runwayLights(cave, open).map((l) => ({
+    x: l.x,
+    y: l.y,
+    z: l.z,
+    ...RUNWAY_LIGHT,
+    beat: 'runway',
+    phase: l.along,
+    biome: null,
+    cutting: l.cutting,
+  }));
 }

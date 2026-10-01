@@ -19,7 +19,18 @@ import { hide, identity, place, placePart } from './matrix';
 import { BAR_COLOUR, FLOOR_TONES, GEM_ALBEDO, ROCK_TONES, WALL_COLOUR, type Rgb } from './palette';
 import { BAR } from './physics';
 import { buildTerrain, type Terrain } from './terrain';
-import { PROP_MESHES, biomeStyle, decorate, groundTone, lampColour, tint, type Decor, type PropKind } from './biomes';
+import {
+  PROP_MESHES,
+  biomeStyle,
+  decorate,
+  groundTone,
+  lampColour,
+  runwayFeatures,
+  tint,
+  type Decor,
+  type FeatureLight,
+  type PropKind,
+} from './biomes';
 import { BRICK_SIZE, standingBricks } from './walls';
 
 /** What has become of the cave, as the static scene is drawn from it. */
@@ -40,6 +51,8 @@ export class StaticScene {
     spire: cone(1, 1, 6),
     brick: box(1, 1, 1, true),
     stud: gem(1.05, 2.3),
+    // a runway light's fitting: a short stud, its top just above the lens
+    fitting: cylinder(0.5, 0.6, 6),
     lampPost: cylinder(0.14, LAMP_HEIGHT, 6),
     lampHead: moved(box(0.8, 0.8, 0.9, true), 0, 0, 0.1),
     // a shade hung from its top: a short drum
@@ -59,7 +72,8 @@ export class StaticScene {
   private readonly holes: { collar: Mesh; pit: Mesh }[];
   /** The lamps hanging over the holes, all together. */
   private readonly overHoles: [number, number][];
-  private terrain: (Terrain & { key: string; decor: Decor }) | null = null;
+  private terrain: (Terrain & { key: string; decor: Decor; runway: FeatureLight[]; features: FeatureLight[] }) | null =
+    null;
 
   constructor(private readonly cave: Cave) {
     this.holes = cave.holes.map((h) => ({
@@ -69,9 +83,9 @@ export class StaticScene {
     this.overHoles = holeLamps(cave.holes).flat();
   }
 
-  /** The lights that are part of the biomes, as the terrain last built stands. */
-  get features() {
-    return this.terrain?.decor.lights ?? [];
+  /** The lights that are part of the biomes, and the runway's along the cuttings, as the terrain last built stands. */
+  get features(): readonly FeatureLight[] {
+    return this.terrain?.features ?? [];
   }
 
   groups(state: StaticState): GameGroup[] {
@@ -98,7 +112,10 @@ export class StaticScene {
     if (this.terrain?.key !== key) {
       const { spec } = this.cave;
       const built = buildTerrain(this.cave, [...state.secrets], biomeStyle(spec), state.open);
-      this.terrain = { key, ...built, decor: decorate(spec, built.samples) };
+      const decor = decorate(spec, built.samples),
+        runway = runwayFeatures(this.cave, state.open);
+      // put together here, once, so the lighting is not handed a new list every frame
+      this.terrain = { key, ...built, decor, runway, features: [...decor.lights, ...runway] };
     }
     const terrain = this.terrain;
     const surface: GameGroup[] = terrain.groups.map((g) => {
@@ -140,7 +157,18 @@ export class StaticScene {
       ...stones,
       { mesh: this.meshes.spire, matrices: spireM, materials: spireMat, count: terrain.spires.length },
       ...this.props(terrain.decor),
+      ...this.fittings(terrain.runway),
     ];
+  }
+
+  /** The runway lights' fittings: a short stud under each, glowing amber so it reads in the dark. */
+  private fittings(runway: readonly FeatureLight[]): GameGroup[] {
+    const [m, mat] = pool(runway.length);
+    runway.forEach((l, i) => {
+      placePart(m, i, l.x, l.y, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1);
+      mat.set([1.8, 0.95, 0.3, 0.4], i * MATERIAL_STRIDE);
+    });
+    return [{ mesh: this.meshes.fitting, matrices: m, materials: mat, count: runway.length }];
   }
 
   /** What stands in the biome: a group for each kind of thing, each thing its own colour. */

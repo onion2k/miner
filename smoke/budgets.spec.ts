@@ -11,7 +11,7 @@
  *   (`scripts/reference.ts`), held to `scripts/budgets-baseline.json` by the rule in `scripts/judge.ts`; and
  *   none may pass a second, which is the budget the plan gives the screen going dark and coming back;
  * - **the frame** is each cave's fastest round of many, every cave taken in turn in each round (the order
- *   turned round every other round) in three views, at the hole, at the heaps and from as high as the camera
+ *   turned round every other round) in four views, down the way in with its runway lit, at the hole, at the heaps and from as high as the camera
  *   goes; a cave is held to the worst of the six caves that stood before the bigger ones were made, in the same
  *   view and the same run, with the allowance below. The plan said the median; it is the fastest round because
  *   what else the machine is doing comes and goes by more than the caves differ and only ever slows a frame.
@@ -67,7 +67,7 @@ const ROUNDS = 9;
 const FRAME_ALLOWANCE = 0.5,
   FRAME_SLACK_MS = 0.5;
 
-const VIEWS = ['hole', 'heaps', 'high'] as const;
+const VIEWS = ['cutting', 'hole', 'heaps', 'high'] as const;
 type View = (typeof VIEWS)[number];
 
 /** The reference arithmetic, run in the page: warmed up twice, the fastest of six. */
@@ -87,7 +87,11 @@ async function setView(page: Page, view: View) {
   await page.evaluate((view) => {
     const api = window.pushminer!;
     const content = api.content();
-    if (view === 'hole') {
+    if (view === 'cutting') {
+      // down the way in from where the machine arrives, which it still stands at after the swap, the runway lit down both sides
+      const { x, y, yaw } = api.state().dozer;
+      api.look(x + Math.cos(yaw) * 18, y + Math.sin(yaw) * 18, { azimuth: yaw + Math.PI, polar: 0.62, radius: 78 });
+    } else if (view === 'hole') {
       const h = content.hole;
       api.teleport(h.x, h.y - 14, Math.PI / 2);
       api.look(h.x, h.y - 14, { azimuth: -Math.PI / 2, polar: 0.62, radius: 78 });
@@ -183,6 +187,7 @@ test('every cave draws a frame no heavier than the worst of the old ones, in eac
   expect(ids, 'the old caves are all in the run').toEqual(expect.arrayContaining(OLD_CAVES));
 
   const samples: Record<View, Record<string, number[]>> = {
+    cutting: Object.fromEntries(ids.map((id) => [id, []])),
     hole: Object.fromEntries(ids.map((id) => [id, []])),
     heaps: Object.fromEntries(ids.map((id) => [id, []])),
     high: Object.fromEntries(ids.map((id) => [id, []])),

@@ -812,7 +812,7 @@ function alongCutting(
 /** How far short of a way out's outer end the leaving line is: past it, the machine has gone. */
 export const LEAVING_SHORT = 3 * TILE;
 /** How dark it is at the outer end of the way in, where the machine arrives. */
-export const ARRIVAL_DARK = 0.85;
+export const ARRIVAL_DARK = 0.45;
 
 /**
  * How dark it is at a point, 0 to 1: nothing outside the cuttings; down the

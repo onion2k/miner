@@ -36,6 +36,8 @@ export interface GameState {
   /** The id of the cave the game is in, and whether its way out is open. */
   cave: string;
   open: boolean;
+  /** How many runway lights are lit, down the way in and down the way out. */
+  runway: { in: number; out: number };
   /** How dark it is where the dozer is, 0 to 1: the page fades to black by it down the way out. */
   darkness: number;
   done: boolean;
@@ -181,6 +183,8 @@ export interface DebugHost {
   calibration(): number[];
   setCoinDetail(level: number): void;
   lampsLit(): number[];
+  /** How many runway lights the scene stands, by the cutting each is in. */
+  runway(): { in: number; out: number };
   trackMarks(): number;
   muted(): boolean;
   minimap(): MinimapView | null;
@@ -225,6 +229,7 @@ export function createApi(host: DebugHost): PushminerApi {
         banked: save.banked,
         cave: save.cave,
         open: save.open,
+        runway: host.runway(),
         darkness: g.darkness(),
         done: save.done,
         secrets: [...save.secrets],

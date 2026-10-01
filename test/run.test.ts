@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  ARRIVAL_DARK,
   EXIT,
   OPEN,
   arrival,
@@ -196,8 +197,8 @@ describe('driving through the way out (criterion 3)', () => {
     expect(pastLeavingLine(cave, 0, 0)).toBe(false);
     // the way in is dark at its outer end and light at the floor
     const start = arrival(cave);
-    expect(darkness(cave, false, start.x, start.y)).toBeGreaterThan(0.6);
-    expect(darkness(cave, false, start.x, start.y)).toBeLessThanOrEqual(0.85);
+    expect(darkness(cave, false, start.x, start.y)).toBeGreaterThan(ARRIVAL_DARK * 0.7);
+    expect(darkness(cave, false, start.x, start.y)).toBeLessThanOrEqual(ARRIVAL_DARK);
   });
 
   it('sends caveLeft and builds the next cave, the dozer at the outer end of its way in, facing in, at its speed', () => {
@@ -233,7 +234,7 @@ describe('driving through the way out (criterion 3)', () => {
       expect(Math.cos(next.dozer.yaw)).toBeCloseTo(-ex, 6);
       expect(Math.sin(next.dozer.yaw)).toBeCloseTo(-ey, 6);
       expect(next.cave.cells[next.nav.tileOf(next.dozer.x, next.dozer.y)]).toBe(OPEN);
-      expect(darkness(next.cave, false, next.dozer.x, next.dozer.y)).toBeGreaterThan(0.6);
+      expect(darkness(next.cave, false, next.dozer.x, next.dozer.y)).toBeGreaterThan(ARRIVAL_DARK * 0.7);
       expect(checkInvariants(next)).toEqual([]);
     });
   });

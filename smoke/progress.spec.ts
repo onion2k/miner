@@ -15,7 +15,16 @@
  * page must have logged no errors.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { ARRIVAL_DARK, buildCave } from '../src/cave';
+import { RUN } from '../src/caves';
+import { runwayLights } from '../src/runway';
 import { ready, screen, start, steerTo, watch } from './pushminer';
+
+/** How many runway lights a cave stands, down each cutting, as the lights work it out and the page should show. */
+function runwayOf(id: string, open: boolean) {
+  const lights = runwayLights(buildCave(RUN.find((c) => c.id === id)!), open);
+  return { in: lights.filter((l) => l.cutting === 'in').length, out: lights.filter((l) => l.cutting === 'out').length };
+}
 
 /** Play `frames` frames, and check nothing that must hold has broken. */
 async function play(page: Page, frames: number, stage: string) {
@@ -49,6 +58,13 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
     window.pushminer!.seed(1);
   });
   const content = await page.evaluate(() => window.pushminer!.content());
+
+  // a fresh start is at the dark outer end of the way in, with the runway lit down it and no way out to light
+  await play(page, 2, 'a fresh start');
+  const fresh = await page.evaluate(() => window.pushminer!.state());
+  expect(fresh.runway.in, 'the way in’s runway is lit').toBeGreaterThan(0);
+  expect(fresh.runway, 'and no runway down a way out that is shut').toEqual({ ...runwayOf('hollow', false), out: 0 });
+  expect(fresh.darkness, 'a start no darker than the arrival').toBeLessThanOrEqual(ARRIVAL_DARK);
 
   // a lamp in the hollow, knocked over by driving onto it
   const lamp = 0;
@@ -140,6 +156,8 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   await play(page, 10, 'the way out opening');
   const opened = await page.evaluate(() => window.pushminer!.state());
   expect(opened.open, 'the way out is open').toBe(true);
+  expect(opened.runway, 'its runway lit as it opens').toEqual(runwayOf('hollow', true));
+  expect(opened.runway.out, 'a runway down the way out').toBeGreaterThan(0);
   expect(await page.evaluate(() => window.pushminer!.events()), 'the way out opened').toContain('exitOpened');
   const words = await screen(page);
   expect(words.note, 'the note says so').toBe('the way out is open');
@@ -160,6 +178,7 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   const reloaded = await page.evaluate(() => window.pushminer!.state());
   expect([reloaded.cave, reloaded.open], 'the way out is still open after a reload').toEqual(['hollow', true]);
   expect((await page.evaluate(() => window.pushminer!.content())).exit, 'and in the same place').toEqual(content.exit);
+  expect(reloaded.runway, 'and its runway lit again').toEqual(runwayOf('hollow', true));
 
   // driven down with the controls, from wherever the machine stands in the hollow: dark by how far down the
   // cutting, black at the leaving line
@@ -185,7 +204,7 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   });
   // after a reload the machine is where it comes in: dark at the outer end of the way in, and lightening along it
   const onFloor = dark.indexOf(0);
-  expect(dark[0], 'dark where the machine comes in').toBeGreaterThan(0.6);
+  expect(dark[0], 'dark where the machine comes in').toBeGreaterThan(ARRIVAL_DARK * 0.7);
   expect(onFloor, 'out into the light of the cave').toBeGreaterThan(0);
   for (let i = 1; i <= onFloor; i++) expect(dark[i], 'lighter the further in').toBeLessThanOrEqual(dark[i - 1]);
   const lastLight = dark.lastIndexOf(0);
@@ -196,8 +215,12 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
     expect(dark[i], 'darker the further down').toBeGreaterThanOrEqual(dark[i - 1]);
   expect(last.cave, 'on into the next cave').toBe('south-gallery');
   expect(last.open, 'its way out is shut').toBe(false);
+  expect(last.runway, 'the next cave’s way in is lit, and its way out dark').toEqual({
+    ...runwayOf('south-gallery', false),
+    out: 0,
+  });
   expect(last.dozer.speed, 'at the speed it had').toBeGreaterThan(speedBefore * 0.8);
-  expect(last.darkness, 'arrives in the dark').toBeGreaterThan(0.6);
+  expect(last.darkness, 'arrives in the dark').toBeGreaterThan(ARRIVAL_DARK * 0.7);
   expect((await screen(page)).fade, 'and the page is dark with it').toBeCloseTo(last.darkness, 2);
   expect((await screen(page)).map.opacity, 'and so is the map').toBeCloseTo(1 - last.darkness, 2);
   expect(await page.evaluate(() => window.pushminer!.invariants()), 'invariants on arriving').toEqual([]);
@@ -472,6 +495,8 @@ test('the end: the last cave, the Deep, cleared, and the vein runs', async ({ pa
   const end = await page.evaluate(() => window.pushminer!.state());
   expect(end.done, 'the game done').toBe(true);
   expect(end.open, 'no way out opened').toBe(false);
+  expect(end.runway, 'the last cave has its way in lit and no way out').toEqual({ ...runwayOf('deep', true), out: 0 });
+  expect(end.runway.in, 'a lit way in').toBeGreaterThan(0);
   expect(end.fountains, 'the vein').toBe(1);
   expect((await screen(page)).progress).toBe('the cave is cleared');
   await info.attach('done', { body: await page.screenshot(), contentType: 'image/png' });

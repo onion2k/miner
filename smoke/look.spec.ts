@@ -103,6 +103,22 @@ async function heart(page: Page): Promise<[number, number]> {
   });
 }
 
+/** A new game as it opens: at the dark outer end of the way in, the runway lit down it into the Hollow. */
+async function freshStart(page: Page, radius: number) {
+  await start(page, { seed: 11, paused: true });
+  const dark = await page.evaluate((radius) => {
+    const api = window.pushminer!;
+    api.pause();
+    api.step(30);
+    const { x, y, yaw } = api.state().dozer;
+    api.look(x + Math.cos(yaw) * 18, y + Math.sin(yaw) * 18, { azimuth: yaw + Math.PI, polar: 0.62, radius });
+    api.step(1);
+    return api.state().darkness;
+  }, radius);
+  expect(dark, 'dark, but no darker than the arrival').toBeGreaterThan(0.3);
+  await hideStats(page);
+}
+
 /** The cave as drawn, without the words over it. */
 const cave = (page: Page) => page.locator('#view');
 
@@ -405,7 +421,7 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
-  test('inside the cutting, with only the headlights', async ({ page }) => {
+  test('inside the cutting, its runway lit down it', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true, save: inCave('south-gallery', { open: true }) });
     const dark = await page.evaluate(() => {
@@ -424,6 +440,13 @@ test.describe('what it looks like', () => {
     expect(dark).toBeLessThan(0.7);
     await hideStats(page);
     await expect(page).toHaveScreenshot('cutting.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('a fresh start in the hollow, the runway leading in', async ({ page }) => {
+    const problems = watch(page);
+    await freshStart(page, 78);
+    await expect(page).toHaveScreenshot('fresh-start.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
@@ -495,6 +518,14 @@ test.describe('what it looks like on a phone', () => {
     await expect(page.locator('#minimap')).toBeVisible();
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone-warrens-map.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('a fresh start in the hollow, on a phone', async ({ page }) => {
+    const problems = watch(page);
+    await freshStart(page, 84);
+    await expect(page.locator('#pad')).toBeVisible();
+    await expect(page).toHaveScreenshot('phone-fresh-start.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 

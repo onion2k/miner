@@ -738,6 +738,10 @@ async function main() {
     calibration: () => calibration,
     setCoinDetail,
     lampsLit: () => lights.lampsLit,
+    runway: () => {
+      const lit = staticScene.features.filter((f) => f.beat === 'runway');
+      return { in: lit.filter((f) => f.cutting === 'in').length, out: lit.filter((f) => f.cutting === 'out').length };
+    },
     trackMarks: () => tracks.size,
     minimap: () => mapView,
     muted: () => sound.muted,
