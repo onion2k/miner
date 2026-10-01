@@ -1360,7 +1360,18 @@ merged and checked on Opus.
   share of nothing cannot pass it.
 - **Skipped by the user's choice:** the hour-long leaks run, the balance
   runs, and wide fuzz. The full check ran once, green.
-- **Open, a matter of taste:**
-  - the geode's glow, against its frame cost;
-  - the fungal caps reading paler than the mock;
-  - the low floor-edge puffs barely showing.
+- **The geode's glow and the fungus, turned up at the user's ask
+  (2026-10-01).** The cave has no ambient light, and the renderer cannot make
+  a surface glow without a light on it, so both were drowned by lamplight.
+  - **The Deep:** a lamp every 20 units across the hall's floor lit it
+    evenly. A new per-cave option, `floorLampSpacing`, defaulting to the old
+    spacing so every other cave keeps its lamps (a test holds that), puts the
+    Deep's at 40. Its floor is a darker slate. Twice as many crystals are lit
+    from inside, by lights that reach half as far, with bigger glows, and the
+    unlit crystals are brighter and glossier. Its frame from high went from
+    7.7 ms to 5.3, against the worst old cave's 5.9.
+  - **The Warrens:** more and bigger giant mushrooms (4 to 8 tall), plain caps
+    in hot magenta and purple, 60% of the giants glowing, brighter and with
+    bigger glows, lighter spore puffs, and floor lamps at 28. It now has 78
+    glowing caps, which `test/fungal.test.ts` holds as the count stands, since
+    the frame gate holds their cost. Its frame from high is 4.4 ms.

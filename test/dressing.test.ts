@@ -68,6 +68,15 @@ describe('lamp spacing and dressing', () => {
         );
   });
 
+  it('space the lamps across the open floor wider only in a cave that asks, and leave the rest as they were', () => {
+    const base = dressed(south).cave.lamps;
+    expect(digest(dressed({ ...south, floorLampSpacing: 20 }).cave.lamps)).toBe(digest(base));
+    const sparse = dressed({ ...south, floorLampSpacing: 40 }).cave.lamps;
+    expect(sparse.length).toBeLessThan(base.length);
+    // only the floor's own grid thins: every lamp left is one the cave had
+    for (const l of sparse) expect(base.some((b) => b.x === l.x && b.y === l.y)).toBe(true);
+  });
+
   it('stand fewer stones and plants for a lower share of dressing, and none for none', () => {
     const full = dressed(south).decor.props.length;
     expect(dressed({ ...south, dressing: 0.5 }).decor.props.length).toBeLessThan(full * 0.7);

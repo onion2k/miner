@@ -27,7 +27,7 @@ export const FUNGAL: Biome = {
   ],
   stone: { rock: [0.12, 0.08, 0.14], floor: [0.1, 0.07, 0.09] },
   lamp: [0.75, 1.0, 0.85],
-  lampBright: 0.55,
+  lampBright: 0.45,
   shape: { rough: 1.5, ledge: 0.7, beds: 0.15, top: 1.15 },
 };
 
@@ -46,16 +46,16 @@ export const FUNGAL_MESHES: Record<FungalPropKind, () => Mesh> = {
 
 /** The three colours a cap glows, so no cave of them reads as one lamp. */
 const GLOW: Rgb[] = [
-  [0.75, 0.4, 1.0],
-  [0.3, 1.0, 0.9],
-  [0.55, 1.0, 0.45],
+  [0.85, 0.3, 1.0],
+  [0.2, 1.0, 0.85],
+  [0.6, 1.0, 0.3],
 ];
 
 /** The cap's own colour for a glow: past one, so it reads as lit from inside. */
-const glowing = (c: Rgb): Rgb => [c[0] * 1.6, c[1] * 1.6, c[2] * 1.6];
+const glowing = (c: Rgb): Rgb => [c[0] * 2.6, c[1] * 2.6, c[2] * 2.6];
 
 /** The colour of a cap that does not glow: dull violets and browns, from a share. */
-const dull = (t: number): Rgb => [0.45 + t * 0.4, 0.15 + t * 0.12, 0.4 + t * 0.3];
+const dull = (t: number): Rgb => [0.75 + t * 0.25, 0.12 + t * 0.15, 0.55 + t * 0.25];
 
 /**
  * Fungal: tall mushrooms against the rock, some with a glowing cap that pulses; clusters of small ones at its
@@ -95,25 +95,25 @@ export function fungal(p: Place, r: number, props: Prop[], lights: FeatureLight[
       z: lz,
       colour,
       radius: 9 + big * 4,
-      intensity: 2.5 + big * 1.5,
+      intensity: 3.5 + big * 2,
       beat: 'pulse',
-      glow: 2 + big,
+      glow: 6 + big * 3,
       phase: h(2) * 6,
       biome: 'fungal',
     });
-  if (d >= 0.8 && d < 2.2 && r < 0.03 * w) {
+  if (d >= 0.8 && d < 2.2 && r < 0.05 * w) {
     // a giant, leaning a little away from the wall
-    const height = 3 + h(1) * 3,
-      radius = 1.3 + h(3) * 0.9,
+    const height = 4 + h(1) * 4,
+      radius = 1.8 + h(3) * 1.4,
       lean = (h(4) - 0.5) * 0.2;
-    const glow = h(5) < 0.45 ? GLOW[Math.floor(h(6) * 3) % 3] : null;
+    const glow = h(5) < 0.6 ? GLOW[Math.floor(h(6) * 3) % 3] : null;
     stem(x, y, z - 0.3, radius * 0.22, height, lean);
     cap(x, y, z - 0.3 + height, radius, glow ? glowing(glow) : dull(h(7)), h(8) * 6.3, glow ? 0.4 : 0.6);
     if (glow) light(x, y, z + height + 0.2, glow, 1);
-  } else if (d >= 0.8 && d < 2.0 && r < 0.065 * w) {
+  } else if (d >= 0.8 && d < 2.0 && r < 0.085 * w) {
     // a cluster of small ones, one of which may glow
     const n = 3 + Math.floor(h(1) * 3);
-    const glow = h(5) < 0.15 ? GLOW[Math.floor(h(6) * 3) % 3] : null;
+    const glow = h(5) < 0.3 ? GLOW[Math.floor(h(6) * 3) % 3] : null;
     for (let m = 0; m < n; m++) {
       const a = h(10 + m) * Math.PI * 2,
         out = h(20 + m) * 0.7;
@@ -156,7 +156,7 @@ export function fungal(p: Place, r: number, props: Prop[], lights: FeatureLight[
       yaw: h(3) * Math.PI * 2,
       tilt: 0,
       size: puff ? [size, size, size] : [size * 0.25, size * 0.25, size * 0.9],
-      colour: puff ? [0.4, 0.3, 0.45] : [0.3 + h(4) * 0.2, 0.18, 0.3],
+      colour: puff ? [0.75, 0.45, 0.95] : [0.55 + h(4) * 0.25, 0.2, 0.6],
       roughness: 0.9,
     });
   }

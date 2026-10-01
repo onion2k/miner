@@ -225,6 +225,12 @@ export interface CaveSpec {
    */
   lampSpacing?: number;
   /**
+   * How far apart the lamps across the open floor stand, if not the usual: a cave whose own glow is the
+   * point, crystals or glowing caps, is lit more sparsely between them, or its lamps light the floor
+   * so evenly that nothing of its own can be seen to glow.
+   */
+  floorLampSpacing?: number;
+  /**
    * How many steps of a sixtieth of a second the heaps are let fall and settle before anyone sees the cave; left
    * out, `SETTLE_STEPS`. The physics is the same steps whichever way they are split, so a heap at rest is the
    * same heap: a cave with a great many bodies takes fewer here, and the rest of the settling is done in the
@@ -757,7 +763,7 @@ function placeLamps(cells: Uint8Array, spec: CaveSpec, grid: Grid): Lamp[] {
   }
   // and across the middle of the floor, on a grid, so nowhere is out of reach of one: not in a heap,
   // on a belt, by a hole, or on or beside anything that comes down or opens
-  const step = Math.round(FLOOR_LAMP_SPACING / TILE);
+  const step = Math.round((spec.floorLampSpacing ?? FLOOR_LAMP_SPACING) / TILE);
   for (let ty = 1; ty < rows - 1; ty++) {
     for (let tx = 1; tx < cols - 1; tx++) {
       if ((tx - cols / 2) % step !== 0 || (ty - rows / 2) % step !== 0) continue;

@@ -14,9 +14,9 @@ import type { Samples } from './terrain';
 export const GEODE: Biome = {
   name: 'geode',
   floor: [
-    [0.07, 0.065, 0.09, 0.6],
-    [0.09, 0.08, 0.12, 0.5],
-    [0.12, 0.1, 0.16, 0.45],
+    [0.04, 0.036, 0.055, 0.6],
+    [0.055, 0.048, 0.075, 0.5],
+    [0.07, 0.06, 0.095, 0.45],
     // the foot: crystal grit against the rock
     [0.05, 0.045, 0.07, 0.6],
   ],
@@ -27,7 +27,7 @@ export const GEODE: Biome = {
   ],
   stone: { rock: [0.25, 0.12, 0.35], floor: [0.12, 0.1, 0.16] },
   lamp: [1.0, 0.75, 1.0],
-  lampBright: 0.6,
+  lampBright: 0.32,
   shape: { rough: 0.6, ledge: 0.9, beds: 0.1, top: 1.25 },
 };
 
@@ -93,9 +93,9 @@ export const GEODE_MESHES: Record<GeodePropKind, () => Mesh> = {
 
 /** The colours a crystal can be: a pale one, a violet and a magenta, and the lit of each (past 1, so the light seems to come from inside). */
 const DULL: Rgb[] = [
-  [0.16, 0.07, 0.28],
-  [0.22, 0.09, 0.34],
-  [0.14, 0.08, 0.3],
+  [0.34, 0.12, 0.6],
+  [0.45, 0.15, 0.7],
+  [0.28, 0.14, 0.62],
 ];
 const LIT: Rgb[] = [
   [3.2, 0.7, 3.0],
@@ -121,7 +121,7 @@ export function geode(p: Place, r: number, props: Prop[], lights: FeatureLight[]
   const pick = (v: number) => Math.min(2, Math.floor(v * 3));
   if (d >= 1.0 && d < 2.8 && r < 0.12 * w) {
     // a cluster: rooted a little inside the rock face, its crystals reaching out of it
-    const lit = h(1) < 0.09,
+    const lit = h(1) < 0.18,
       c = pick(h(2)),
       size = 1.3 + h(3) * 1.1;
     props.push({
@@ -138,7 +138,7 @@ export function geode(p: Place, r: number, props: Prop[], lights: FeatureLight[]
     if (lit) light(p, x + p.nx * -0.5, y + p.ny * -0.5, z + 1.2, c, 0.6, 'pulse', lights);
   } else if (d >= 1.6 && d < 3.4 && r >= 0.12 * w && r < 0.19 * w) {
     // a spire, standing against the rock
-    const lit = h(1) < 0.09,
+    const lit = h(1) < 0.18,
       c = pick(h(2)),
       width = 0.7 + h(3) * 0.5,
       height = 2.5 + h(4) * 2.5;
@@ -202,10 +202,10 @@ function light(
     y,
     z,
     colour: GLOW[c],
-    radius: 14 * scale + 4,
-    intensity: 7 * scale + 2,
+    radius: 7 * scale + 3,
+    intensity: 6 * scale + 3,
     beat,
-    glow: 6 * scale + 2,
+    glow: 14 * scale + 6,
     phase: p.h(8) * 6,
     biome: 'geode',
   });

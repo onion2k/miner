@@ -23,7 +23,10 @@ describe('the fungal biome', () => {
 
   it('lights it with a few fungal pulses, in more than one colour', () => {
     expect(decor.lights.length).toBeGreaterThan(5);
-    expect(decor.lights.length).toBeLessThanOrEqual(50);
+    // 78 glowing caps, as the cave is laid since the caps were made to stand out: what they cost is the frame
+    // gate's to hold (the page lights the nearest 48 at once), and this holds the count as it is, so a change
+    // that adds caps is seen and written again here
+    expect(decor.lights.length).toBeLessThanOrEqual(78);
     for (const l of decor.lights) {
       expect(l.biome).toBe('fungal');
       expect(l.beat).toBe('pulse');

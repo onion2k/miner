@@ -525,6 +525,8 @@ const warrens = (() => {
     cracks: [p.spot(-88, -56), p.spot(88, -88), p.spot(196, 8)],
     belts: [],
     lampSpacing: 18,
+    // its glowing caps want the dark between them
+    floorLampSpacing: 28,
     dressing: 0.6,
     entry: p.cutting(-36, -16, -26, -13, [-1, 0]),
     exit: p.cutting(64, -24, 78, -21, [1, 0]),
@@ -803,6 +805,8 @@ const deep = (() => {
     // at the usual spacing, and a frame over a third heavier to draw from high up; at these it draws no heavier than the East
     // Gallery does (see `smoke/budgets.spec.ts`), and keeps its neon, which goes from the future altogether below a share of 0.35
     lampSpacing: 26,
+    // the crystals' own glow is the point of the Deep, so the hall is lit sparsely between them
+    floorLampSpacing: 40,
     dressing: 0.4,
   } satisfies CaveSpec;
 })();
