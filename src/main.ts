@@ -239,6 +239,15 @@ async function main() {
       const near = Math.max(0, 1 - Math.hypot(b.x - game.dozer.x, b.y - game.dozer.y) / 80);
       blastShake = Math.max(blastShake, near);
     },
+    geodeCracked(x, y, gems) {
+      log(`geodeCracked ${x.toFixed(1)},${y.toFixed(1)} ${gems}`);
+      emit(fx.geodeShards(x, y));
+      sound.geode();
+      hud.note(
+        gems ? `a geode cracks open · ${gems} ${gems === 1 ? 'gem' : 'gems'}` : 'a geode cracks open · empty',
+        3,
+      );
+    },
     crack: () => sound.crack(),
     done() {
       log('done');

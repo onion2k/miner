@@ -126,6 +126,14 @@ const hollow = (() => {
     walls: [],
     stashes: [],
     barrels: 3,
+    geodes: {
+      count: 1,
+      holds: [
+        [1, 3],
+        [2, 2],
+        [3, 1],
+      ],
+    },
   } satisfies CaveSpec;
 })();
 
@@ -215,6 +223,14 @@ const southGallery = (() => {
     walls: [cellar.wall],
     stashes: [cellar.stash],
     barrels: 5,
+    geodes: {
+      count: 2,
+      holds: [
+        [1, 2],
+        [2, 2],
+        [3, 2],
+      ],
+    },
   } satisfies CaveSpec;
 })();
 
@@ -313,6 +329,14 @@ const eastGallery = (() => {
     walls: [annex.wall],
     stashes: [annex.stash],
     barrels: 5,
+    geodes: {
+      count: 2,
+      holds: [
+        [1, 2],
+        [2, 2],
+        [3, 3],
+      ],
+    },
   } satisfies CaveSpec;
 })();
 
@@ -404,6 +428,15 @@ const northVault = (() => {
     walls: [loft.wall],
     stashes: [loft.stash],
     barrels: 5,
+    geodes: {
+      count: 3,
+      holds: [
+        [1, 2],
+        [2, 2],
+        [3, 1],
+        [4, 1],
+      ],
+    },
   } satisfies CaveSpec;
 })();
 
@@ -546,6 +579,15 @@ const warrens = (() => {
     walls: [room.wall],
     stashes: [room.stash],
     barrels: 5,
+    geodes: {
+      count: 2,
+      holds: [
+        [1, 3],
+        [2, 2],
+        [3, 1],
+        [4, 1],
+      ],
+    },
   } satisfies CaveSpec;
 })();
 
@@ -640,6 +682,15 @@ const westGallery = (() => {
     walls: [annex.wall],
     stashes: [annex.stash],
     barrels: 5,
+    geodes: {
+      count: 3,
+      holds: [
+        [1, 3],
+        [2, 3],
+        [3, 2],
+        [4, 1],
+      ],
+    },
   } satisfies CaveSpec;
 })();
 
@@ -798,6 +849,15 @@ const deep = (() => {
     walls: [vault.wall],
     stashes: [vault.stash],
     barrels: 6,
+    geodes: {
+      count: 4,
+      holds: [
+        [1, 5],
+        [2, 4],
+        [3, 4],
+        [4, 3],
+      ],
+    },
     // twice the bodies of the East Gallery: the rest of the settling is done in the frames after, and the heaps are far
     // down the way in from where the machine arrives
     settle: 45,

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCave } from '../../src/cave';
 import { Economy, memoryStore, sourcesOf } from '../../src/economy';
 import { Game } from '../../src/game';
-import { BARREL_KIND, KINDS } from '../../src/physics';
+import { BARREL_KIND, GEODE_KIND, KINDS } from '../../src/physics';
 import { VEIN_ROOM, capacityOf, treasureHeap } from '../../src/stock';
 import { layBricks } from '../../src/walls';
 import { RUN, specOf } from '../helpers';
@@ -23,6 +23,8 @@ function held(id: string) {
   for (const s of spec.secrets) add(s.loot.coins, s.loot.gems);
   for (const s of spec.stashes) add(s.loot.coins, s.loot.gems);
   for (const w of spec.walls) add(0, w.treasure);
+  // every geode cracked
+  for (let g = 0; g < (spec.geodes?.count ?? 0); g++) add(0, spec.geodes!.holds);
   return kinds;
 }
 
@@ -47,6 +49,10 @@ describe('a cave at capacity', () => {
         for (const b of layBricks(cave, k)) if (game.stock.spawnBrick(0, b.x, b.y, b.z) < 0) refused++;
       });
       expect(refused, `${id} bricks with no room`).toBe(0);
+      // and every geode cracked, its gems over and above all of that
+      expect(game.stock.kinds[GEODE_KIND], `${id} geodes standing`).toBe(cave.geodes.length);
+      for (const g of cave.geodes) game.crackGeodes({ x: g.x, y: g.y, z: 1 });
+      expect(game.stock.kinds[GEODE_KIND], `${id} geodes left`).toBe(0);
       const kinds = held(id);
       for (let k = 0; k < 6; k++) expect(game.stock.kinds[k], `${id} kind ${k} in the world`).toBe(kinds[k]);
       expect(game.world.live).toBeLessThanOrEqual(capacityOf(spec).bodies);

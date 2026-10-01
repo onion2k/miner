@@ -204,7 +204,8 @@ describe('saves from every shape the game has written', () => {
         expect(save.cave, 'the cave it lands in').toBe(want.cave);
         expect(save.open).toBe(want.open);
         const spec = specOf(want.cave);
-        const sources = 1 + spec.secrets.length + spec.stashes.length + spec.walls.length;
+        // the cave, its chambers, side rooms and walls, and last the gems of its geodes
+        const sources = 1 + spec.secrets.length + spec.stashes.length + spec.walls.length + (spec.geodes ? 1 : 0);
         expect(save.left, 'one row a source of the cave').toHaveLength(sources);
         expect(save.left[0], 'what was left of the room is what is left of the cave').toEqual(want.left);
         expect(save.belts).toEqual(want.belts);
@@ -259,7 +260,9 @@ describe('saves from every shape the game has written', () => {
         expect(after.secrets).toEqual(before.secrets);
         expect(after.walls).toEqual(before.walls);
         expect(after.scoop).toBe(before.scoop);
-        expect(after.geodes).toEqual(before.geodes);
+        // a save with its geodes where they lay has them there again; one from before them has them where they start
+        if (before.geodes) expect(after.geodes).toEqual(before.geodes);
+        else expect(after.geodes).toHaveLength(caveOf(before.cave).geodes.length * 3);
         expect(after.drained).toBe(before.drained);
       });
     });

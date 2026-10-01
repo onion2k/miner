@@ -14,7 +14,9 @@ import { BLADE_AT, BLADE_HEIGHT, BLADE_RISE, Dozer, TRACK_GAUGE, WING_SWEEP, bla
 import { SceneLights } from '../src/lighting';
 import { ANCHORS, ENVELOPE, TRIANGLE_BUDGET, bladeMesh, machineMeshes, scoopMesh } from '../src/machine';
 import { MOUTH_DEEP, seat } from '../src/scoop';
-import { makeWorld } from '../src/physics';
+import { GEODE_KIND, makeWorld } from '../src/physics';
+import { GEODE_COLOUR } from '../src/palette';
+import { PATTERN_STRIDE } from 'artshape-render/game/renderer';
 import { DynamicScene } from '../src/scene-dynamic';
 import { PAINTS } from '../src/economy';
 import { runCapacity } from '../src/stock';
@@ -184,6 +186,40 @@ describe('the dynamic scene’s machines', () => {
     for (const part of ['paint', 'dark', 'metal', 'glass'] as const) {
       const shared = meshes.some((m) => m === parts[part] || m.indices.length >= parts[part].indices.length);
       expect(shared, `drones carry the ${part}`).toBe(true);
+    }
+  });
+});
+
+describe('the geode as drawn', () => {
+  it('has veins of crystal across its stone, the same on every one, so it is told from rubble and rock', () => {
+    const scene = new DynamicScene(
+      { setDynamic: () => undefined, move: () => undefined, tint: () => undefined },
+      {
+        bodyCapacity: runCapacity(RUN).bodies,
+        kindCapacity: runCapacity(RUN).kinds,
+        belts: [],
+        bots: 0,
+        botScale: BOT_SCALE,
+        botBladeWidth: BOT_SPEC.bladeWidth,
+        bladeWidth: 6.5,
+        paint: PAINTS[0],
+        trackPages: [],
+      },
+    );
+    const group = scene.groups[scene.geodesGroup];
+    const places = group.matrices.length / 16;
+    expect(places).toBeGreaterThanOrEqual(runCapacity(RUN).kinds[GEODE_KIND]);
+    const patterns = group.patterns!;
+    expect(patterns, 'a pattern for every geode there is room for').toHaveLength(places * PATTERN_STRIDE);
+    for (let i = 0; i < places; i++) {
+      const at = patterns.subarray(i * PATTERN_STRIDE, (i + 1) * PATTERN_STRIDE);
+      expect(at[0], 'marbling: thin veins').toBe(3);
+      expect(at[1], 'a few veins across a stone its size').toBeGreaterThan(0);
+      // the same seed on each: a geode's place in the group moves up when one before it cracks, and its veins must not change with it
+      expect(at[2]).toBe(patterns[2]);
+      const vein = [...at.subarray(4, 7)];
+      vein.forEach((c, k) => expect(c, 'brighter than the stone').toBeGreaterThan(GEODE_COLOUR[k]));
+      expect(vein[2], 'violet: more blue than green').toBeGreaterThan(vein[1]);
     }
   });
 });

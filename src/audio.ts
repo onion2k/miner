@@ -317,6 +317,38 @@ export class Sound {
     boom.stop(now + 1.4);
   }
 
+  /** A geode cracking open: a dry crack of stone, and a handful of bright high notes, a gem each, falling over one another. */
+  geode() {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.25, ctx.sampleRate);
+    const d = buffer.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 5);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 900;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.7;
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(now);
+    for (let k = 0; k < 4; k++) {
+      const osc = ctx.createOscillator(),
+        g = ctx.createGain(),
+        at = now + 0.05 + k * 0.07;
+      osc.type = 'triangle';
+      osc.frequency.value = [1568, 2093, 1760, 2637][k];
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(0.12, at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 0.5);
+      osc.connect(g).connect(this.master);
+      osc.start(at);
+      osc.stop(at + 0.55);
+    }
+  }
+
   /** The air horn: two notes a fourth apart, through a resonant filter, held for half a second. */
   horn() {
     const ctx = this.ctx;

@@ -355,7 +355,7 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
       expect(s.barrels).toBeNull();
       expect(s.geodes).toBeNull();
       expect(s.drained).toBe(0);
-      expect(s.left).toHaveLength(1 + east.secrets.length + east.stashes.length + east.walls.length);
+      expect(s.left).toHaveLength(1 + east.secrets.length + east.stashes.length + east.walls.length + 1);
       expect(s.left.every((row) => row.length === 0)).toBe(true);
       // and the next game is whole: its heaps, its barrels, nothing lost from before
       const next = onward(game, economy, RUN, events);

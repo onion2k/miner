@@ -334,11 +334,14 @@ describe('the sources', () => {
   it('number the cave first, then its chambers, side rooms and walls', () => {
     for (const spec of RUN) {
       const sources = sourcesOf(spec);
-      expect(sources.count, spec.id).toBe(1 + spec.secrets.length + spec.stashes.length + spec.walls.length);
+      const walled = 1 + spec.secrets.length + spec.stashes.length + spec.walls.length;
+      // the geodes' gems are the last source, so nothing numbered before they were added has moved
+      expect(sources.count, spec.id).toBe(walled + (spec.geodes ? 1 : 0));
+      expect(sources.geodes(), spec.id).toBe(spec.geodes ? walled : -1);
       spec.secrets.forEach((_, k) => expect(sources.chamber(k)).toBe(1 + k));
       spec.stashes.forEach((_, k) => expect(sources.stash(k)).toBe(1 + spec.secrets.length + k));
       spec.walls.forEach((_, k) => expect(sources.wall(k)).toBe(1 + spec.secrets.length + spec.stashes.length + k));
-      if (spec.walls.length) expect(sources.wall(spec.walls.length - 1)).toBe(sources.count - 1);
+      if (spec.walls.length) expect(sources.wall(spec.walls.length - 1)).toBe(walled - 1);
     }
   });
 

@@ -16,7 +16,7 @@
 import { EXIT, TILE } from './cave';
 import { CLEAR_SHARE, FORMER_LAST, SCOOP_SIZES } from './economy';
 import type { Game } from './game';
-import { BARREL_KIND, KINDS, KIND_NAME, KIND_VALUE } from './physics';
+import { BARREL_KIND, GEODE_KIND, KINDS, KIND_NAME, KIND_VALUE } from './physics';
 import { NO_SOURCE } from './stock';
 
 /** How many broken rules of one sort are reported before the rest are only counted. */
@@ -98,6 +98,18 @@ export function checkInvariants(game: Game): string[] {
     if (world.alive[i] && world.carried[i] && !holds.has(i))
       misheld.push(`${at(i)} is carried, and the scoop does not hold it`);
   report('the scoop', misheld);
+
+  // a whole geode is of no source, and the source of the geodes' gems holds gems and nothing else
+  const geodeSource = sources.geodes();
+  const strange: string[] = [];
+  for (let i = 0; i < world.count; i++)
+    if (world.alive[i] && world.kind[i] === GEODE_KIND && stock.origin[i] !== NO_SOURCE)
+      strange.push(`${at(i)} is from source ${stock.origin[i]}`);
+  if (geodeSource >= 0)
+    for (let k = 0; k < KINDS; k++)
+      if ((k === 0 || k >= KINDS - 3) && bySource[geodeSource][k])
+        strange.push(`the geodes' gems include ${bySource[geodeSource][k]} ${KIND_NAME[k]}`);
+  report('a geode', strange);
 
   // the barrels' fuses are on barrels
   const badFuses = barrels.lit.filter((i) => !world.alive[i] || world.kind[i] !== BARREL_KIND).map((i) => `slot ${i}`);

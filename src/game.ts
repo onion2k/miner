@@ -23,6 +23,7 @@ import {
   type Cave,
 } from './cave';
 import { Barrels, type Blast } from './barrels';
+import { cracked, scatter } from './geode-stones';
 import { BLADE_AT, Dozer, separate } from './dozer';
 import { CLEAR_SHARE, Economy, WALL_STRENGTH } from './economy';
 import { Impacts } from './impacts';
@@ -30,7 +31,7 @@ import type { Drive } from './input';
 import { lampOn, lampsHit } from './lamps';
 import { Nav } from './nav';
 import { Scoop } from './scoop';
-import { BARREL_KIND, BRICK_KIND, KIND_RADIUS, makeWorld, type Pusher, type World } from './physics';
+import { BARREL_KIND, BRICK_KIND, GEODE_KIND, KIND_RADIUS, makeWorld, type Pusher, type World } from './physics';
 import { NO_SOURCE, Stock, capacityOf, lootHeap, type Capacity } from './stock';
 import { Tally } from './tally';
 import { BOT_SCALE, BOT_SPEC, Bot, Foreman, Fountain, beltOf } from './tools';
@@ -71,6 +72,8 @@ export interface GameEvents {
   scooped?(count: number): void;
   /** The scoop tipped out `count` bodies. */
   tipped?(count: number): void;
+  /** A geode cracked open by a blast, at (x, y), and the number of gems thrown out of it. */
+  geodeCracked?(x: number, y: number, gems: number): void;
   /** A crack in the last cave's floor, before it sprays. */
   crack?(): void;
   /** The last cave cleared: the game is done. */
@@ -287,7 +290,11 @@ export class Game {
     // the coins, and the barrels going off among them
     world.step(dt, (kind, x, y, i) => this.collect(kind, x, y, i));
     this.tally.fade(dt);
-    for (const blast of this.barrels.update(dt, (i) => this.stock.removeBarrel(i))) this.events.blast?.(blast);
+    for (const blast of this.barrels.update(dt, (i) => this.stock.removeBarrel(i))) {
+      this.events.blast?.(blast);
+      // after the blast has thrown what it threw, so the gems that come out of a geode are thrown by the geode alone
+      this.crackGeodes(blast);
+    }
 
     // enough of the cave banked, its way out opens; through the way out, the cave is left behind
     if (economy.bank !== this.lastBank) {
@@ -333,12 +340,38 @@ export class Game {
     }
   }
 
-  /** Where every brick and barrel lies, into the save; it goes out with the next thing banked, or `persist`. */
+  /**
+   * The geodes a blast reaches cracked open: each removed, and the gems it held spawned where it stood, thrown
+   * out, from the cave's geodes' source so they pay but never count toward clearing the cave. How many cracked.
+   */
+  crackGeodes(blast: { x: number; y: number; z: number }): number {
+    const { world, stock, cave } = this;
+    const from = this.economy.sources.geodes();
+    const holds = cave.spec.geodes?.holds ?? [];
+    const slots = cracked(blast, world);
+    for (const i of slots) {
+      const x = world.x[i],
+        y = world.y[i],
+        z = world.z[i];
+      stock.removeGeode(i);
+      let thrown = 0;
+      if (from >= 0) {
+        for (const p of scatter(holds, x, y, z, Math.round(x * 10) + Math.round(y * 10) * 977)) {
+          if (stock.spawn(p.kind, p.x, p.y, p.z, p.vx, p.vy, p.vz, from)) thrown++;
+        }
+      }
+      this.events.geodeCracked?.(x, y, thrown);
+    }
+    return slots.length;
+  }
+
+  /** Where every brick, barrel and geode lies, into the save; it goes out with the next thing banked, or `persist`. */
   record() {
     if (this.left) return;
     const save = this.economy.save;
     save.rubble = this.stock.rubble();
     save.barrels = this.stock.barrelRecord();
+    save.geodes = this.stock.geodeRecord();
   }
 
   /** The save written now, with everything where it is: not from a game that has been left, whose bodies are of a cave the save is no longer in. */
@@ -352,8 +385,8 @@ export class Game {
   private collect(kind: number, x: number, y: number, i: number) {
     if (kind === BARREL_KIND) this.barrels.forget(i);
     const value = this.stock.collect(kind, i);
-    // a brick or a barrel down the hole is only gone: nothing banked, and nothing to show for it
-    if (kind === BRICK_KIND || kind === BARREL_KIND) return;
+    // a brick, a barrel or a whole geode down the hole is only gone: nothing banked, and nothing to show for it
+    if (kind === BRICK_KIND || kind === BARREL_KIND || kind === GEODE_KIND) return;
     this.economy.deposit(value);
     const hole = this.cave.holes.indexOf(nearestHole(this.cave.holes, x, y));
     const heat = this.tally.add(kind, hole);

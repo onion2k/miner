@@ -14,10 +14,10 @@ import { TILE, type Grid, type HoleSpec } from './cave';
 
 export { World, type Belt, type Pusher } from 'artshape-physics/world';
 
-export const KIND_VALUE = [1, 10, 25, 40, 100, 250, 0, 0];
-/** Collision radius per kind: coin, ruby, emerald, sapphire, diamond, gold bar, brick, barrel. */
-export const KIND_RADIUS = [0.42, 1.0, 1.0, 1.0, 1.15, 0.8, 0.75, 1.05];
-export const KIND_NAME = ['coin', 'ruby', 'emerald', 'sapphire', 'diamond', 'gold bar', 'brick', 'barrel'];
+export const KIND_VALUE = [1, 10, 25, 40, 100, 250, 0, 0, 0];
+/** Collision radius per kind: coin, ruby, emerald, sapphire, diamond, gold bar, brick, barrel, geode. */
+export const KIND_RADIUS = [0.42, 1.0, 1.0, 1.0, 1.15, 0.8, 0.75, 1.05, 1.6];
+export const KIND_NAME = ['coin', 'ruby', 'emerald', 'sapphire', 'diamond', 'gold bar', 'brick', 'barrel', 'geode'];
 /** How many kinds of thing there are to push. */
 export const KINDS = KIND_VALUE.length;
 /** The gold bar, found only in the hidden chambers and the side rooms. */
@@ -26,6 +26,8 @@ export const BAR = 5;
 export const BRICK_KIND = 6;
 /** A barrel that goes off: pushed about like anything else, worth nothing. See `barrels.ts`. */
 export const BARREL_KIND = 7;
+/** A boulder worth nothing whole, cracked into gems by a barrel's blast. See `geode-stones.ts`. (The Deep's biome is also called geode.) */
+export const GEODE_KIND = 8;
 
 /**
  * The cave as it was on artshape-physics 0.1.0, where the game was tuned. Since

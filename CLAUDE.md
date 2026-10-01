@@ -56,9 +56,13 @@ the game to whatever it happened to draw that day.
 
 What to copy the shape of, when building something new:
 
-- **In the cave:** barrels, walls, hidden chambers and lamps. Each has its
-  unit tests in `test/`, a step in `smoke/progress.spec.ts`, a fuzzer action
-  and a picture.
+- **In the cave:** barrels, geodes, walls, hidden chambers and lamps. Each has
+  its unit tests in `test/`, a step in `smoke/progress.spec.ts`, a fuzzer
+  action and a picture. A geode (`GEODE_KIND`, `src/geode-stones.ts`, tests in
+  `test/geode-stones.test.ts`: 'geode' is also a biome) is the model for a new
+  body kind that is `NO_SOURCE` and spawns others: it needs `spawn…`/`remove…`/
+  `…Record` in `stock.ts`, a `capacityOf` entry, a case in `Stock.collect` and
+  `Game.collect`, a place in `scene-dynamic.ts` and a source of its own, last.
 - **A workshop action worked by a button:** the scoop (`src/scoop.ts`, headless;
   `test/scoop.test.ts`), through the horn's road end to end: a key in
   `input.ts`, `Controls` into `Game.step`, a pad button in `hud.ts` and
@@ -134,7 +138,9 @@ For anything new in the cave, check what it does:
 - **drones:** pushed by one, or targeted by the foreman
 - **other features:** blasts, the horn, belts, the magnet, brick walls and rubble,
   hidden chambers, lamps, the scoop (a body held in it is carried: skipped, never
-  banked, never in the rock, counted lost on leaving, and back in its heap on a reload)
+  banked, never in the rock, counted lost on leaving, and back in its heap on a reload),
+  geodes (a blast cracks one within `CRACK_RADIUS`; its gems are a bonus source,
+  never toward `CLEAR_SHARE`)
 - **rock:** against walls and in corridors; never left in rock
 - **caves:** in every cave and biome, the hollow included, and the last, which has no way out
 - **scale:** many at once, chains, at capacity (`KIND_CAPACITY`)

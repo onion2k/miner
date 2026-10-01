@@ -58,6 +58,21 @@ describe('the invariants of a run', () => {
     expect(said).toContain('down the drains: -1');
   });
 
+  it('notice a geode that is from a source, and a coin in the geodes’ gems', () => {
+    withSeed(3, () => {
+      const game = gameIn('hollow');
+      const g = game.stock.spawnGeode(-10, -26);
+      expect(checkInvariants(game)).toEqual([]);
+      game.stock.origin[g] = 0;
+      expect(checkInvariants(game).join('\n')).toContain('a geode');
+      game.stock.origin[g] = 255;
+      // a coin counted to the geodes' source, as if it had been thrown out of one
+      const from = game.economy.sources.geodes();
+      expect(game.stock.spawn(0, -10, -30, 1, 0, 0, 0, from)).toBe(true);
+      expect(checkInvariants(game).join('\n')).toContain("the geodes' gems include 1 coin");
+    });
+  });
+
   it('notice a lamp broken that the cave has not', () => {
     const game = gameIn('hollow');
     game.economy.save.lampsBroken.push(game.cave.lamps.length);

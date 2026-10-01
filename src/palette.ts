@@ -5,7 +5,7 @@
  *
  * Colours are linear RGB; where a fourth number follows, it is roughness.
  */
-import { BAR, BARREL_KIND, BRICK_KIND } from './physics';
+import { BAR, BARREL_KIND, BRICK_KIND, GEODE_KIND } from './physics';
 
 export type Rgb = [number, number, number];
 
@@ -44,11 +44,17 @@ export const ROCK_TONES = [
 /** The colour of the floor where a track has pressed it down. */
 export const TRACK_MARK: Rgb = [0.185, 0.13, 0.08];
 
-/** The colour a kind of thing is, loose: a coin, a gem, a gold bar, a clay brick, a barrel. Every kind has one. */
+/** A geode's rough outside: a dull stone with a little violet in it, to say that it is not a plain rock. */
+export const GEODE_COLOUR: Rgb = [0.36, 0.27, 0.44];
+/** The veins of crystal across it: amethyst, and bright enough to catch the headlights before the stone does. */
+export const GEODE_VEIN: Rgb = [0.8, 0.38, 1.35];
+
+/** The colour a kind of thing is, loose: a coin, a gem, a gold bar, a clay brick, a barrel, a geode. Every kind has one. */
 export function kindColour(kind: number): Rgb {
   if (kind === 0) return COIN_COLOUR;
   if (kind === BAR) return BAR_COLOUR;
   if (kind === BRICK_KIND) return WALL_COLOUR[1].slice(0, 3) as Rgb;
   if (kind === BARREL_KIND) return BARREL_COLOUR;
+  if (kind === GEODE_KIND) return GEODE_COLOUR;
   return GEM_ALBEDO[kind] ?? COIN_COLOUR;
 }

@@ -12,8 +12,10 @@ import { KINDS, KIND_VALUE } from './physics';
 /**
  * Where a body came from, for what is left of it: the cave itself, by 0; then
  * its hidden chambers; then the stashes behind brick walls, side rooms
- * and pens; then the walls, for the treasure set in them. Everything after
- * the cave is kept apart from it so it never counts toward clearing it.
+ * and pens; then the walls, for the treasure set in them; and last, for a cave with geodes,
+ * the gems cracked out of them. Everything after the cave is kept apart from it so it
+ * never counts toward clearing it, and the geodes' is last so that no number already
+ * given out, in a save, moves for it.
  */
 export interface Sources {
   /** How many sources a cave has: the cave, and every chamber, side room and wall. */
@@ -21,16 +23,20 @@ export interface Sources {
   chamber(k: number): number;
   stash(k: number): number;
   wall(w: number): number;
+  /** The gems out of the cave's geodes: the last source, or -1 for a cave with no geodes. */
+  geodes(): number;
 }
 
 /** The sources of a cave, numbered as above. */
 export function sourcesOf(spec: CaveSpec): Sources {
   const { secrets, stashes, walls } = spec;
+  const walled = 1 + secrets.length + stashes.length + walls.length;
   return {
-    count: 1 + secrets.length + stashes.length + walls.length,
+    count: walled + (spec.geodes ? 1 : 0),
     chamber: (k) => 1 + k,
     stash: (k) => 1 + secrets.length + k,
     wall: (w) => 1 + secrets.length + stashes.length + w,
+    geodes: () => (spec.geodes ? walled : -1),
   };
 }
 
@@ -364,6 +370,8 @@ export class Economy {
     Object.assign(save, fresh, {
       open: s.open === true && cave !== this.run[this.run.length - 1],
       belts: (Array.isArray(s.belts) ? s.belts : []).filter((id) => cave.belts.some((b) => b.id === id)),
+      // a row for each source of the cave, so a save from before the geodes' source, one row short, keeps every row it
+      // had and gets an empty one for it at the end
       left: fresh.left.map((_, k) => numbers((Array.isArray(s.left) ? s.left : [])[k])),
       secrets: cave.secrets.map((_, k) => (s.secrets as unknown[] | undefined)?.[k] === true),
       walls: cave.walls.map((_, w) => (s.walls as unknown[] | undefined)?.[w] === true),

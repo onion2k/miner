@@ -362,7 +362,10 @@ not, and the frame is measured before and after.
 - [x] C scoop: landed. Loads 12, 24 and 40 at 250, 700 and 1600. A full scoop of 24 reaches the engine's top of 11
       where the same pile pushed reaches 9.65. Space is in the line of keys once a scoop is owned. The full check
       green; the three workshop pictures written again for the new row, and nothing else moved.
-- [ ] B geodes
+- [x] B geodes: landed. Radius 1.6, cracked within 8 of a blast; one in the hollow, two or three in the caves
+      between and four in the deep, each worth about a twentieth of its cave. Veined in violet, chosen from the
+      picture. The full check green; the balance baseline written again (within tolerance, the caves have
+      geodes in the way and the seeded stream is shifted), and ten pictures written again for a geode in view.
 - [ ] A1 currents and drains
 - [x] R0 mock chosen (2026-10-01): water A, ripples that glint, with B's foam at the banks; lava A, crust
       over glowing cracks; ice A, a frosted slide with snow drifting. The mock is `docs/plans/currents-mock.html`.

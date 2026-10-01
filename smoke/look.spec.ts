@@ -467,6 +467,65 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  test('geode stone, in the headlights beside a barrel', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page);
+    const geode = await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      api.step(120);
+      const g = api.content().geodes[0];
+      // a barrel set down beside it, and the machine backed off so that its lights fall on the pair
+      api.place(api.bodies('barrel')[0].slot, g.x + 5, g.y - 3, 1.1);
+      api.teleport(g.x - 15, g.y - 2, 0.12);
+      api.step(60);
+      return g;
+    });
+    await page.evaluate(
+      ([x, y]) => {
+        const api = window.pushminer!;
+        api.look(x + 2, y, { azimuth: 0.5, polar: 1.0, radius: 30 });
+        api.step(1);
+      },
+      [geode.x, geode.y],
+    );
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('geode-stone.png', CANVAS_ONLY);
+    expect(problems).toEqual([]);
+  });
+
+  test('geode stone, cracked open and mid-crack', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page);
+    const geode = await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      api.step(120);
+      const g = api.content().geodes[0];
+      api.place(api.bodies('barrel')[0].slot, g.x + 4, g.y - 2, 1.1);
+      api.teleport(g.x - 20, g.y - 2, 0.12);
+      api.step(30);
+      api.lightBarrel(api.bodies('barrel')[0].slot, 0.05);
+      return g;
+    });
+    await page.evaluate(
+      ([x, y]) => {
+        const api = window.pushminer!;
+        // the fuse burns out, the geode is gone, and the picture is taken while its gems are still in the air
+        api.step(14);
+        api.look(x, y, { azimuth: 0.5, polar: 1.0, radius: 30 });
+        api.step(1);
+      },
+      [geode.x, geode.y],
+    );
+    expect((await page.evaluate(() => window.pushminer!.events())).some((e) => e.startsWith('geodeCracked'))).toBe(
+      true,
+    );
+    await hideStats(page);
+    await expect(cave(page)).toHaveScreenshot('geode-cracked.png', CANVAS_ONLY);
+    expect(problems).toEqual([]);
+  });
+
   test('the cave done, with the vein running', async ({ page }) => {
     const problems = watch(page);
     await begin(page, inCave('deep', { done: true, drones: 2, bank: 3000 }));

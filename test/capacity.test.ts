@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildCave } from '../src/cave';
-import { BARREL_KIND, BRICK_KIND, KINDS } from '../src/physics';
+import { BARREL_KIND, BRICK_KIND, GEODE_KIND, KINDS } from '../src/physics';
 import { RUN, specOf } from './helpers';
 import { VEIN_ROOM, capacityOf, runCapacity } from '../src/stock';
 import { layBricks } from '../src/walls';
@@ -24,6 +24,8 @@ function held(id: string) {
   for (const s of spec.secrets) add(s.loot.coins, s.loot.gems);
   for (const s of spec.stashes) add(s.loot.coins, s.loot.gems);
   for (const w of spec.walls) add(0, w.treasure);
+  // every geode cracked at once
+  for (let g = 0; g < (spec.geodes?.count ?? 0); g++) add(0, spec.geodes!.holds);
   return kinds;
 }
 
@@ -38,6 +40,8 @@ describe('a cave’s capacity', () => {
     const bricks = specOf(id).walls.reduce((n, _, w) => n + layBricks(buildCave(specOf(id)), w).length, 0);
     expect(cap.kinds[BRICK_KIND]).toBeGreaterThanOrEqual(bricks);
     expect(cap.kinds[BARREL_KIND]).toBeGreaterThanOrEqual(specOf(id).barrels);
+    // and a geode for each it stands, and every gem they hold
+    expect(cap.kinds[GEODE_KIND]).toBeGreaterThanOrEqual(specOf(id).geodes?.count ?? 0);
   });
 
   it('is each cave’s own, not one for the game: the hollow needs less than a cave with many heaps', () => {

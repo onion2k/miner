@@ -71,6 +71,16 @@ blast goes off soon after, so a row of them goes up one after another. Only the
 player lights a fuse; the drones push barrels about without setting them off.
 Barrels are worth nothing down the hole, and are left behind with their cave.
 
+Geodes stand about each cave too: grey-violet boulders, bigger than a barrel
+and worth nothing whole. A barrel's blast close enough, within eight units of
+it, cracks one open, and the gems it held (a handful, about a twentieth of the
+cave's worth in each) are thrown out to be pushed down the hole. They are a
+bonus over and above the cave, as a chamber's gold is, so they never count
+toward the nine tenths that opens the way out. Nothing else cracks a geode:
+ramming one, or a drone pushing it about, only moves it, and one pushed down
+the hole whole is only gone. (The Deep's biome is also called geode; the body
+is `src/geode-stones.ts`.)
+
 The cave is pitch black. What you see by is the dozer's own lights, the
 drones', and the lamps on posts along the cave's edges. Drive into a lamp and it goes over,
 glass everywhere, and stays dark.
@@ -150,7 +160,7 @@ drones moves the figures; when a change makes them better, `--update` holds
 the next change to the better figures.
 
 What the game looks like is held to pictures (`npm run look`, part of the smoke
-run): the hollow, each of the four biomes, a barrel mid-blast, the cave cleared
+run): the hollow, each of the four biomes, a barrel mid-blast, a geode whole and cracked, the cave cleared
 with its vein, the workshop, and a phone's controls and workshop. Each scene is
 set through the test API with chance seeded from before the game is built and
 the page started stopped (`?paused=1`), so nothing has moved but what the test
@@ -199,7 +209,7 @@ slower.
 
 The fuzzer (`scripts/fuzzer.ts`) plays the real game without the picture, at
 random, from a seed: driving about and charging walls, chambers, lamps and
-barrels, pushing anything at all down the hole, setting barrels off, scooping
+barrels, pushing anything at all down the hole, setting barrels off, cracking geodes with them, scooping
 up a load and tipping it out, buying things, opening the way out and going on into the next cave, saving and loading. After every
 few frames it checks the rules in `src/invariants.ts` — nothing in the rock,
 nothing not a number, the counts of what is in the cave agreeing with what is
@@ -245,6 +255,7 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/impacts.ts        what driving into a wall or a chamber's rock does
     src/tally.ts          a run of things into the hole, and how hot it is
     src/barrels.ts        barrels: fuses lit by the player, flashing, and the blast that throws what is near
+    src/geode-stones.ts   geodes: which a blast cracks, and where the gems inside go
     src/vein.ts           the last cave's vein, once the cave is cleared
     src/physics.ts        the kinds of thing there are to push, and a world from this cave, made with artshape-physics
     src/dozer.ts          the bulldozer: tank steering, the blade and hull as pushers, load

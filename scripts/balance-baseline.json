@@ -1,14 +1,14 @@
 {
   "thorough": {
-    "cave 1 minutes": 13.86,
-    "cave 2 minutes": 12.51,
-    "banked": 7242,
+    "cave 1 minutes": 15.03,
+    "cave 2 minutes": 11.21,
+    "banked": 7267,
     "purchases": 13.5
   },
   "rusher": {
-    "cave 1 minutes": 11.15,
-    "cave 2 minutes": 4.07,
-    "banked": 5031,
+    "cave 1 minutes": 11.98,
+    "cave 2 minutes": 4.49,
+    "banked": 5009,
     "purchases": 12
   }
 }

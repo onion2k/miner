@@ -19,7 +19,7 @@ import {
   type Heap,
 } from './cave';
 import { caveStock, sourcesOf, type Sources } from './economy';
-import { BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, KIND_VALUE, type World } from './physics';
+import { BARREL_KIND, BRICK_KIND, GEODE_KIND, KINDS, KIND_RADIUS, KIND_VALUE, type World } from './physics';
 
 /**
  * Room the vein and the cracking floors have in a cave, in bodies, once the game is done: they stop adding
@@ -30,19 +30,22 @@ export const VEIN_ROOM = 2500;
 const VEIN_GEMS = [0, 60, 60, 60, 40, 10];
 /** Barrels over the ones a cave stands, for one set down by hand. */
 const BARREL_SPARE = 4;
+/** Geodes over the ones a cave stands, for one set down by hand. */
+const GEODE_SPARE = 4;
 /** Bricks over the ones its walls are laid with, for the fall of one being a little more than its count. */
 const BRICK_SPARE = 60;
 
 /** What a cave can hold at once: bodies in all, and of each kind past the coins, for the world and for what draws them. */
 export interface Capacity {
   bodies: number;
-  /** By kind; coins are not capped apart from the bodies, so the first is 0. The last three are bricks and barrels. */
+  /** By kind; coins are not capped apart from the bodies, so the first is 0. The last three are bricks, barrels and geodes. */
   kinds: number[];
 }
 
 /**
  * A cave's capacity, worked out from its content: every heap, every hidden chamber and side room opened, and
- * every wall's treasure; the bricks its walls are laid with, and the barrels it stands; and room for the vein.
+ * every wall's treasure; the bricks its walls are laid with, the barrels and geodes it stands, and the gems the
+ * geodes hold; and room for the vein.
  * The renderer is sized to the largest of the run (`runCapacity`).
  */
 export function capacityOf(spec: CaveSpec): Capacity {
@@ -56,6 +59,9 @@ export function capacityOf(spec: CaveSpec): Capacity {
   for (const s of spec.secrets) add(s.loot.coins, s.loot.gems);
   for (const s of spec.stashes) add(s.loot.coins, s.loot.gems);
   for (const w of spec.walls) add(0, w.treasure);
+  // every geode's gems at once, over and above the cave's own
+  const geodes = spec.geodes?.count ?? 0;
+  for (const [k, n] of spec.geodes?.holds ?? []) gems[k] += n * geodes;
   // a wall of n tiles is laid as four courses of a brick and a half a side, two deep, about a brick to two units
   const bricks = spec.walls.reduce((n, { tiles: [x0, y0, x1, y1] }) => {
     const span = (Math.max(x1 - x0, y1 - y0) + 1) * TILE;
@@ -64,7 +70,8 @@ export function capacityOf(spec: CaveSpec): Capacity {
   const kinds = [0, ...VEIN_GEMS.slice(1).map((room, k) => gems[k + 1] + room)];
   kinds[BRICK_KIND] = spec.walls.length ? bricks + BRICK_SPARE : 0;
   kinds[BARREL_KIND] = spec.barrels + BARREL_SPARE;
-  const held = coins.n + gems.reduce((a, b) => a + b, 0) + kinds[BRICK_KIND] + spec.barrels;
+  kinds[GEODE_KIND] = geodes + GEODE_SPARE;
+  const held = coins.n + gems.reduce((a, b) => a + b, 0) + kinds[BRICK_KIND] + spec.barrels + geodes;
   // to the next five hundred, so a small change in a heap does not move the world's size
   return { bodies: Math.ceil((held + VEIN_ROOM) / 500) * 500, kinds };
 }
@@ -112,6 +119,8 @@ export interface SavedStock {
   rubble: readonly number[];
   /** Every barrel still about, three numbers each: x, y and z; null for none ever placed. */
   barrels: readonly number[] | null;
+  /** Every geode still whole, likewise; null for a cave just begun, which stands them where they start. */
+  geodes: readonly number[] | null;
 }
 
 export class Stock {
@@ -183,6 +192,23 @@ export class Stock {
     if (!this.world.alive[i] || this.world.kind[i] !== BARREL_KIND) return;
     this.world.remove(i);
     this.kinds[BARREL_KIND]--;
+  }
+
+  /** A geode standing at (x, y): counted in the world, from no source, since whole it is worth nothing. Its slot, or -1. */
+  spawnGeode(x: number, y: number, z = KIND_RADIUS[GEODE_KIND] + 0.05): number {
+    if (this.kinds[GEODE_KIND] >= (this.capacity[GEODE_KIND] ?? Infinity)) return -1;
+    const i = this.world.spawn(GEODE_KIND, x, y, z);
+    if (i < 0) return -1;
+    this.origin[i] = NO_SOURCE;
+    this.kinds[GEODE_KIND]++;
+    return i;
+  }
+
+  /** A geode cracked, by its slot: out of the world and the counts. */
+  removeGeode(i: number) {
+    if (!this.world.alive[i] || this.world.kind[i] !== GEODE_KIND) return;
+    this.world.remove(i);
+    this.kinds[GEODE_KIND]--;
   }
 
   /** A heap from a source, with `share[kind]` of each kind in it: all of them for one just opened. */
@@ -273,6 +299,30 @@ export class Stock {
       const [x, y, z, grade] = saved.rubble.slice(k, k + 4);
       if (this.spawnBrick(grade, x, y, z) < 0) break;
     }
+    // the geodes where they lay, or for a cave just begun, where they start; the gems of those cracked, by count,
+    // at the first place a geode stands, as treasure off a wall is put back
+    const from = sources.geodes();
+    if (from >= 0) {
+      if (saved.geodes === null) {
+        for (const g of cave.geodes) this.spawnGeode(g.x, g.y);
+      } else {
+        for (let k = 0; k + 2 < saved.geodes.length; k += 3) {
+          const [x, y, z] = saved.geodes.slice(k, k + 3);
+          this.spawnGeode(x, y, z);
+        }
+      }
+      const gems = hadOf(from);
+      if (gems && cave.geodes.length) {
+        const at = cave.geodes[0];
+        for (let kind = 1; kind < KINDS; kind++) {
+          for (let n = 0; n < gems[kind]; n++) {
+            const a = this.random() * Math.PI * 2,
+              r = KIND_RADIUS[GEODE_KIND] + 1 + this.random();
+            this.spawn(kind, at.x + Math.cos(a) * r, at.y + Math.sin(a) * r, 1 + this.random() * 3, 0, 0, 0, from);
+          }
+        }
+      }
+    }
     // the barrels where they were left, or for a cave just begun, where they start
     if (saved.barrels === null) {
       for (const b of this.barrels) this.spawnBarrel(b.x, b.y);
@@ -290,7 +340,7 @@ export class Stock {
    */
   collect(kind: number, i: number): number {
     this.kinds[kind]--;
-    if (kind === BRICK_KIND || kind === BARREL_KIND) return 0;
+    if (kind === BRICK_KIND || kind === BARREL_KIND || kind === GEODE_KIND) return 0;
     this.left[this.origin[i]][kind]--;
     return KIND_VALUE[kind];
   }
@@ -316,6 +366,17 @@ export class Stock {
     const out: number[] = [];
     for (let i = 0; i < world.count; i++) {
       if (!world.alive[i] || world.kind[i] !== BARREL_KIND) continue;
+      out.push(+world.x[i].toFixed(2), +world.y[i].toFixed(2), +world.z[i].toFixed(2));
+    }
+    return out;
+  }
+
+  /** Where every geode still whole stands, three numbers each, for the save. */
+  geodeRecord(): number[] {
+    const { world } = this;
+    const out: number[] = [];
+    for (let i = 0; i < world.count; i++) {
+      if (!world.alive[i] || world.kind[i] !== GEODE_KIND) continue;
       out.push(+world.x[i].toFixed(2), +world.y[i].toFixed(2), +world.z[i].toFixed(2));
     }
     return out;

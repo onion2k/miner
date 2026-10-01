@@ -17,7 +17,7 @@ import { arrival, chamberCentre, exitPoints, type Cave } from './cave';
 import type { Game } from './game';
 import type { MinimapView } from './minimap';
 import { checkInvariants } from './invariants';
-import { BARREL_KIND, KIND_NAME } from './physics';
+import { BARREL_KIND, GEODE_KIND, KIND_NAME } from './physics';
 import { NO_SOURCE } from './stock';
 import { wallTiles } from './walls';
 
@@ -65,6 +65,8 @@ export interface GameState {
   dozer: { x: number; y: number; yaw: number; speed: number };
   bots: { x: number; y: number; yaw: number; state: string }[];
   barrels: { count: number; lit: number[] };
+  /** How many geodes still stand whole, and how many gems from cracked ones still lie in the cave. */
+  geodes: { count: number; gems: number };
   fountains: number;
   trackMarks: number;
   /** Whether the sound is muted. */
@@ -108,6 +110,8 @@ export interface Content {
   /** Where the vein runs from once the last cave is cleared. */
   vein: Point;
   barrels: Point[];
+  /** Where the geodes stand when the cave begins. */
+  geodes: Point[];
   /** The belts that can be bought, by their ids. */
   belts: { id: string; from: Point; to: Point }[];
   /** Where the machine arrives, and which way it faces; and the way out, null in the last cave. */
@@ -269,6 +273,10 @@ export function createApi(host: DebugHost): PushminerApi {
         dozer: { x: g.dozer.x, y: g.dozer.y, yaw: g.dozer.yaw, speed: g.dozer.speed },
         bots: g.bots.map((b) => ({ x: b.x, y: b.y, yaw: b.yaw, state: b.state })),
         barrels: { count: g.stock.kinds[BARREL_KIND], lit: g.barrels.lit },
+        geodes: {
+          count: g.stock.kinds[GEODE_KIND],
+          gems: g.stock.left[g.economy.sources.geodes()]?.reduce((n, m) => n + m, 0) ?? 0,
+        },
         fountains: g.fountains.length,
         trackMarks: host.trackMarks(),
         muted: host.muted(),
@@ -312,6 +320,7 @@ export function createApi(host: DebugHost): PushminerApi {
         heaps: spec.heaps.map((h) => ({ x: h.x, y: h.y, coins: h.coins })),
         vein: { x: spec.vein.x, y: spec.vein.y },
         barrels: cave.barrels.map((b) => ({ x: b.x, y: b.y })),
+        geodes: cave.geodes.map((g) => ({ x: g.x, y: g.y })),
         belts: spec.belts.map((b) => ({
           id: b.id,
           from: { x: b.spec.x0, y: b.spec.y0 },

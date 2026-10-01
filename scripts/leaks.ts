@@ -19,7 +19,7 @@ import { TILE, buildCave, type CaveSpec } from '../src/cave';
 import { RUN } from '../src/caves';
 import { Economy, SCOOP, SCOOP_SIZES, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
-import { BARREL_KIND } from '../src/physics';
+import { BARREL_KIND, GEODE_KIND } from '../src/physics';
 import { runCapacity } from '../src/stock';
 import { onward } from './run';
 
@@ -74,6 +74,8 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
   rubble: { ceiling: 4000 },
   'lamps broken': { ceiling: 200 },
   'barrels saved': { ceiling: 400 },
+  // three numbers a geode, and no more geodes than the most a cave has room to draw
+  'geodes saved': { ceiling: runCapacity(RUN).kinds[GEODE_KIND] * 3 },
   'save bytes': { ceiling: 200_000 },
   'left rows': { ceiling: 400 },
   bots: { ceiling: 3 },
@@ -104,6 +106,7 @@ export function sizes(game: Game, pilot?: Autopilot): Record<string, number> {
     rubble: save.rubble.length,
     'lamps broken': save.lampsBroken.length,
     'barrels saved': save.barrels?.length ?? 0,
+    'geodes saved': save.geodes?.length ?? 0,
     'save bytes': JSON.stringify(save).length,
     'left rows': save.left.reduce((n, row) => n + row.length, 0),
     bots: game.bots.length,

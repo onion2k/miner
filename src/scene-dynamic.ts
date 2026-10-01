@@ -9,16 +9,26 @@
  * functions, and never the renderer.
  */
 import { mergeMeshes, type Mesh } from 'artshape-render/mesh/types';
-import type { GameGroup } from 'artshape-render/game/renderer';
+import { PATTERN_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import type { BeltSpec } from './cave';
 import { BLADE_AT, BLADE_RISE, TRACK_GAUGE, type Dozer } from './dozer';
 import { ANCHORS, bladeMesh, machineMeshes, scoopMesh, type MachineBody, type MachineMeshes } from './machine';
 import { bucketTilt } from './scoop';
-import { bar, box, coin, cylinder, gem, moved, square } from './meshes';
+import { bar, box, coin, cylinder, gem, lump, moved, scaled, square } from './meshes';
 import { hide, place, placeAlong, placePart, placeQuat, placeTipped } from './matrix';
 import type { LegPose } from './spider';
-import { BARREL_COLOUR, BAR_COLOUR, COIN_COLOUR, GEM_ALBEDO, TRACK_MARK, WALL_COLOUR, type Rgb } from './palette';
-import { BAR, BARREL_KIND, BRICK_KIND, KINDS, KIND_RADIUS, type World } from './physics';
+import {
+  BARREL_COLOUR,
+  BAR_COLOUR,
+  COIN_COLOUR,
+  GEM_ALBEDO,
+  GEODE_COLOUR,
+  GEODE_VEIN,
+  TRACK_MARK,
+  WALL_COLOUR,
+  type Rgb,
+} from './palette';
+import { BAR, BARREL_KIND, BRICK_KIND, GEODE_KIND, KINDS, KIND_RADIUS, type World } from './physics';
 import { MATERIAL_STRIDE } from 'artshape-render/game/renderer';
 import { BRICK_SIZE } from './walls';
 
@@ -98,8 +108,9 @@ const COINS = 0,
   RUBBLE = 20,
   BARRELS = 23,
   HOOPS = 24,
-  LEGS_GROUP = 25,
-  TRACKS = 26;
+  GEODES = 25,
+  LEGS_GROUP = 26,
+  TRACKS = 27;
 /** A leg is two bones, each a placement; eight legs. */
 const LEG_PARTS = 2,
   LEG_COUNT = 8;
@@ -134,6 +145,8 @@ export class DynamicScene {
   machineParts: MachineMeshes;
   /** The group the Spiderdozer's legs are drawn in. */
   readonly legsGroup = LEGS_GROUP;
+  /** The group the geodes are drawn in. */
+  readonly geodesGroup = GEODES;
   private readonly legM = new Float32Array(LEG_COUNT * LEG_PARTS * 16);
   private body: MachineBody = 'dozer';
   /** The cave's belts that can be bought, as drawn: the ones of the cave the page has swapped to. */
@@ -144,6 +157,7 @@ export class DynamicScene {
   private readonly counts = new Array<number>(KINDS).fill(0);
   private readonly rubble = [0, 0, 0];
   private readonly barrelM: Float32Array;
+  private readonly geodeM: Float32Array;
   private readonly barrelMat: Float32Array<ArrayBuffer>;
 
   constructor(
@@ -159,6 +173,7 @@ export class DynamicScene {
     this.rubbleM = [1, 2, 3].map(() => new Float32Array(kindCapacity[BRICK_KIND] * 16));
     this.barrelM = new Float32Array(Math.max(1, kindCapacity[BARREL_KIND]) * 16);
     this.barrelMat = new Float32Array(Math.max(1, kindCapacity[BARREL_KIND]) * MATERIAL_STRIDE);
+    this.geodeM = new Float32Array(Math.max(1, kindCapacity[GEODE_KIND]) * 16);
     this.treadM = new Float32Array((1 + bots) * TREAD_BARS * 2 * 16);
     this.botM = new Float32Array(bots * 16);
 
@@ -251,6 +266,15 @@ export class DynamicScene {
         albedo: [0.85, 0.65, 0.08] as Rgb,
         roughness: 0.45,
       },
+      // the geodes, where the physics holds their balls: a rough stone, the flat of it down
+      {
+        mesh: geodeStone(KIND_RADIUS[GEODE_KIND]),
+        matrices: this.geodeM,
+        patterns: geodeVeins(this.geodeM.length / 16),
+        count: 0,
+        albedo: GEODE_COLOUR,
+        roughness: 0.8,
+      },
       // the Spiderdozer's legs, a bone a placement, from a unit cylinder stood along each
       { mesh: cylinder(1, 1, 7), matrices: this.legM, count: 0, albedo: METAL_ALBEDO, roughness: METAL_ROUGHNESS },
       // the marks the tracks have left, a page a group, so a new mark writes one page and not all of them
@@ -329,9 +353,10 @@ export class DynamicScene {
   }
 
   private bodies(world: World, brickGrade: Uint8Array): number {
-    const { counts, rubble, coinM, gemM, rubbleM } = this;
+    const { counts, rubble, coinM, gemM, rubbleM, geodeM } = this;
     counts.fill(0);
     rubble.fill(0);
+    let geodes = 0;
     let awake = 0;
     const { x, y, z, q, kind, alive, asleep } = world;
     for (let i = 0; i < world.count; i++) {
@@ -343,6 +368,10 @@ export class DynamicScene {
         if (rubble[g] * 16 < rubbleM[g].length) placeQuat(rubbleM[g], rubble[g]++, x[i], y[i], z[i], q, i * 4);
         continue;
       }
+      if (k === GEODE_KIND) {
+        if (geodes * 16 < geodeM.length) placeQuat(geodeM, geodes++, x[i], y[i], z[i], q, i * 4);
+        continue;
+      }
       const m = k === 0 ? coinM : gemM[k];
       if (counts[k] * 16 >= m.length) continue;
       placeQuat(m, counts[k]++, x[i], y[i], z[i], q, i * 4);
@@ -351,6 +380,7 @@ export class DynamicScene {
     for (let k = 1; k <= 4; k++) this.target.move(GEMS + k - 1, gemM[k], counts[k]);
     this.target.move(BARS, gemM[BAR], counts[BAR]);
     for (let g = 0; g < 3; g++) this.target.move(RUBBLE + g, rubbleM[g], rubble[g]);
+    this.target.move(GEODES, geodeM, geodes);
     return awake;
   }
 
@@ -499,4 +529,30 @@ function barrelHoops(radius: number): Mesh {
 /** The pennant is red, unless the hull is: then it is white, so it shows. */
 export function flagColour([r, g, b]: Rgb): Rgb {
   return r > 0.6 && g < 0.5 && b < 0.75 ? [0.95, 0.95, 0.95] : [0.9, 0.15, 0.15];
+}
+
+/**
+ * A geode: a rough boulder, big as its ball, with the flat of it down on the floor where the ball rests.
+ * The stone is flattened underneath, so it is moved down to stand on the ground and not hang in the air.
+ */
+/** The renderer's marbling: thin veins through a turbulence. */
+const MARBLING = 3;
+/** How many times the marbling turns across a unit of the stone, and where in the turbulence every stone's veins are read from. */
+const VEIN_SCALE = 0.55,
+  VEIN_SEED = 0.37;
+
+/**
+ * The veins across each geode there is room for: what tells it, in the headlights, from a lump of rubble or
+ * the rock. Every stone has the same ones. A geode's place in its group moves up when one before it cracks,
+ * and veins by place would jump from stone to stone as it did.
+ */
+function geodeVeins(places: number): Float32Array {
+  const out = new Float32Array(places * PATTERN_STRIDE);
+  for (let i = 0; i < places; i++) out.set([MARBLING, VEIN_SCALE, VEIN_SEED, 0, ...GEODE_VEIN, 0], i * PATTERN_STRIDE);
+  return out;
+}
+
+function geodeStone(radius: number): Mesh {
+  const size = radius * 1.05;
+  return moved(scaled(lump(3), size, size, size), 0, 0, -(radius - 0.45 * size));
 }

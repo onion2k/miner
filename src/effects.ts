@@ -7,6 +7,7 @@
  */
 import type { Emit } from 'artshape-render/game/particles';
 import type { Rgb } from './palette';
+import { GEODE_KIND, KIND_RADIUS } from './physics';
 
 /** A lamp knocked over: glass, and if it was lit, the last of its light going out of it as sparks. */
 export function glass(x: number, y: number, z: number, dirX: number, dirY: number, lit: boolean): Emit[] {
@@ -262,6 +263,58 @@ export function explosion(x: number, y: number, z: number): Emit[] {
       colour: [0.55, 0.1, 0.06],
       alpha: 1,
       gravity: 1.6,
+      floor: 0,
+    },
+  ];
+}
+
+/**
+ * A geode cracking open: chips of stone flung out, a glitter of the gems' light that hangs a moment, and a puff
+ * of dust. The glitter is violet, since a geode is, and not any gem's colour, which the gems themselves bring.
+ */
+export function geodeShards(x: number, y: number): Emit[] {
+  const z = KIND_RADIUS[GEODE_KIND];
+  return [
+    {
+      position: [x, y, z],
+      velocity: [0, 0, 6],
+      spread: 11,
+      count: 46,
+      life: 1.1,
+      lifeSpread: 0.4,
+      size: 0.28,
+      growth: -0.12,
+      colour: [0.4, 0.34, 0.4],
+      alpha: 1,
+      gravity: 1.5,
+      floor: 0,
+    },
+    {
+      position: [x, y, z + 0.5],
+      velocity: [0, 0, 4],
+      spread: 8,
+      count: 70,
+      life: 1.5,
+      lifeSpread: 0.5,
+      size: 0.14,
+      growth: -0.08,
+      colour: [2.4, 1.6, 3.4],
+      alpha: 0,
+      gravity: 0.3,
+      floor: 0,
+    },
+    {
+      position: [x, y, z + 0.5],
+      velocity: [0, 0, 2.5],
+      spread: 5,
+      count: 24,
+      life: 1.6,
+      lifeSpread: 0.5,
+      size: 1.1,
+      growth: 1.6,
+      colour: [0.34, 0.31, 0.33],
+      alpha: 0.6,
+      gravity: -0.05,
       floor: 0,
     },
   ];

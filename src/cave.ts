@@ -200,6 +200,12 @@ export interface BarrelSpot {
   y: number;
 }
 
+/** A geode where it stands when its cave begins. */
+export interface Geode {
+  x: number;
+  y: number;
+}
+
 /** A lamp on a post. */
 export interface Lamp {
   x: number;
@@ -287,7 +293,7 @@ export interface Cave {
   /** Where the currents that lose what they carry end: holes that bank nothing. */
   drains: readonly HoleSpec[];
   /** Where the geodes stand when the cave begins, the same every time. */
-  geodes: { x: number; y: number }[];
+  geodes: Geode[];
   /**
    * A rock tile's cell is 1; the way out's is 1 until it is `open`, a hidden
    * chamber's, and the rock in front of it, until it is broken into, and a
@@ -617,16 +623,18 @@ export function buildCave(spec: CaveSpec): Cave {
     carveRect(cells, grid, wall[0], wall[1], wall[2], wall[3], SECRET + k, true);
   });
   const lamps = placeLamps(cells, spec, grid);
+  const barrels = placeBarrels(cells, spec, grid, lamps);
   return {
     spec,
     grid,
     holes: spec.holes,
     cells,
     lamps,
-    barrels: placeBarrels(cells, spec, grid, lamps),
+    barrels,
     currents: spec.currents ?? [],
     drains: [],
-    geodes: [],
+    // after the barrels, and never fed into them, so the barrels stand where they always have
+    geodes: placeGeodes(cells, spec, grid, lamps, barrels),
     solid(open, revealed = [], broken = []) {
       const out = new Uint8Array(cols * rows);
       for (let i = 0; i < cells.length; i++) {
@@ -745,6 +753,84 @@ function placeBarrels(cells: Uint8Array, spec: CaveSpec, grid: Grid, lamps: read
     out.push({ x, y });
   }
   return out;
+}
+
+/** How far apart geodes stand, at least; how far from a barrel, a lamp, a hole, a heap, a cutting, a belt and a current. */
+export const GEODE_SPACING = 14,
+  GEODE_FROM_BARREL = 6,
+  GEODE_FROM_HOLE = 10,
+  GEODE_FROM_HEAP = 6,
+  GEODE_FROM_BELT = 4,
+  GEODE_FROM_CURRENT = 5;
+
+/**
+ * Where the geodes stand: on open floor joined to a hole without crossing a wall, so never in a side room
+ * behind one, with floor all round and room to spare, clear of the heaps, the holes, the belts, the currents
+ * and their drains, the cuttings, the lamps and the barrels; spread about, and the same every time. Placed
+ * after the barrels and fed back into nothing, so the barrels do not move for them.
+ */
+function placeGeodes(
+  cells: Uint8Array,
+  spec: CaveSpec,
+  grid: Grid,
+  lamps: readonly Lamp[],
+  barrels: readonly BarrelSpot[],
+): Geode[] {
+  const count = spec.geodes?.count ?? 0;
+  if (!count) return [];
+  const { cols, rows } = grid;
+  const at = (tx: number, ty: number) => (tx < 0 || ty < 0 || tx >= cols || ty >= rows ? ROCK : cells[ty * cols + tx]);
+  // the open floor joined to a hole, walls and all left standing, so a room behind one is not reached
+  const joined = new Uint8Array(cols * rows);
+  const stack = spec.holes.map(
+    (h) => Math.floor((h.y - grid.originY) / TILE) * cols + Math.floor((h.x - grid.originX) / TILE),
+  );
+  while (stack.length) {
+    const t = stack.pop()!;
+    if (joined[t] || cells[t] !== OPEN) continue;
+    joined[t] = 1;
+    const tx = t % cols;
+    if (tx > 0) stack.push(t - 1);
+    if (tx < cols - 1) stack.push(t + 1);
+    if (t >= cols) stack.push(t - cols);
+    if (t < cols * (rows - 1)) stack.push(t + cols);
+  }
+  const candidates: { tx: number; ty: number; rank: number }[] = [];
+  for (let ty = 2; ty < rows - 2; ty++) {
+    for (let tx = 2; tx < cols - 2; tx++) {
+      if (!joined[ty * cols + tx]) continue;
+      let clear = true;
+      for (let oy = -1; oy <= 1 && clear; oy++)
+        for (let ox = -1; ox <= 1; ox++) if (at(tx + ox, ty + oy) !== OPEN) clear = false;
+      if (clear) candidates.push({ tx, ty, rank: hash(tx, ty, 137) });
+    }
+  }
+  candidates.sort((a, b) => a.rank - b.rank);
+  const out: Geode[] = [];
+  for (const { tx, ty } of candidates) {
+    if (out.length >= count) break;
+    const [x, y] = tileCentre(grid, tx, ty);
+    if (nearHole(spec.holes, x, y, GEODE_FROM_HOLE) || nearHeap(spec, x, y, GEODE_FROM_HEAP)) continue;
+    if (nearBelt(spec, x, y, GEODE_FROM_BELT) || nearCutting(grid, spec, x, y, 2)) continue;
+    if (nearCurrent(spec, x, y, GEODE_FROM_CURRENT)) continue;
+    if (lamps.some((l) => Math.hypot(l.x - x, l.y - y) < 5)) continue;
+    if (barrels.some((b) => Math.hypot(b.x - x, b.y - y) < GEODE_FROM_BARREL)) continue;
+    if (out.some((g) => Math.hypot(g.x - x, g.y - y) < GEODE_SPACING)) continue;
+    out.push({ x, y });
+  }
+  return out;
+}
+
+/** Whether a point is within `margin` of the side of any current, or of the drain it ends in. */
+function nearCurrent(spec: CaveSpec, x: number, y: number, margin: number): boolean {
+  return (spec.currents ?? []).some((c) => {
+    const dx = c.x1 - c.x0,
+      dy = c.y1 - c.y0,
+      len2 = dx * dx + dy * dy || 1;
+    const k = Math.max(0, Math.min(1, ((x - c.x0) * dx + (y - c.y0) * dy) / len2));
+    if (Math.hypot(x - (c.x0 + dx * k), y - (c.y0 + dy * k)) < c.width / 2 + margin) return true;
+    return !!c.drain && Math.hypot(x - c.x1, y - c.y1) < c.drain.radius + margin;
+  });
 }
 
 /** Whether a point is within `margin` of the edge of any heap. */

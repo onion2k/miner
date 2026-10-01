@@ -20,7 +20,7 @@ import { RUN } from '../src/caves';
 import { Economy, memoryStore } from '../src/economy';
 import { Game, type GameEvents } from '../src/game';
 import { checkInvariants } from '../src/invariants';
-import { BARREL_KIND, KIND_NAME, KIND_RADIUS } from '../src/physics';
+import { BARREL_KIND, GEODE_KIND, KIND_NAME, KIND_RADIUS } from '../src/physics';
 import { wallTiles } from '../src/walls';
 import { onward } from './run';
 
@@ -208,6 +208,22 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         },
       ],
       [
+        3,
+        () => {
+          // a barrel brought to a geode and lit, as a player would do it: the geode stands in the middle of its blast
+          const { world } = game;
+          const geodes = [...Array(world.count).keys()].filter((i) => world.alive[i] && world.kind[i] === GEODE_KIND);
+          const g = pick(geodes);
+          if (g === undefined) return;
+          const a = random() * Math.PI * 2,
+            reach = between(2.5, 6);
+          const [x, y] = openNear(world.x[g] + Math.cos(a) * reach, world.y[g] + Math.sin(a) * reach);
+          const i = game.stock.spawnBarrel(x, y, KIND_RADIUS[BARREL_KIND] + 0.05);
+          if (i >= 0) game.barrels.light(i, between(0.05, 0.6));
+          act('crack a geode', `geode ${g} from barrel ${i} at ${x.toFixed(1)},${y.toFixed(1)}`);
+        },
+      ],
+      [
         4,
         () => {
           const e = game.economy;
@@ -332,6 +348,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const json = store.json!;
           const live = game.world.live;
           const barrels = game.stock.kinds[BARREL_KIND];
+          const geodes = game.stock.kinds[GEODE_KIND];
           store = memoryStore(json);
           const economy = new Economy(store, RUN);
           game = new Game(economy, buildCave(economy.cave()), events);
@@ -348,6 +365,8 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           );
           if (game.stock.kinds[BARREL_KIND] !== barrels)
             problems.push(`reload: ${barrels} barrels came back ${game.stock.kinds[BARREL_KIND]}`);
+          if (game.stock.kinds[GEODE_KIND] !== geodes)
+            problems.push(`reload: ${geodes} geodes came back ${game.stock.kinds[GEODE_KIND]}`);
           // what was left of the cave, every chamber, side room and wall comes back exactly, bar what there is no room to draw
           const was = JSON.parse(json) as { left: number[][] };
           game.stock.left.forEach((kinds, source) =>

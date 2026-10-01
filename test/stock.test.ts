@@ -18,6 +18,7 @@ const nothingSaved = (over: Partial<SavedStock> = {}): SavedStock => ({
   walls: spec.walls.map(() => false),
   rubble: [],
   barrels: [],
+  geodes: [],
   ...over,
 });
 const total = (stock: Stock, from: number) => stock.left[from].reduce((s, n, k) => s + n * KIND_VALUE[k], 0);

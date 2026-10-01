@@ -372,6 +372,68 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   expect(problems).toEqual([]);
 });
 
+test('a geode in the Hollow cracked by a barrel put beside it and lit: gems thrown out, and paid for at the hole', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(1);
+  });
+  const content = await page.evaluate(() => window.pushminer!.content());
+  expect(content.geodes.length, 'the Hollow has a geode').toBeGreaterThan(0);
+  await play(page, 2, 'a fresh start');
+  const before = await page.evaluate(() => window.pushminer!.state());
+  expect(before.geodes, 'the geodes standing, and no gems out yet').toEqual({ count: content.geodes.length, gems: 0 });
+  expect(await page.evaluate(() => window.pushminer!.bodies('geode')).then((b) => b.length)).toBe(
+    content.geodes.length,
+  );
+
+  // a barrel put beside the first geode and lit: it goes off and the geode cracks
+  const geode = content.geodes[0];
+  await page.evaluate(
+    ([x, y]) => {
+      const p = window.pushminer!;
+      const barrel = p.bodies('barrel')[0];
+      p.place(barrel.slot, x + 3, y, 1.1);
+      p.lightBarrel(barrel.slot, 0.5);
+    },
+    [geode.x, geode.y],
+  );
+  await play(page, 90, 'a barrel going off by a geode');
+  const events = await page.evaluate(() => window.pushminer!.events());
+  expect(
+    events.filter((e) => e.startsWith('geodeCracked')),
+    'the geode cracked',
+  ).not.toHaveLength(0);
+  const after = await page.evaluate(() => window.pushminer!.state());
+  expect(after.geodes.count, 'one geode fewer at least').toBeLessThan(before.geodes.count);
+  expect(after.geodes.gems, 'its gems out').toBeGreaterThan(0);
+  expect((await screen(page)).note ?? '', 'and the words say so').toContain('geode');
+  const gems = await page.evaluate(() => window.pushminer!.bodies().filter((b) => b.source !== null && b.source > 0));
+  expect(gems.length, 'gems on the floor').toBe(after.geodes.gems);
+  expect(gems.every((g) => g.kind !== 'coin' && g.kind !== 'geode')).toBe(true);
+
+  // pushed down the hole, they pay: the bank rises by what they are worth, and the cave is no nearer cleared
+  const worth = { ruby: 10, emerald: 25, sapphire: 40, diamond: 100, 'gold bar': 250 } as Record<string, number>;
+  const bankBefore = after.bank;
+  await page.evaluate(
+    (slots) => {
+      const p = window.pushminer!;
+      slots.forEach((slot, n) => p.place(slot, (n % 4) * 0.4, Math.floor(n / 4) * 0.4, 1.5));
+    },
+    gems.map((g) => g.slot),
+  );
+  await play(page, 240, 'the gems down the hole');
+  const paid = await page.evaluate(() => window.pushminer!.state());
+  expect(paid.bank - bankBefore, 'paid for what went down').toBe(gems.reduce((sum, g) => sum + worth[g.kind], 0));
+  expect(paid.geodes.gems, 'none left lying').toBe(0);
+  expect(paid.open, 'a bonus does not open the way out').toBe(false);
+  expect(problems).toEqual([]);
+});
+
 test('the North Vault’s two holes each bank what goes down them', async ({ page }) => {
   const problems = watch(page);
   await start(page, { seed: 1, paused: true, save: { cave: 'north-vault' } });
