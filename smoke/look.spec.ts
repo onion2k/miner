@@ -17,11 +17,17 @@
  * A failure leaves the picture, what was drawn and the difference in
  * `test-results/`. Look at all three before deciding which is right.
  */
+import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { start, watch, type SaveSetup } from './pushminer';
 
 /** How far the pictures may differ before it is a change and not the GPU: a fiftieth of the pixels, each well off. */
 const TOLERANCE = { maxDiffPixelRatio: 0.002, threshold: 0.02 };
+/**
+ * The same, for the pictures of the canvas alone: the map sits over its corner, and has pictures of its own, so
+ * it is put away and these stay what they were, a check that the map changed nothing of the cave's drawing.
+ */
+const CANVAS_ONLY = { ...TOLERANCE, stylePath: fileURLToPath(new URL('./canvas-only.css', import.meta.url)) };
 
 /**
  * The corner that counts the milliseconds a frame takes is different every
@@ -106,7 +112,7 @@ test.describe('what it looks like', () => {
     await begin(page);
     await scene(page, { x: 0, y: 0, radius: 78 }, 180, [0, -14, Math.PI / 2]);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('hollow.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('hollow.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -122,7 +128,7 @@ test.describe('what it looks like', () => {
       const [x, y] = await heart(page);
       await scene(page, { x, y, radius: 90 }, 180, [x, y - 14, Math.PI / 2]);
       await hideStats(page);
-      await expect(cave(page)).toHaveScreenshot(`${id}.png`, TOLERANCE);
+      await expect(cave(page)).toHaveScreenshot(`${id}.png`, CANVAS_ONLY);
       expect(problems).toEqual([]);
     });
   }
@@ -134,7 +140,7 @@ test.describe('what it looks like', () => {
     const [hole] = await page.evaluate(() => window.pushminer!.content().holes);
     await scene(page, { x: hole.x, y: hole.y, radius: 80 }, 180, [hole.x, hole.y - 14, Math.PI / 2]);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('warrens.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('warrens.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -143,7 +149,7 @@ test.describe('what it looks like', () => {
     await begin(page, inCave('warrens'));
     await scene(page, { x: 0, y: 0, radius: 170, polar: 0.5 }, 120);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('warrens-tunnels.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('warrens-tunnels.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -155,7 +161,7 @@ test.describe('what it looks like', () => {
     const [hole] = await page.evaluate(() => window.pushminer!.content().holes);
     await scene(page, { x: hole.x + 20, y: hole.y, radius: 90 }, 180, [hole.x, hole.y - 14, Math.PI / 2]);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('deep.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('deep.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -164,7 +170,7 @@ test.describe('what it looks like', () => {
     await begin(page, inCave('deep'));
     await scene(page, { x: 0, y: 0, radius: 170, polar: 0.5 }, 120);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('deep-hall.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('deep-hall.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -184,12 +190,24 @@ test.describe('what it looks like', () => {
       api.step(1);
     });
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('west-exit.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('west-exit.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
   // several holes and belts in a cave: the North Vault's second hole among its heaps, and the East Gallery's two belts
   // running, each with the bar across where it ends
+  // the map where it is busiest: the Warrens by its second hole, drones at work, the camera off its home heading
+  test('the map in the warrens, by the second hole, with drones at work', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('warrens', { bank: 500, drones: 3 }));
+    const hole = (await page.evaluate(() => window.pushminer!.content().holes))[1];
+    await scene(page, { x: hole.x, y: hole.y, radius: 70 }, 1200, [hole.x, hole.y - 14, Math.PI / 2]);
+    await expect(page.locator('#minimap')).toBeVisible();
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('warrens-map.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the north vault, both its holes', async ({ page }) => {
     const problems = watch(page);
     await begin(page, inCave('north-vault'));
@@ -197,7 +215,7 @@ test.describe('what it looks like', () => {
     expect(Math.hypot(a.x - b.x, a.y - b.y), 'two holes, apart').toBeGreaterThan(40);
     await scene(page, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, radius: 120 }, 180, [b.x - 12, b.y - 14, Math.PI / 2]);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('north-holes.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('north-holes.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -208,7 +226,7 @@ test.describe('what it looks like', () => {
     expect(await page.evaluate(() => window.pushminer!.state().belts)).toHaveLength(2);
     await scene(page, { x: hole.x + 34, y: hole.y - 4, radius: 105 }, 180, [hole.x - 12, hole.y - 14, Math.PI / 2]);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('east-belts.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('east-belts.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -223,7 +241,7 @@ test.describe('what it looks like', () => {
       [ends[0].x + 10, ends[0].y + 14, Math.PI / 2],
     );
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('east-belt-ends.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('east-belt-ends.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -233,7 +251,7 @@ test.describe('what it looks like', () => {
     const [x, y] = await heart(page);
     await scene(page, { x, y, azimuth: 0.7, polar: 1.0, radius: 22 }, 120, [x, y, Math.PI / 2]);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('dozer.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('dozer.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -249,7 +267,7 @@ test.describe('what it looks like', () => {
       api.step(1);
     });
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('spider.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('spider.png', CANVAS_ONLY);
     // walking: set down on open floor, driven across it, and the picture taken while a set of legs is in the air
     const [x, y] = await heart(page);
     await page.evaluate(
@@ -266,7 +284,7 @@ test.describe('what it looks like', () => {
       },
       [x, y],
     );
-    await expect(cave(page)).toHaveScreenshot('spider-stride.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('spider-stride.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -284,7 +302,7 @@ test.describe('what it looks like', () => {
     });
     expect(at).toBeDefined();
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('drone.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('drone.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -312,7 +330,7 @@ test.describe('what it looks like', () => {
         api.step(1);
       });
       await hideStats(page);
-      await expect(cave(page)).toHaveScreenshot(`foot-${name}.png`, TOLERANCE);
+      await expect(cave(page)).toHaveScreenshot(`foot-${name}.png`, CANVAS_ONLY);
       expect(problems).toEqual([]);
     });
   }
@@ -349,7 +367,7 @@ test.describe('what it looks like', () => {
       [barrel.x, barrel.y],
     );
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('blast.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('blast.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
@@ -359,12 +377,12 @@ test.describe('what it looks like', () => {
     const { x, y } = (await page.evaluate(() => window.pushminer!.content())).vein;
     await scene(page, { x, y, radius: 60 }, 240, [x - 10, y - 14, Math.PI / 2]);
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('done.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('done.png', CANVAS_ONLY);
     expect(problems).toEqual([]);
   });
 
   // the way out: cracking open when the cave is cleared, driven down in the dark, and come out of into the next cave
-  test('the way out opening, with its burst and the arrow', async ({ page }) => {
+  test('the way out opening, with its burst', async ({ page }) => {
     const problems = watch(page);
     await begin(page);
     const mouth = await page.evaluate(() => {
@@ -382,7 +400,7 @@ test.describe('what it looks like', () => {
     });
     expect(mouth).toBeDefined();
     await hideStats(page);
-    await expect(cave(page)).toHaveScreenshot('exit-opening.png', TOLERANCE);
+    await expect(cave(page)).toHaveScreenshot('exit-opening.png', CANVAS_ONLY);
     await expect(page.locator('#cameraNote')).toHaveText('the way out is open');
     expect(problems).toEqual([]);
   });
@@ -469,6 +487,17 @@ test.describe('what it looks like on a phone', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the map on a phone in the warrens, by the second hole, with drones at work', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('warrens', { bank: 500, drones: 3 }));
+    const hole = (await page.evaluate(() => window.pushminer!.content().holes))[1];
+    await scene(page, { x: hole.x, y: hole.y, radius: 84 }, 1200, [hole.x, hole.y - 14, Math.PI / 2]);
+    await expect(page.locator('#minimap')).toBeVisible();
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('phone-warrens-map.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('the way out open, on a phone', async ({ page }) => {
     const problems = watch(page);
     await begin(page);
@@ -502,6 +531,17 @@ test.describe('what it looks like on a phone', () => {
       api.step(20);
     });
     expect((await page.evaluate(() => window.pushminer!.state())).cave).toBe('south-gallery');
+    // the three lines of the note keep clear of the map beside them
+    const [note, map] = await Promise.all(
+      ['#cameraNote', '#minimap'].map((sel) =>
+        page.locator(sel).evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        }),
+      ),
+    );
+    expect(note.right, 'the note ends before the map begins').toBeLessThan(map.left);
+    expect(note.left, 'and is on the screen').toBeGreaterThanOrEqual(0);
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone-arriving.png', TOLERANCE);
     expect(problems).toEqual([]);

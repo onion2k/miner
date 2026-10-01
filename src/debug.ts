@@ -15,6 +15,7 @@
  */
 import { arrival, chamberCentre, exitPoints, type Cave } from './cave';
 import type { Game } from './game';
+import type { MinimapView } from './minimap';
 import { checkInvariants } from './invariants';
 import { BARREL_KIND, KIND_NAME } from './physics';
 import { NO_SOURCE } from './stock';
@@ -58,6 +59,8 @@ export interface GameState {
   trackMarks: number;
   /** Whether the sound is muted. */
   muted: boolean;
+  /** The marks of the map as last drawn: where each lies on it, turned with the camera; null before the first. */
+  minimap: MinimapView | null;
 }
 
 /** A body in the cave. */
@@ -149,6 +152,8 @@ export interface PushminerApi {
   look(x: number, y: number, view?: { azimuth?: number; polar?: number; radius?: number }): void;
   /** What drawing a frame of the scene as it stands costs, in milliseconds. */
   measureFrame(): Promise<number>;
+  /** What one update of the map costs, view and draw, in milliseconds, averaged over `runs`. */
+  measureMap(runs?: number): number;
   /** What each rung of coin detail cost when the game measured the machine at boot. */
   readonly calibration: number[];
   setCoinDetail(level: number): void;
@@ -172,11 +177,13 @@ export interface DebugHost {
   setDrive(drive: { throttle: number; steer: number } | null): void;
   look(x: number, y: number, view: { azimuth?: number; polar?: number; radius?: number }): void;
   measureFrame(): Promise<number>;
+  measureMap(runs: number): number;
   calibration(): number[];
   setCoinDetail(level: number): void;
   lampsLit(): number[];
   trackMarks(): number;
   muted(): boolean;
+  minimap(): MinimapView | null;
   events: string[];
 }
 
@@ -236,6 +243,7 @@ export function createApi(host: DebugHost): PushminerApi {
         fountains: g.fountains.length,
         trackMarks: host.trackMarks(),
         muted: host.muted(),
+        minimap: host.minimap(),
       };
     },
     bodies(kind) {
@@ -329,6 +337,7 @@ export function createApi(host: DebugHost): PushminerApi {
 
     look: (x, y, view = {}) => host.look(x, y, view),
     measureFrame: () => host.measureFrame(),
+    measureMap: (runs = 200) => host.measureMap(runs),
     get calibration() {
       return host.calibration();
     },

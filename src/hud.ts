@@ -1,72 +1,166 @@
 /**
  * The page round the cave: the counters, the tally of a run, the word at the
- * top of the screen, the arrow to the way out, the black layer of the fade, the workshop, the boot
+ * top of the screen, the map, the black layer of the fade, the workshop, the boot
  * screen, and a phone's buttons.
  *
  * Everything here is the DOM, and nothing here is the game: it is told what
- * to show, and tells whoever set it up when a button is pressed. Where the
- * arrow goes is worked out apart from the DOM, in `placePointer`.
+ * to show, and tells whoever set it up when a button is pressed. What the
+ * map shows, and where, is worked out apart from the DOM, in `minimapView`.
  */
 import type { RunSummary } from './tally';
-import { project } from './matrix';
-
-/** Where the arrow to the way out, or to the hole, goes on the screen, in CSS pixels. */
-export type PointerPlacement =
-  /** Over the place, which is in view: bobbing above it, pointing down. */
-  | { over: true; x: number; y: number }
-  /** At the edge of the screen, on the way to it, pointing along (ux, uy). */
-  | { over: false; x: number; y: number; ux: number; uy: number };
-
-/**
- * Where the arrow goes for a target at (tx, ty) on the floor, seen through
- * `vp` on a screen `width` by `height`, from a player at (px, py): over it if
- * it is well in view, else at the edge of the screen the way it lies, kept
- * clear of the counters along the top, the help or the buttons along the
- * bottom, and on a phone its sliders. Null if there is no saying which way.
- */
-export function placePointer(
-  vp: Float32Array,
-  target: { x: number; y: number },
-  player: { x: number; y: number },
-  width: number,
-  height: number,
-  touch: boolean,
-  t: number,
-): PointerPlacement | null {
-  const p = project(vp, target.x, target.y, 0.5);
-  if (p && Math.abs(p[0]) < 0.9 && Math.abs(p[1]) < 0.9) {
-    const bob = Math.sin(t * 5) * 5;
-    return { over: true, x: ((p[0] + 1) * width) / 2, y: ((1 - p[1]) * height) / 2 - 60 + bob };
-  }
-  let dx: number, dy: number;
-  if (p && p[2] > 0) {
-    dx = (p[0] * width) / 2;
-    dy = (-p[1] * height) / 2;
-  } else {
-    // behind the camera, where a projection says nothing: turn the way on the floor into the screen's
-    const o = project(vp, player.x, player.y, 0),
-      ex = project(vp, player.x + 1, player.y, 0),
-      ey = project(vp, player.x, player.y + 1, 0);
-    if (!o || !ex || !ey) return null;
-    const wx = target.x - player.x,
-      wy = target.y - player.y;
-    dx = ((wx * (ex[0] - o[0]) + wy * (ey[0] - o[0])) * width) / 2;
-    dy = (-(wx * (ex[1] - o[1]) + wy * (ey[1] - o[1])) * height) / 2;
-  }
-  const len = Math.hypot(dx, dy) || 1;
-  const left = touch ? 72 : 56,
-    right = width - left,
-    top = 84,
-    bottom = height - (touch ? 150 : 110);
-  const cx = width / 2,
-    cy = height / 2;
-  const kx = dx > 0 ? (right - cx) / dx : dx < 0 ? (left - cx) / dx : Infinity;
-  const ky = dy > 0 ? (bottom - cy) / dy : dy < 0 ? (top - cy) / dy : Infinity;
-  const k = Math.max(0, Math.min(kx, ky));
-  return { over: false, x: cx + dx * k, y: cy + dy * k, ux: dx / len, uy: dy / len };
-}
+import { FLOOR_LEVEL, ROCK_LEVEL, WALL_LEVEL, type FloorImage, type MinimapView } from './minimap';
 
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+/** What the map is drawn in, as CSS colours: the cave's own, so floor reads against rock and the marks against both. */
+const GROUND = new Map<number, [number, number, number, number]>([
+  [FLOOR_LEVEL, [222, 205, 168, 235]],
+  [WALL_LEVEL, [160, 104, 74, 242]],
+  [ROCK_LEVEL, [36, 34, 48, 235]],
+]);
+const MAP = {
+  gold: '#f2c14e',
+  speck: 'rgba(242, 193, 78, 0.55)',
+  belt: 'rgba(120, 124, 140, 0.9)',
+  bot: '#5aa9ff',
+  hole: '#050507',
+  ring: '#4fd16f',
+  outline: 'rgba(0, 0, 0, 0.75)',
+};
+
+/**
+ * The map in the corner: a canvas that draws whatever view it is handed, at the screen's pixel density and
+ * the size the page gives it. It holds the floor as an image of its own, one pixel a tile, made when the floor
+ * changes and drawn turned and placed each time, so a redraw costs a blit and a few dozen marks.
+ */
+export class Minimap {
+  private readonly canvas = byId<HTMLCanvasElement>('minimap');
+  private readonly ctx = this.canvas.getContext('2d')!;
+  private floor: HTMLCanvasElement | null = null;
+
+  show() {
+    this.canvas.hidden = false;
+  }
+
+  /** Put away while the workshop is open, which fills the corner it is in. */
+  cover(covered: boolean) {
+    this.canvas.classList.toggle('covered', covered);
+  }
+
+  /** As dark as the page: it fades with the screen and not before or after it. */
+  fade(darkness: number) {
+    this.canvas.style.opacity = darkness === 0 ? '1' : (1 - darkness).toFixed(3);
+  }
+
+  /** The floor as the cave stands now, in colour, ready to be drawn. */
+  setFloor(image: FloorImage) {
+    const floor = (this.floor ??= document.createElement('canvas'));
+    floor.width = image.width;
+    floor.height = image.height;
+    const ctx = floor.getContext('2d')!;
+    const pixels = ctx.createImageData(image.width, image.height);
+    for (let i = 0; i < image.data.length; i++) pixels.data.set(GROUND.get(image.data[i])!, i * 4);
+    ctx.putImageData(pixels, 0, 0);
+  }
+
+  /** Waits for what has been drawn to be rasterised, which a canvas otherwise puts off: for timing the work and not only the asking. */
+  finish() {
+    this.ctx.getImageData(0, 0, 1, 1);
+  }
+
+  /** The view drawn: the floor, then what lies on it, then the machine on top. */
+  draw(view: MinimapView) {
+    const { canvas, ctx } = this;
+    const size = canvas.clientWidth;
+    if (!size) return;
+    const dpr = window.devicePixelRatio || 1;
+    const backing = Math.round(size * dpr);
+    if (canvas.width !== backing) canvas.width = canvas.height = backing;
+    // map units from here: the dozer at the middle, the window `range` either way
+    const k = size / (2 * view.range),
+      px = 1 / k;
+    ctx.setTransform((backing / size) * k, 0, 0, (backing / size) * k, backing / 2, backing / 2);
+    ctx.clearRect(-view.range, -view.range, 2 * view.range, 2 * view.range);
+    const [r, g, b, a] = GROUND.get(ROCK_LEVEL)!;
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+    ctx.fillRect(-view.range, -view.range, 2 * view.range, 2 * view.range);
+    if (this.floor) {
+      ctx.save();
+      ctx.transform(...view.floor);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(this.floor, 0, 0);
+      ctx.restore();
+    }
+    // a mark on the rim is drawn just inside it, so the whole of it shows
+    const keep = view.range - 5 * px;
+    const clamp = (v: number) => Math.max(-keep, Math.min(keep, v));
+
+    ctx.strokeStyle = MAP.belt;
+    ctx.lineWidth = 1.4 * px;
+    ctx.beginPath();
+    for (const b of view.belts) {
+      ctx.moveTo(b.x0, b.y0);
+      ctx.lineTo(b.x1, b.y1);
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = MAP.speck;
+    for (const s of view.specks) ctx.fillRect(s.x - px, s.y - px, 2 * px, 2 * px);
+
+    for (const h of view.holes) {
+      const x = clamp(h.x),
+        y = clamp(h.y),
+        r = h.rim ? 3.4 * px : Math.max(3.4 * px, h.radius * 0.7);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = MAP.hole;
+      ctx.fill();
+      ctx.strokeStyle = MAP.ring;
+      ctx.lineWidth = 1.7 * px;
+      ctx.stroke();
+    }
+
+    if (view.exit) {
+      const x = clamp(view.exit.x),
+        y = clamp(view.exit.y),
+        r = 4.6 * px;
+      ctx.beginPath();
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r, y);
+      ctx.lineTo(x, y + r);
+      ctx.lineTo(x - r, y);
+      ctx.closePath();
+      ctx.fillStyle = MAP.gold;
+      ctx.fill();
+      ctx.strokeStyle = MAP.outline;
+      ctx.lineWidth = 1.2 * px;
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = MAP.bot;
+    for (const b of view.bots) {
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 2.6 * px, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // the machine, a gold arrow pointing the way it faces
+    ctx.save();
+    ctx.rotate(view.dozer.heading);
+    ctx.beginPath();
+    ctx.moveTo(8 * px, 0);
+    ctx.lineTo(-5.5 * px, 5.2 * px);
+    ctx.lineTo(-2.5 * px, 0);
+    ctx.lineTo(-5.5 * px, -5.2 * px);
+    ctx.closePath();
+    ctx.fillStyle = MAP.gold;
+    ctx.fill();
+    ctx.strokeStyle = MAP.outline;
+    ctx.lineWidth = 1.2 * px;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
 
 export class Hud {
   private readonly boot = byId('boot');
@@ -76,9 +170,6 @@ export class Hud {
   private readonly shopBalance = byId('shopBalance');
   private readonly progressText = byId('progress');
   private readonly shopProgress = byId('shopProgress');
-  private readonly pointer = byId('pointer');
-  private readonly pointerArrow = this.pointer.querySelector('.arrow') as HTMLElement;
-  private readonly pointerLabel = this.pointer.querySelector('span')!;
   private readonly statsPanel = byId('stats');
   private readonly helpPanel = byId('help');
   private readonly toast = byId('toast');
@@ -88,6 +179,7 @@ export class Hud {
   readonly shopRows = this.shopPanel.querySelector('.rows') as HTMLElement;
   readonly shopCosmetics = this.shopPanel.querySelector('.rows.cosmetics') as HTMLElement;
   private readonly shopButton = byId<HTMLButtonElement>('shopButton');
+  readonly map = new Minimap();
   private noteFor = 0;
 
   /** What the boot screen says it is doing, or why it stopped. */
@@ -101,6 +193,7 @@ export class Hud {
     this.bankPanel.hidden = false;
     this.statsPanel.hidden = false;
     this.helpPanel.hidden = false;
+    this.map.show();
   }
 
   /** A word at the top of the screen for a few seconds: what just happened, or what a button just changed. */
@@ -114,6 +207,7 @@ export class Hud {
   fade(darkness: number) {
     const v = Math.max(0, Math.min(1, darkness));
     this.fadeLayer.style.opacity = v === 0 ? '0' : v.toFixed(3);
+    this.map.fade(v);
   }
 
   /** Time passes: the word at the top goes when its time is up. */
@@ -148,23 +242,7 @@ export class Hud {
   shop(open: boolean) {
     this.shopPanel.hidden = !open;
     this.shopButton.textContent = open ? 'close' : 'shop';
-  }
-
-  /** The arrow to a place, with its name behind it; or none. */
-  showPointer(place: PointerPlacement | null, label: string) {
-    if (!place) {
-      this.pointer.hidden = true;
-      return;
-    }
-    this.pointer.hidden = false;
-    this.pointer.style.transform = `translate(${place.x}px, ${place.y}px)`;
-    const [ux, uy] = place.over ? [0, 1] : [place.ux, place.uy];
-    this.pointerArrow.style.transform = `rotate(${Math.atan2(uy, ux)}rad)`;
-    this.pointerLabel.textContent = label;
-    // the words behind the arrow, far enough back that a long name clears it whichever way it points
-    const w = this.pointerLabel.offsetWidth / 2 + 24,
-      h = this.pointerLabel.offsetHeight / 2 + 22;
-    this.pointerLabel.style.transform = `translate(calc(-50% + ${-ux * w}px), calc(-50% + ${-uy * h}px))`;
+    this.map.cover(open);
   }
 
   /**

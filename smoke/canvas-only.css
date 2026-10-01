@@ -1,0 +1,4 @@
+/* The pictures of the canvas are of the cave and what is drawn on it, so the map over its corner is put away. */
+#minimap {
+  visibility: hidden !important;
+}

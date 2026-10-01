@@ -42,7 +42,7 @@ the game to whatever it happened to draw that day.
   some, it goes in `game.ts` or a module of its own. A `Game` is one cave: on
   `caveLeft` the page swaps (`enter` in `main.ts`) to the next cave's game,
   static scene, track marks and camera, in the dark, timed and logged as
-  `swap <id> <ms>`. What the arrow points at is `src/aim.ts`'s.
+  `swap <id> <ms>`. What the minimap shows, and where, is `src/minimap.ts`'s; `hud.ts` only draws it.
 - `src/debug.ts` is `window.pushminer`, the test API. `src/invariants.ts` lists
   the rules that must always hold.
 - Content (heaps, walls, barrels, lamps, the way in and the way out) is

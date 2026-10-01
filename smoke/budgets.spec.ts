@@ -252,3 +252,37 @@ function writeFigures(part: Record<string, unknown>) {
   }
   writeFileSync('test-results/budgets.json', JSON.stringify({ ...all, ...part }, null, 1));
 }
+
+/**
+ * What one update of the map costs, the view and the draw: half a millisecond, in the cave with the most bodies
+ * and the biggest floor, with drones at work, and on a screen at three times the pixels, which is the biggest
+ * canvas it is drawn on. The map is worked out about fifteen times a second, so this is what it takes from the
+ * frames. The run of updates is taken to the end (the canvas read back once), so the browser's rasterising is counted and not left to it.
+ */
+const MAP_BUDGET_MS = 0.5;
+test.describe('the map', () => {
+  test.use({ deviceScaleFactor: 3 });
+  test(`costs under ${MAP_BUDGET_MS} ms an update in the biggest caves`, async ({ page }, info) => {
+    const problems = watch(page);
+    await start(page, { seed: 5, paused: true, save: { cave: 'deep', bank: 50000, drones: 3 } });
+    await page.evaluate(() => window.pushminer!.pause());
+    const costs: Record<string, number> = {};
+    for (const id of ['deep', 'warrens', 'hollow']) {
+      await page.evaluate((id) => {
+        const api = window.pushminer!;
+        api.goto(id);
+        const hole = api.content().hole;
+        api.teleport(hole.x, hole.y - 14, Math.PI / 2);
+        api.step(600);
+      }, id);
+      // warmed up, and the fastest of five rounds of two hundred, since only a slower round says what else the machine was doing
+      const rounds: number[] = [];
+      for (let k = 0; k < 5; k++) rounds.push(await page.evaluate(() => window.pushminer!.measureMap(200)));
+      costs[id] = Math.min(...rounds);
+      expect(costs[id], `an update of the map in ${id}`).toBeLessThan(MAP_BUDGET_MS);
+    }
+    await info.attach('map-cost.json', { body: JSON.stringify(costs, null, 2), contentType: 'application/json' });
+    console.info('map update, ms:', JSON.stringify(costs));
+    expect(problems).toEqual([]);
+  });
+});

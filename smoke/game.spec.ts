@@ -27,6 +27,49 @@ function framesInASecond(page: Page) {
   );
 }
 
+/** Where each of `selectors` is on the page, the visible ones only, as boxes. */
+async function boxes(page: Page, selectors: string[]) {
+  return page.evaluate((list) => {
+    const out: Record<string, { left: number; top: number; right: number; bottom: number }> = {};
+    for (const sel of list) {
+      for (const [k, el] of Array.from(document.querySelectorAll<HTMLElement>(sel)).entries()) {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height || getComputedStyle(el).display === 'none') continue;
+        out[`${sel}#${k}`] = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      }
+    }
+    return out;
+  }, selectors);
+}
+
+type Box = { left: number; top: number; right: number; bottom: number };
+const overlap = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+/** The map is up, drawn on, clear of a tap, and clear of everything in `others` that is on the page. */
+async function expectMapClear(page: Page, others: string[]) {
+  const map = page.locator('#minimap');
+  await expect(map).toBeVisible();
+  expect(await page.locator('#pointer').count(), 'no arrow on the page').toBe(0);
+  expect(await map.evaluate((el) => getComputedStyle(el).pointerEvents), 'taps pass through it').toBe('none');
+  const marks = await page.evaluate(() => window.pushminer!.state().minimap);
+  expect(marks, 'the map has been worked out').not.toBeNull();
+  // something is drawn on it, and not only rock: the canvas is not blank
+  const drawn = await map.evaluate((el: HTMLCanvasElement) => {
+    const data = el.getContext('2d')!.getImageData(0, 0, el.width, el.height).data;
+    const seen = new Set<number>();
+    for (let i = 0; i < data.length; i += 4 * 7) seen.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
+    return seen.size;
+  });
+  expect(drawn, 'the map has more than one colour on it').toBeGreaterThan(3);
+  const placed = await boxes(page, ['#minimap', ...others]);
+  const mine = placed['#minimap#0'];
+  for (const [name, box] of Object.entries(placed)) {
+    if (name === '#minimap#0') continue;
+    expect(overlap(mine, box), `the map overlaps ${name}`).toBe(false);
+  }
+  return mine;
+}
+
 /** How much a screenshot has in it: the spread of its brightness, and the share of it that is not near black. */
 function content(png: Buffer) {
   const img = PNG.sync.read(png);
@@ -86,6 +129,19 @@ test('boots with no errors and draws the cave', async ({ page }, info) => {
   expect(c.lit, 'share of the screen lit').toBeGreaterThan(0.2);
   expect(c.spread, 'variety in the picture').toBeGreaterThan(25);
   expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+test('has the map in the bottom-right corner, clear of the counters and the help', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { paused: true });
+  await page.evaluate(() => window.pushminer!.step(30));
+  await page.keyboard.press('v');
+  await page.evaluate(() => window.pushminer!.step(1));
+  const mine = await expectMapClear(page, ['#bank', '#stats', '#help', '#cameraNote', '#toast']);
+  expect(mine.right, 'in the right-hand corner').toBeCloseTo(1280 - 16, 0);
+  expect(mine.bottom, 'at the bottom').toBeCloseTo(800 - 16, 0);
+  expect(mine.right - mine.left, 'about 120 px').toBeCloseTo(120, 0);
   expect(problems).toEqual([]);
 });
 
@@ -156,9 +212,12 @@ test('opens and closes the workshop', async ({ page }, info) => {
   await page.keyboard.press('b');
   await expect(shop).toBeVisible();
   await expect(shop.locator('button').first()).toBeVisible();
+  // the workshop fills the corner the map is in, so the map steps aside while it is open
+  await expect(page.locator('#minimap')).toBeHidden();
   await info.attach('workshop', { body: await page.screenshot(), contentType: 'image/png' });
   await page.keyboard.press('b');
   await expect(shop).toBeHidden();
+  await expect(page.locator('#minimap')).toBeVisible();
   expect(problems).toEqual([]);
 });
 
@@ -207,6 +266,34 @@ test.describe('on a phone', () => {
     expect(problems).toEqual([]);
   });
 
+  test('has the map in the top-right corner, inside the safe area, clear of the sliders, buttons and note', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { paused: true });
+    await page.evaluate(() => window.pushminer!.step(30));
+    // the note at the top, shown by pressing a button that sets it
+    await page.locator('#cameraButton').tap();
+    await page.evaluate(() => window.pushminer!.step(1));
+    await expect(page.locator('#cameraNote')).toBeVisible();
+    const mine = await expectMapClear(page, ['#trackLeft', '#trackRight', '#pad button', '#cameraNote', '#toast']);
+    const inset = await page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.cssText =
+        'position:fixed;top:env(safe-area-inset-top);right:env(safe-area-inset-right);width:0;height:0';
+      document.body.append(probe);
+      const r = probe.getBoundingClientRect();
+      probe.remove();
+      return { top: r.top, right: innerWidth - r.right };
+    });
+    expect(mine.right, 'inside the right edge, and the safe area').toBeLessThanOrEqual(400 - 12 - inset.right + 0.5);
+    expect(mine.top, 'inside the top edge, and the safe area').toBeGreaterThanOrEqual(12 + inset.top - 0.5);
+    expect(mine.right, 'in the right half').toBeGreaterThan(200);
+    expect(mine.top, 'in the top half').toBeLessThan(200);
+    expect(mine.right - mine.left, 'about 88 px').toBeCloseTo(88, 0);
+    expect(problems).toEqual([]);
+  });
+
   test('mutes and unmutes the sound from its button, and the button says which', async ({ page }) => {
     const problems = watch(page);
     await start(page, { paused: true });
@@ -220,6 +307,22 @@ test.describe('on a phone', () => {
     await button.tap();
     expect(await muted(), 'unmuted by the button').toBe(false);
     await expect(button).toHaveAttribute('aria-label', 'mute');
+    expect(problems).toEqual([]);
+  });
+});
+
+test.describe('on a phone turned on its side', () => {
+  test.use({ viewport: { width: 860, height: 400 }, hasTouch: true, isMobile: true });
+
+  test('keeps the map clear of the slider that runs the height of the screen', async ({ page }) => {
+    const problems = watch(page);
+    await start(page, { paused: true });
+    await page.evaluate(() => window.pushminer!.step(30));
+    await page.locator('#cameraButton').tap();
+    await page.evaluate(() => window.pushminer!.step(1));
+    const mine = await expectMapClear(page, ['#trackLeft', '#trackRight', '#pad button', '#cameraNote']);
+    expect(mine.top, 'still at the top').toBeLessThan(40);
+    expect(mine.right, 'inside the screen').toBeLessThanOrEqual(860);
     expect(problems).toEqual([]);
   });
 });

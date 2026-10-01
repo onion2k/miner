@@ -13,7 +13,7 @@ The run is five caves, one after another, and nothing refills them: the
 Hollow, then the South Gallery, the East Gallery, the North Vault and the West
 Gallery, each with dearer gems than the last. Bank nine tenths of what a cave
 holds and a stretch of its edge cracks open in a burst of rock and dust: the way
-out. A gold arrow points to it, and the page says so. Chase the last tenth or
+out. It shows gold on the minimap, and the page says so. Chase the last tenth or
 leave it: drive down the way out, a cutting through the rock lit only by your
 own headlights, and the screen goes dark along it. Past the line at its end the
 cave behind is gone, with whatever was still in it (the next cave says how much),
@@ -245,8 +245,8 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/lighting.ts       each frame's lights and glows
     src/camera.ts         the camera rig: fixed, chase and free
     src/calibrate.ts      how much coin this machine can draw
-    src/aim.ts            what the gold arrow points at: the way out once open, else the hole while it is off the screen
-    src/hud.ts            the page round the cave: counters, tally, notes, the arrow, the black layer of the fade, a phone's buttons
+    src/minimap.ts        what the minimap shows, turned with the camera: the holes, the way out, the drones, what is left to bank, and the floor
+    src/hud.ts            the page round the cave: counters, tally, notes, the minimap, the black layer of the fade, a phone's buttons
     src/palette.ts        the colours things are drawn in
     src/effects.ts        the bursts of particles: glass, chips, dust, sparkle
     src/audio.ts          every sound, synthesised: clinks, thunks, the engine, the rumble

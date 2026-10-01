@@ -131,7 +131,11 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   // the cave cleared: its way out opens, with a burst at its mouth, and the page says so
   const before = await page.evaluate(() => window.pushminer!.state());
   expect(before.open, 'the way out is shut').toBe(false);
-  expect((await screen(page)).arrow, 'the arrow at the hole, not the way out').not.toBe('the way out');
+  const shut = await screen(page);
+  expect(shut.arrows, 'no arrow on the page, in any cave').toBe(0);
+  expect(shut.map.visible, 'the map is up').toBe(true);
+  expect(shut.map.exit, 'the way out is not on the map while it is shut').toBe(false);
+  expect(shut.map.holes, 'the hole is on it').toBeGreaterThanOrEqual(1);
   await page.evaluate(() => window.pushminer!.openExit());
   await play(page, 10, 'the way out opening');
   const opened = await page.evaluate(() => window.pushminer!.state());
@@ -139,7 +143,8 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   expect(await page.evaluate(() => window.pushminer!.events()), 'the way out opened').toContain('exitOpened');
   const words = await screen(page);
   expect(words.note, 'the note says so').toBe('the way out is open');
-  expect(words.arrow, 'the arrow points at the way out').toBe('the way out');
+  expect(words.map.exit, 'the way out is on the map once it is open').toBe(true);
+  expect(words.arrows, 'and no arrow').toBe(0);
   expect(words.progress).toContain('the way out is open');
   expect(words.fade, 'still light on the floor').toBe(0);
   await info.attach('the way out open', { body: await page.screenshot(), contentType: 'image/png' });
@@ -171,10 +176,11 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
       if (s.cave !== 'hollow') return;
       speedBefore = s.dozer.speed;
       dark.push(s.darkness);
-      // well down the cutting the mouth is behind the machine, and the arrow to it has gone
-      if (s.darkness > 0.9) expect((await screen(page)).arrow, 'no arrow down the way out').toBeNull();
-      // the black layer is the darkness, in the frame just drawn
-      expect((await screen(page)).fade, `the fade at darkness ${s.darkness}`).toBeCloseTo(s.darkness, 2);
+      // the black layer is the darkness, in the frame just drawn, and the map goes dark with it
+      const shown = await screen(page);
+      expect(shown.fade, `the fade at darkness ${s.darkness}`).toBeCloseTo(s.darkness, 2);
+      expect(shown.map.opacity, `the map at darkness ${s.darkness}`).toBeCloseTo(1 - s.darkness, 2);
+      expect(shown.arrows).toBe(0);
     },
   });
   // after a reload the machine is where it comes in: dark at the outer end of the way in, and lightening along it
@@ -193,6 +199,7 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   expect(last.dozer.speed, 'at the speed it had').toBeGreaterThan(speedBefore * 0.8);
   expect(last.darkness, 'arrives in the dark').toBeGreaterThan(0.6);
   expect((await screen(page)).fade, 'and the page is dark with it').toBeCloseTo(last.darkness, 2);
+  expect((await screen(page)).map.opacity, 'and so is the map').toBeCloseTo(1 - last.darkness, 2);
   expect(await page.evaluate(() => window.pushminer!.invariants()), 'invariants on arriving').toEqual([]);
 
   // what the swap logged, and what it said on arriving
@@ -202,6 +209,18 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   expect(swap, 'the swap timed and logged').toBeDefined();
   expect(+swap!.split(' ')[2], 'the swap, in ms').toBeLessThan(1000);
   const arrived = await screen(page);
+  // the map is of the new cave: its way out shut, its hole as far from the dozer as the cave says
+  expect(arrived.map.visible, 'the map comes along into the next cave').toBe(true);
+  expect(arrived.map.exit, 'the new cave’s way out is shut, so not on its map').toBe(false);
+  const arrivedState = await page.evaluate(() => window.pushminer!.state());
+  const arrivedHole = (await page.evaluate(() => window.pushminer!.content())).hole;
+  const [mapHole] = arrivedState.minimap!.holes;
+  if (mapHole.rim) expect(Math.max(Math.abs(mapHole.x), Math.abs(mapHole.y)), 'on the rim').toBeCloseTo(100, 3);
+  else {
+    // a little of give, since the map is drawn a few times a second and the machine is moving
+    const far = Math.hypot(arrivedHole.x - arrivedState.dozer.x, arrivedHole.y - arrivedState.dozer.y);
+    expect(Math.abs(Math.hypot(mapHole.x, mapHole.y) - far), 'as far off on the map as in the cave').toBeLessThan(4);
+  }
   expect(arrived.note).toContain('South Gallery');
   expect(arrived.note).toContain('rubies and emeralds');
   expect(arrived.progress).toContain('South Gallery');
@@ -215,6 +234,9 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
     seen: (s) => void lightening.push(s.darkness),
   });
   for (let i = 1; i < lightening.length; i++) expect(lightening[i]).toBeLessThanOrEqual(lightening[i - 1]);
+  // the map followed the dozer in, and is the same one the hole lies on
+  const driven = (await page.evaluate(() => window.pushminer!.state())).minimap!;
+  expect(driven.holes[0], 'the hole has come nearer on the map as the dozer drove at it').not.toEqual(mapHole);
   expect((await screen(page)).fade, 'light again on the floor').toBe(0);
   await info.attach('in the south gallery', { body: await page.screenshot(), contentType: 'image/png' });
 

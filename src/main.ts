@@ -29,7 +29,7 @@ import { TrackMarks } from './tracks';
 import { SpiderGait } from './spider';
 import { FUSE } from './barrels';
 import { EXIT_OPEN_NOTE, arrivalNote, progressText } from './progress';
-import { aimFor, shownArrow, type Aim } from './aim';
+import { cameraFacing, floorImage, minimapView, type MinimapView } from './minimap';
 import { holeLamps, lampOn } from './lamps';
 import { stashBehind, wallTiles } from './walls';
 import { StaticScene } from './scene-static';
@@ -37,7 +37,7 @@ import { DynamicScene, TREAD_PITCH } from './scene-dynamic';
 import { SceneLights } from './lighting';
 import { CameraRig, CAMERA_HOME } from './camera';
 import { calibrate, frameCost } from './calibrate';
-import { Hud, placePointer, setupPad } from './hud';
+import { Hud, setupPad } from './hud';
 import { WALL_COLOUR, kindColour, type Rgb } from './palette';
 import * as fx from './effects';
 import { airParticle, biomeAt, featureParticle, lampColour } from './biomes';
@@ -65,6 +65,8 @@ const TRACK_PAGES = 16,
 const RENDER_BUDGET_MS = 8;
 /** How many places near the eye are tried each frame for something drifting in a biome's air. */
 const AIR_TRIES = 4;
+/** How often the map is worked out and drawn, in seconds of game time. */
+const MAP_EVERY = 1 / 15;
 /** How many of the game's events the test API keeps, before the oldest go. */
 const EVENTS_KEPT = 500;
 
@@ -169,8 +171,6 @@ async function main() {
       for (const [x, y] of faces) emit(fx.rockBurst(x, y, c, s));
       sound.smash();
       hud.note(EXIT_OPEN_NOTE, 4);
-      // the arrow is for the way out from now on, and not after a wait
-      aimAt = 0;
     },
     caveLeft(from, lost) {
       log(`caveLeft ${from} ${lost}`);
@@ -262,8 +262,16 @@ async function main() {
 
   // ---- the scene ----
 
+  /** The map as last worked out, for the test API; and when, in game time, it is next. */
+  let mapView: MinimapView | null = null;
+  let mapAt = 0;
   let staticScene = new StaticScene(cave);
-  const buildStatic = () => renderer.setStatic(staticScene.groups({ ...save, belts: game.running() }));
+  const buildStatic = () => {
+    renderer.setStatic(staticScene.groups({ ...save, belts: game.running() }));
+    // the map's floor follows the rock: a wall down, a chamber open, the way out open, a new cave
+    hud.map.setFloor(floorImage(cave, game.world.solid));
+    mapAt = 0;
+  };
   buildStatic();
 
   // A mark a grouser apart, the width of a track, on the floor wherever there is floor: not over the
@@ -543,12 +551,9 @@ async function main() {
   };
   let smoothed = 16.7;
   let statsIn = 0,
-    shopIn = 0,
-    aimAt = 0;
+    shopIn = 0;
   let lastBank = -1,
     lastOpen = false;
-  /** What the gold arrow points at, worked out every little while and not every frame. */
-  let aim: Aim | null = null;
   let frames = 0;
 
   /**
@@ -576,7 +581,6 @@ async function main() {
     lights.forget();
     rig.snapTo(game.dozer.x, game.dozer.y);
     lastBank = -1;
-    aimAt = 0;
     // a workshop left open sells this cave's belts now, and not the last one's
     if (shopOpen) renderShops();
     const note = arrivalNote(spec, lost);
@@ -642,11 +646,6 @@ async function main() {
       hud.bank(economy.bank);
       hud.progress(progressText(economy, stock.banked()));
     }
-    // what the arrow points at: the way out once it is open, else the hole
-    if (game.t >= aimAt) {
-      aimAt = game.t + 0.4;
-      aim = aimFor(cave, save.open, dozer, save.done);
-    }
     hud.tick(dt);
     smoothed += (dt * 1000 - smoothed) * 0.08;
     if ((statsIn -= dt) <= 0) {
@@ -673,10 +672,35 @@ async function main() {
     renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
     // the black of the cutting, as dark as the game says it is where the dozer is
     hud.fade(game.darkness());
-    hud.showPointer(
-      shownArrow(aim, aim && placePointer(cam.viewProjection, aim, dozer, innerWidth, innerHeight, touch, game.t)),
-      aim?.label ?? '',
-    );
+    // the map, a few times a second and not every frame: it turns with the camera, which has just moved
+    if (game.t >= mapAt) {
+      mapAt = game.t + MAP_EVERY;
+      updateMap();
+    }
+  }
+
+  /** The map worked out for the game as it stands and the camera as it looks, and drawn. */
+  function updateMap() {
+    mapView = minimapView({
+      cave,
+      open: save.open,
+      dozer: game.dozer,
+      facing: cameraFacing(orbit.currentAzimuth),
+      bots: game.bots,
+      belts: game.running().map((b) => cave.spec.belts[b].spec),
+      bodies: game.world,
+    });
+    hud.map.draw(mapView);
+  }
+
+  /** What one update of the map costs, in milliseconds, over `runs` of them: for the budget that holds it to half of one. */
+  function measureMap(runs: number): number {
+    updateMap();
+    const began = performance.now();
+    for (let i = 0; i < runs; i++) updateMap();
+    // taken to the end, since the browser would otherwise queue the drawing and the cost be somebody else's
+    hud.map.finish();
+    return (performance.now() - began) / runs;
   }
 
   // ---- the test API, and the frame loop ----
@@ -703,16 +727,19 @@ async function main() {
     },
     look(x, y, view) {
       orbit.setSpherical(view);
+      mapAt = 0;
       cam.target = [x, y, 1.5];
       rig.follow[0] = x;
       rig.follow[1] = y;
       for (let i = 0; i < 400; i++) orbit.update();
     },
     measureFrame,
+    measureMap,
     calibration: () => calibration,
     setCoinDetail,
     lampsLit: () => lights.lampsLit,
     trackMarks: () => tracks.size,
+    minimap: () => mapView,
     muted: () => sound.muted,
     events: eventLog,
   });

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { lookAt, multiply, perspective } from 'artshape-render/gpu/camera';
 import { CAMERA_HOME, CameraRig } from '../src/camera';
-import { placePointer } from '../src/hud';
 import { SceneLights, type LightState } from '../src/lighting';
 import { StaticScene, type StaticState } from '../src/scene-static';
 import { holeLamps } from '../src/lamps';
@@ -198,37 +197,6 @@ describe('the lights', () => {
     expect(new SceneLights(256, 256).build(base({ holePulse: [1] })).count).toBe(quiet + 1);
     expect(new SceneLights(256, 4).build(base({ holePulse: [1] })).count).toBeLessThanOrEqual(4);
     expect(HOLE.radius).toBeGreaterThan(0);
-  });
-});
-
-describe('the arrow to the way out', () => {
-  const vp = camera(0, -14).viewProjection;
-  it('hangs over the way out in view', () => {
-    const p = placePointer(vp, { x: 0, y: -10 }, { x: 0, y: -14 }, 1280, 800, false, 0)!;
-    expect(p.over).toBe(true);
-    expect(p.x).toBeCloseTo(640, -1);
-  });
-
-  it('sits at the edge of the screen toward one out of view, clear of the counters and buttons', () => {
-    for (const [tx, ty] of [
-      [400, -14],
-      [-400, -14],
-      [0, 300],
-      [0, -300],
-      [300, 300],
-    ]) {
-      const p = placePointer(vp, { x: tx, y: ty }, { x: 0, y: -14 }, 1280, 800, false, 0)!;
-      expect(p.over).toBe(false);
-      expect(p.x).toBeGreaterThanOrEqual(56 - 1e-6);
-      expect(p.x).toBeLessThanOrEqual(1280 - 56 + 1e-6);
-      expect(p.y).toBeGreaterThanOrEqual(84 - 1e-6);
-      expect(p.y).toBeLessThanOrEqual(800 - 110 + 1e-6);
-      if (p.over) continue;
-      // pointing the way it lies: right for one to the east, up the screen for one to the north
-      if (tx > 0) expect(p.ux).toBeGreaterThan(0);
-      if (tx < 0) expect(p.ux).toBeLessThan(0);
-      if (ty > 0 && tx === 0) expect(p.uy).toBeLessThan(0);
-    }
   });
 });
 

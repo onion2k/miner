@@ -453,41 +453,49 @@
   body.touch #toast {
     bottom: calc(66px + env(safe-area-inset-bottom));
   }
-  /* where to go: an arrow at the edge of the screen, or a marker over the place once it is in view */
-  #pointer {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: 0;
-    height: 0;
-    pointer-events: none;
-    z-index: 2;
+  /* where to go: a map of the cave round the machine, turned so that up is up the screen. It is above the
+     black of the fade, and fades by the same darkness itself, so it goes with the cave and not twice as fast.
+     Drawn by the page and never touched: a tap on it is a tap on the cave. */
+  #minimap {
+    right: 16px;
+    bottom: 16px;
+    width: 120px;
+    height: 120px;
+    padding: 0;
+    overflow: hidden;
+    z-index: 8;
   }
-  #pointer .arrow {
-    position: absolute;
-    left: -20px;
-    top: -20px;
-    width: 40px;
-    height: 40px;
-    filter: drop-shadow(0 0 5px rgba(242, 193, 78, 0.8)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.8));
+  #minimap[hidden] {
+    display: none;
   }
-  #pointer .arrow::before {
-    content: '';
-    position: absolute;
-    inset: 3px;
-    background: var(--gold);
-    clip-path: polygon(0 12%, 100% 50%, 0 88%, 26% 50%);
+  #minimap.covered {
+    visibility: hidden;
   }
-  #pointer span {
-    position: absolute;
-    top: 0;
-    left: 0;
-    white-space: nowrap;
-    color: var(--gold);
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  /* on a phone, in the top-right corner inside the notch and the rounded screen, where the counters are not */
+  body.touch {
+    --map-right: calc(12px + env(safe-area-inset-right));
+  }
+  /* turned on its side the right-hand slider runs the height of the screen, hit area and all: the map keeps off it */
+  @media (orientation: landscape) {
+    body.touch:not(.stick) {
+      --map-right: calc(14vmin + 8px + env(safe-area-inset-right));
+    }
+  }
+  body.touch #minimap {
+    top: calc(12px + env(safe-area-inset-top));
+    right: var(--map-right);
+    bottom: auto;
+    width: 88px;
+    height: 88px;
+    border-radius: 10px;
+  }
+  /* the word at the top keeps to the room the map leaves it, and is centred in that */
+  body.touch #cameraNote {
+    left: 12px;
+    right: calc(var(--map-right) + 88px + 8px);
+    transform: none;
+    margin: 0 auto;
+    max-width: calc(100vw - 12px - var(--map-right) - 88px - 8px);
   }
   #boot {
     position: fixed;
@@ -522,10 +530,7 @@
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="toast" hidden></div>
 <div class="panel" id="cameraNote" hidden></div>
-<div id="pointer" hidden>
-  <div class="arrow"></div>
-  <span></span>
-</div>
+<canvas class="panel" id="minimap" hidden aria-label="map"></canvas>
 <div class="panel" id="help" hidden>
   drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom ·
   <span>V</span> camera mode · <span>C</span> reset camera · <span>M</span> mute · <span>H</span> horn<br />

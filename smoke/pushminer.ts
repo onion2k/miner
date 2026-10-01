@@ -87,14 +87,24 @@ export async function ready(page: Page) {
   }
 }
 
-/** What the page shows of the way out: the black layer's opacity, the arrow and what it says, the note and the progress line. */
+/**
+ * What the page shows of the way out: the black layer's opacity, the map's (shown or not, its opacity, and
+ * whether it marks the way out and how many holes), any gold arrow left on the page, the note and the progress line.
+ */
 export async function screen(page: Page) {
   return page.evaluate(() => {
     const text = (id: string) => document.getElementById(id)!.textContent;
-    const pointer = document.getElementById('pointer')!;
+    const map = document.getElementById('minimap') as HTMLElement;
+    const marks = window.pushminer!.state().minimap;
     return {
       fade: +getComputedStyle(document.getElementById('fade')!).opacity,
-      arrow: pointer.hidden ? null : pointer.querySelector('span')!.textContent,
+      map: {
+        visible: !map.hidden && getComputedStyle(map).display !== 'none',
+        opacity: +getComputedStyle(map).opacity,
+        exit: marks ? marks.exit !== undefined : null,
+        holes: marks ? marks.holes.length : 0,
+      },
+      arrows: document.querySelectorAll('#pointer').length,
       note: document.getElementById('cameraNote')!.hidden ? null : text('cameraNote'),
       progress: text('progress'),
     };
