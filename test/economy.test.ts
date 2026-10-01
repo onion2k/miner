@@ -151,6 +151,9 @@ describe('the economy', () => {
         rubble: [1, 2, 3, 4, 5],
         barrels: [1, 2, 3, 4],
         lampsBroken: [1, 'x', 2],
+        scoop: 99,
+        geodes: [1, 2, 3, 4],
+        drained: -4,
       }),
     );
     const e = newEconomy();
@@ -167,6 +170,9 @@ describe('the economy', () => {
     expect(e.save.walls).toEqual(south.walls.map(() => false));
     expect(e.save.rubble, 'whole bricks only').toEqual([1, 2, 3, 4]);
     expect(e.save.barrels, 'whole barrels only').toEqual([1, 2, 3]);
+    expect(e.save.scoop, 'no size of scoop past the largest').toBe(3);
+    expect(e.save.geodes, 'whole geodes only').toEqual([1, 2, 3]);
+    expect(e.save.drained, 'nothing less than nothing down a drain').toBe(0);
     expect(e.save.lampsBroken).toEqual([1, 2]);
   });
 

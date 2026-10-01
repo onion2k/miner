@@ -41,6 +41,8 @@ export interface Save {
   blade: number;
   drones: number;
   magnet: number;
+  /** The size of scoop the dozer has, from 1, or 0 for none. */
+  scoop: number;
   /** Which paint the dozer wears, and which it owns. */
   paint: string;
   paints: string[];
@@ -75,7 +77,17 @@ export interface Save {
    * a cave not yet begun, which puts its barrels where they start.
    */
   barrels: number[] | null;
+  /**
+   * The geodes still whole, as x, y and z, three numbers a geode; null for a
+   * cave not yet begun, which puts its geodes where they start.
+   */
+  geodes: number[] | null;
+  /** What has gone down the cave's drains, in coins: lost, and said so when the cave is left. */
+  drained: number;
 }
+
+/** The sizes of scoop the workshop sells: a save is held to them. */
+export const SCOOP_SIZES = 3;
 
 /**
  * The cave the game used to end in, before the Deep: a game finished there stays finished, where it is, and is not
@@ -274,6 +286,7 @@ export class Economy {
       blade: 0,
       drones: 0,
       magnet: 0,
+      scoop: 0,
       paint: 'yellow',
       paints: ['yellow'],
       body: 'dozer',
@@ -298,6 +311,8 @@ export class Economy {
       rubble: [] as number[],
       lampsBroken: [] as number[],
       barrels: null as number[] | null,
+      geodes: null as number[] | null,
+      drained: 0,
     };
   }
 
@@ -319,6 +334,7 @@ export class Economy {
     save.blade = Math.floor(finite(s.blade, 0, BLADE.length - 1));
     save.magnet = Math.floor(finite(s.magnet, 0, MAGNET.length - 1));
     save.drones = Math.floor(finite(s.drones, 0, MAX_DRONES));
+    save.scoop = Math.floor(finite(s.scoop, 0, SCOOP_SIZES));
     const paints = Array.isArray(s.paints) ? s.paints.filter((p) => PAINTS.some((q) => q.id === p)) : [];
     save.paints = paints.length ? (paints as string[]) : ['yellow'];
     save.paint = PAINTS.some((p) => p.id === s.paint) ? (s.paint as string) : 'yellow';
@@ -344,8 +360,11 @@ export class Economy {
       rubble: numbers(s.rubble).slice(0, numbers(s.rubble).length - (numbers(s.rubble).length % 4)),
       lampsBroken: numbers(s.lampsBroken),
       barrels: s.barrels === null || s.barrels === undefined ? null : numbers(s.barrels),
+      geodes: s.geodes === null || s.geodes === undefined ? null : numbers(s.geodes),
+      drained: finite(s.drained, 0),
     });
     if (save.barrels) save.barrels = save.barrels.slice(0, save.barrels.length - (save.barrels.length % 3));
+    if (save.geodes) save.geodes = save.geodes.slice(0, save.geodes.length - (save.geodes.length % 3));
     if (save.left.length !== sources) save.left = fresh.left;
   }
 

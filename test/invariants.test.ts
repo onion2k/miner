@@ -42,10 +42,20 @@ describe('the invariants of a run', () => {
       save.left.push([]);
       save.rubble.push(1);
       save.barrels = [1, 2];
+      save.geodes = [1, 2];
       const said = checkInvariants(game).join('\n');
-      for (const what of ['secrets', 'walls', 'wallDamage', 'left', 'rubble', 'barrels'])
+      for (const what of ['secrets', 'walls', 'wallDamage', 'left', 'rubble', 'barrels', 'geodes'])
         expect(said, `a wrong ${what} noticed`).toContain(what);
     });
+  });
+
+  it('notice a scoop of no size the workshop sells, and a drain that has taken less than nothing', () => {
+    const game = gameIn('hollow');
+    game.economy.save.scoop = 4;
+    game.economy.save.drained = -1;
+    const said = checkInvariants(game).join('\n');
+    expect(said).toContain('the scoop: 4');
+    expect(said).toContain('down the drains: -1');
   });
 
   it('notice a lamp broken that the cave has not', () => {

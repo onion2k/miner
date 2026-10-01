@@ -299,7 +299,7 @@ describe('driving through the way out (criterion 3)', () => {
 });
 
 describe('what carries over, and what starts fresh (criterion 4)', () => {
-  it('keeps the bank, engine, blade, magnet, drones and cosmetics, and starts the rest of the cave afresh', () => {
+  it('keeps the bank, engine, blade, scoop, magnet, drones and cosmetics, and starts the rest of the cave afresh', () => {
     withSeed(8, () => {
       const east = specOf('east-gallery');
       const json = saveIn('south-gallery', {
@@ -309,6 +309,7 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
         blade: 2,
         magnet: 4,
         drones: 2,
+        scoop: 2,
         paint: 'red',
         paints: ['yellow', 'red'],
         body: 'spider',
@@ -323,6 +324,8 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
         rubble: [1, 2, 0.5, 1],
         lampsBroken: [3, 5],
         barrels: [1, 2, 1.05],
+        geodes: [3, 4, 1.6],
+        drained: 12,
       });
       const { events } = told();
       const economy = newEconomy(json);
@@ -333,6 +336,7 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
       expect(economy.save.cave).toBe('east-gallery');
       const s = economy.save;
       expect([s.bank, s.banked, s.engine, s.blade, s.magnet, s.drones]).toEqual([777, 5000, 3, 2, 4, 2]);
+      expect(s.scoop, 'the scoop goes on with the machine').toBe(2);
       expect([s.paint, s.paints, s.body, s.bodies, s.horn, s.flag]).toEqual([
         'red',
         ['yellow', 'red'],
@@ -349,6 +353,8 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
       expect(s.rubble).toEqual([]);
       expect(s.lampsBroken).toEqual([]);
       expect(s.barrels).toBeNull();
+      expect(s.geodes).toBeNull();
+      expect(s.drained).toBe(0);
       expect(s.left).toHaveLength(1 + east.secrets.length + east.stashes.length + east.walls.length);
       expect(s.left.every((row) => row.length === 0)).toBe(true);
       // and the next game is whole: its heaps, its barrels, nothing lost from before

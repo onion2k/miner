@@ -4,15 +4,16 @@
  *
  * Nothing solid is in the rock and nothing is not a number. The counts the
  * game keeps of what is in the cave agree with what is in it. The bank is a
- * number, the save's cave is in the run and every list of it is the cave's
- * size, and the way out is open only when enough is banked. The save is plain
+ * number, the scoop is a size the workshop sells, the save's cave is in the
+ * run and every list of it is the cave's size, and the way out is open only
+ * when enough is banked. The save is plain
  * data that comes back as it went.
  *
  * Checked by the fuzzer after everything it does, by the test API on asking,
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
 import { EXIT, TILE } from './cave';
-import { CLEAR_SHARE, FORMER_LAST } from './economy';
+import { CLEAR_SHARE, FORMER_LAST, SCOOP_SIZES } from './economy';
 import type { Game } from './game';
 import { BARREL_KIND, KINDS, KIND_NAME } from './physics';
 import { NO_SOURCE } from './stock';
@@ -92,6 +93,8 @@ export function checkInvariants(game: Game): string[] {
 
   // the bank, and where the player has got to
   if (!Number.isFinite(save.bank) || save.bank < 0) out.push(`the bank: ${save.bank}`);
+  if (!Number.isInteger(save.scoop) || save.scoop < 0 || save.scoop > SCOOP_SIZES) out.push(`the scoop: ${save.scoop}`);
+  if (!Number.isFinite(save.drained) || save.drained < 0) out.push(`down the drains: ${save.drained}`);
   if (!economy.run.some((c) => c.id === save.cave)) out.push(`the save's cave is not in the run: ${save.cave}`);
   else if (save.cave !== spec.id) out.push(`the game is in ${spec.id} and the save in ${save.cave}`);
   // every list of the cave is the cave's size, and nothing in it is out of the grid
@@ -105,6 +108,8 @@ export function checkInvariants(game: Game): string[] {
   if (save.rubble.length % 4) out.push(`the rubble is ${save.rubble.length} numbers, not a multiple of four`);
   if (save.barrels && save.barrels.length % 3)
     out.push(`the barrels are ${save.barrels.length} numbers, not a multiple of three`);
+  if (save.geodes && save.geodes.length % 3)
+    out.push(`the geodes are ${save.geodes.length} numbers, not a multiple of three`);
   for (const k of save.lampsBroken)
     if (!(k >= 0 && k < cave.lamps.length)) out.push(`a lamp knocked over that the cave has not: ${k}`);
   for (const id of save.belts)

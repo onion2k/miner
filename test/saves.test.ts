@@ -1,8 +1,9 @@
 /**
  * Saves from every shape the game has ever written, kept in `test/saves`, all
  * still loading and playing. A player's save outlives the code that wrote it:
- * the cave has grown rooms, chambers, walls, lamps and barrels since the first
- * one, and each of those added a field that an older save does not have.
+ * the cave has grown rooms, chambers, walls, lamps, barrels, geodes and drains
+ * since the first one, and the workshop a scoop, and each of those added a
+ * field that an older save does not have.
  *
  * A save whose shape is new needs a file here. The last test sees to that: it
  * fails when the game writes a field no file in the corpus has.
@@ -36,6 +37,7 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '11-linear.json': { cave: 'east-gallery', open: true },
   '12-two-belts.json': { cave: 'east-gallery', belts: ['east-belt', 'east-belt-bottom'] },
   '13-deep.json': { cave: 'deep', belts: ['deep-belt-north'], engine: 4 },
+  '14-scoop-geodes-drained.json': { cave: 'warrens', scoop: 2, drained: 35 },
 };
 
 /**
@@ -174,11 +176,20 @@ const LANDS: Record<
     walls: [false],
     wallDamage: [0],
   },
+  '14-scoop-geodes-drained.json': {
+    cave: 'warrens',
+    open: false,
+    left: [900, 0, 40, 20, 0, 0, 0, 0],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
 };
 
 describe('saves from every shape the game has written', () => {
   it('has a file for every shape, oldest first, and says where each lands', () => {
-    expect(files.length).toBeGreaterThanOrEqual(13);
+    expect(files.length).toBeGreaterThanOrEqual(14);
     expect(files).toEqual(Object.keys(KEPT).sort());
     expect(Object.keys(LANDS).sort()).toEqual(files);
   });
@@ -207,9 +218,19 @@ describe('saves from every shape the game has written', () => {
         else if (file.startsWith('13')) {
           expect(save.lampsBroken).toEqual([3, 9]);
           expect(save.barrels, 'the barrels where they stood').toHaveLength(18);
+        } else if (file.startsWith('14')) {
+          expect(save.lampsBroken).toEqual([5, 11]);
+          expect(save.barrels, 'the barrels where they stood').toHaveLength(9);
+          expect(save.geodes, 'the geodes where they lay').toEqual([-136, 4, 1.6, -172, -20, 1.6]);
         } else {
           expect(save.lampsBroken, 'lamps start afresh').toEqual([]);
           expect(save.barrels, 'barrels start afresh').toBeNull();
+        }
+        // a save from before the scoop, the geodes and the drains has none of them, and starts without
+        if (!file.startsWith('14')) {
+          expect(save.scoop, 'no scoop bought').toBe(0);
+          expect(save.geodes, 'geodes start afresh').toBeNull();
+          expect(save.drained, 'nothing down a drain').toBe(0);
         }
         expect(Number.isFinite(save.bank) && save.bank >= 0).toBe(true);
       });
@@ -237,6 +258,9 @@ describe('saves from every shape the game has written', () => {
         expect(after.belts).toEqual(before.belts);
         expect(after.secrets).toEqual(before.secrets);
         expect(after.walls).toEqual(before.walls);
+        expect(after.scoop).toBe(before.scoop);
+        expect(after.geodes).toEqual(before.geodes);
+        expect(after.drained).toBe(before.drained);
       });
     });
   }

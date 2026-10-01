@@ -53,6 +53,34 @@ export interface HoleSpec {
 /** Past the coins: ruby, emerald, sapphire, diamond, and the gold bar, which only the hidden chambers hold. */
 export type GemKind = 1 | 2 | 3 | 4 | 5;
 
+/** What a current is made of, which is how it looks: it carries the same whichever it is. */
+export type Flow = 'water' | 'lava' | 'ice';
+
+/**
+ * A current: a strip of the floor that is always running, from one end to the
+ * other, and carries what lies on it. One that runs to a hole helps; one that
+ * ends in a drain loses what it carries.
+ */
+export interface CurrentSpec {
+  /** A stable name, as a belt's is. */
+  id: string;
+  flow: Flow;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  width: number;
+  speed: number;
+  /** Present when it ends in a drain, where what it carries is lost. */
+  drain?: { radius: number; depth: number };
+}
+
+/** The geodes of a cave: how many, and the gems each holds, by kind and count. */
+export interface GeodeSpec {
+  count: number;
+  holds: [GemKind, number][];
+}
+
 export interface Heap {
   x: number;
   y: number;
@@ -217,6 +245,10 @@ export interface CaveSpec {
   stashes: Stash[];
   /** How many barrels it has. */
   barrels: number;
+  /** The currents that run through it; left out, none. */
+  currents?: CurrentSpec[];
+  /** The geodes that stand about it, to be cracked by a barrel's blast; left out, none. */
+  geodes?: GeodeSpec;
   /**
    * How far apart lamps stand along the rock, in world units; left out, `LAMP_SPACING`. A cave with a
    * great length of rock face for its floor, a chain of caverns and tunnels, asks for more: every
@@ -250,6 +282,12 @@ export interface Cave {
   lamps: Lamp[];
   /** Where the barrels stand when the cave begins, the same every time. */
   barrels: BarrelSpot[];
+  /** The currents that run through it. */
+  currents: readonly CurrentSpec[];
+  /** Where the currents that lose what they carry end: holes that bank nothing. */
+  drains: readonly HoleSpec[];
+  /** Where the geodes stand when the cave begins, the same every time. */
+  geodes: { x: number; y: number }[];
   /**
    * A rock tile's cell is 1; the way out's is 1 until it is `open`, a hidden
    * chamber's, and the rock in front of it, until it is broken into, and a
@@ -586,6 +624,9 @@ export function buildCave(spec: CaveSpec): Cave {
     cells,
     lamps,
     barrels: placeBarrels(cells, spec, grid, lamps),
+    currents: spec.currents ?? [],
+    drains: [],
+    geodes: [],
     solid(open, revealed = [], broken = []) {
       const out = new Uint8Array(cols * rows);
       for (let i = 0; i < cells.length; i++) {

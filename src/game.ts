@@ -81,6 +81,8 @@ export interface GameEvents {
 /** The player's controls, beyond driving, for a step. */
 export interface Controls {
   horn?: boolean;
+  /** The scoop's button pressed this step: what is at the blade taken up, or what is held tipped out. */
+  scoop?: boolean;
 }
 
 /** How long, in game seconds, the screen takes to come up from black once the machine has come into a cave. */
