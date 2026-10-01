@@ -11,7 +11,17 @@
  * there, so the same game runs in the page and in Node, and what the tests
  * try is what is played.
  */
-import { SECRET, arrival, darkness, exitFaces, nearestHole, pastLeavingLine, tileCentre, type Cave } from './cave';
+import {
+  SECRET,
+  arrival,
+  darkness,
+  downWayOut,
+  exitFaces,
+  nearestHole,
+  pastLeavingLine,
+  tileCentre,
+  type Cave,
+} from './cave';
 import { Barrels, type Blast } from './barrels';
 import { BLADE_AT, Dozer, separate } from './dozer';
 import { CLEAR_SHARE, Economy, WALL_STRENGTH } from './economy';
@@ -73,6 +83,9 @@ export interface Controls {
   horn?: boolean;
 }
 
+/** How long, in game seconds, the screen takes to come up from black once the machine has come into a cave. */
+export const RISE_SECONDS = 0.4;
+
 export class Game {
   readonly cave: Cave;
   /** What the cave can hold at once, worked out from its content. */
@@ -97,6 +110,8 @@ export class Game {
   private lastBank = -1;
   private recordAt = 0;
   private readonly unlisten: () => void;
+  /** Made by driving in from another cave, so the screen comes up from black at the start. */
+  private readonly arrived: boolean;
 
   /**
    * `cave` is the one being played, and `economy` holds the save of it. `arrival` is how the machine comes
@@ -108,6 +123,7 @@ export class Game {
     private readonly events: GameEvents = {},
     arrived?: { speed: number },
   ) {
+    this.arrived = !!arrived;
     const save = economy.save;
     this.cave = cave;
     this.capacity = capacityOf(cave.spec);
@@ -156,9 +172,33 @@ export class Game {
     return belts.map((_, b) => b).filter((b) => this.economy.save.belts.includes(belts[b].id));
   }
 
-  /** How dark it is where the dozer is, 0 to 1: down the way out it goes to black, for the swap to the next cave. */
+  /**
+   * How dark it is where the dozer is, 0 to 1. Down the way out it is black only for the last of the cutting,
+   * and black while this game waits to be swapped for the next, which is built behind the black. In a game
+   * made by arriving it comes up from black over RISE_SECONDS, to what the place on the way in says.
+   */
   darkness(): number {
-    return darkness(this.cave, this.economy.save.open, this.dozer.x, this.dozer.y);
+    if (this.left) return 1;
+    const here = darkness(this.cave, this.economy.save.open, this.dozer.x, this.dozer.y);
+    return Math.max(here, this.rise());
+  }
+
+  /**
+   * How strongly "Keep going" shows, 0 to 1: it comes up with the darkness down the way out, so the player
+   * drives on into the dark and not to a stop in it; it is full while the next cave is built; and on
+   * arriving it fades with the rise. It shows nowhere else, the arrival in the way in included.
+   */
+  keepGoing(): number {
+    if (this.left) return 1;
+    const { open } = this.economy.save;
+    const down = open && downWayOut(this.cave, this.dozer.x, this.dozer.y);
+    const ahead = down ? Math.min(1, 2 * darkness(this.cave, open, this.dozer.x, this.dozer.y)) : 0;
+    return Math.max(ahead, this.rise());
+  }
+
+  /** How far the screen is still down from the black the machine arrived in: 1 at the start, 0 after RISE_SECONDS. */
+  private rise(): number {
+    return this.arrived ? Math.max(0, 1 - this.t / RISE_SECONDS) : 0;
   }
 
   /**

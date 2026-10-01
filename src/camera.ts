@@ -28,9 +28,18 @@ const MANUAL_FOR = 5;
 /** The orbit controls, as the rig drives them. */
 export interface OrbitLike {
   readonly currentAzimuth: number;
+  readonly currentPolar: number;
   readonly distance: number;
   setSpherical(s: { azimuth?: number; polar?: number; radius?: number }): void;
+  /** Take up wherever the camera has been put, with nothing eased and nothing left over from a drag. */
+  forcePosition(): void;
   update(): void;
+}
+
+/** The camera the orbit drives: where it looks, and where it stands. */
+export interface CameraLike {
+  target: [number, number, number];
+  position: [number, number, number];
 }
 
 /** The machine it follows. */
@@ -69,7 +78,7 @@ export class CameraRig {
    */
   constructor(
     private readonly orbit: OrbitLike,
-    private readonly camera: { target: [number, number, number] },
+    private readonly camera: CameraLike,
     start: { x: number; y: number },
     private readonly store: ModeStore,
     private readonly canFree: boolean,
@@ -91,6 +100,27 @@ export class CameraRig {
     this.aim[1] = this.follow[1] = y;
     this.lead[0] = this.lead[1] = 0;
     this.camera.target = [x, y, 1.5];
+  }
+
+  /**
+   * Turn the camera round the machine by `by` radians, at once: for a change of cave, whose way in faces
+   * another way from the way out, so that the machine keeps its heading on the screen. The orbit eases every
+   * azimuth it is sent to, which would be a swing across the first moments of the new cave, so the camera
+   * is stood where it is to be and the orbit told to take it up. The tilt and the distance are as they were,
+   * and the chase heading turns with it, or the chase would swing it back.
+   */
+  turn(by: number) {
+    const azimuth = this.orbit.currentAzimuth + by,
+      polar = this.orbit.currentPolar,
+      radius = this.orbit.distance;
+    const [tx, ty, tz] = this.camera.target;
+    this.camera.position = [
+      tx + radius * Math.sin(polar) * Math.cos(azimuth),
+      ty + radius * Math.sin(polar) * Math.sin(azimuth),
+      tz + radius * Math.cos(polar),
+    ];
+    this.orbit.forcePosition();
+    this.chase = wrap(this.chase + by);
   }
 
   /** The player has taken the camera, at `now` seconds. */

@@ -202,17 +202,31 @@ describe('the lights', () => {
 
 describe('the camera rig', () => {
   function rig(saved: string | null, canFree = true) {
+    const cam = {
+      target: [0, 0, 0] as [number, number, number],
+      position: [0, 0, 0] as [number, number, number],
+    };
     const orbit = {
       currentAzimuth: CAMERA_HOME.azimuth,
+      currentPolar: CAMERA_HOME.polar,
       distance: 78,
       set: [] as { azimuth?: number }[],
+      forced: 0,
       setSpherical(s: { azimuth?: number }) {
         this.set.push(s);
         if (s.azimuth !== undefined) this.currentAzimuth = s.azimuth;
       },
+      // as the orbit does: the angles are read back from where the camera stands, with no easing
+      forcePosition() {
+        this.forced++;
+        const [x, y, z] = cam.position,
+          [tx, ty, tz] = cam.target;
+        this.currentAzimuth = Math.atan2(y - ty, x - tx);
+        this.distance = Math.hypot(x - tx, y - ty, z - tz);
+        this.currentPolar = Math.acos((z - tz) / this.distance);
+      },
       update() {},
     };
-    const cam = { target: [0, 0, 0] as [number, number, number] };
     let stored = saved;
     const r = new CameraRig(orbit, cam, { x: 0, y: 0 }, { get: () => stored, set: (m) => (stored = m) }, canFree);
     return { r, orbit, cam, stored: () => stored };
@@ -256,5 +270,40 @@ describe('the camera rig', () => {
     r.update(1 / 60, 10, { x: -120, y: 8, yaw: 0, speed: 0 });
     expect(cam.target[0]).toBeCloseTo(-120, 5);
     expect(cam.target[1]).toBeCloseTo(8, 5);
+  });
+
+  it('turns at once for a change of cave: the heading shifts by the turn, the tilt and distance stay, and nothing is left to ease', () => {
+    const { r, orbit, cam } = rig(null);
+    r.snapTo(-120, 8);
+    const before = { polar: orbit.currentPolar, distance: orbit.distance, easings: orbit.set.length };
+    r.turn(-Math.PI / 2);
+    // a quarter round from home, one way or the other being the same angle
+    const gap = orbit.currentAzimuth - (CAMERA_HOME.azimuth - Math.PI / 2);
+    expect(Math.atan2(Math.sin(gap), Math.cos(gap))).toBeCloseTo(0, 9);
+    expect(orbit.currentPolar).toBeCloseTo(before.polar, 9);
+    expect(orbit.distance).toBeCloseTo(before.distance, 9);
+    expect(orbit.set.length, 'no azimuth sent to be eased').toBe(before.easings);
+    expect(orbit.forced).toBe(1);
+    // it stands about the new target, not the old one
+    expect(Math.hypot(cam.position[0] + 120, cam.position[1] - 8)).toBeGreaterThan(30);
+    expect(Math.hypot(cam.position[0] + 120, cam.position[1] - 8)).toBeLessThan(80);
+  });
+
+  it('turns the chase heading with the camera, so a chasing camera does not swing back', () => {
+    const { r, orbit } = rig('chase');
+    // settled behind a machine heading east
+    for (let f = 0; f < 900; f++) r.update(1 / 60, 10 + f / 60, { x: 0, y: 0, yaw: Math.PI / 2, speed: 5 });
+    const settled = orbit.currentAzimuth;
+    // the cave changes, and the machine arrives heading a quarter round
+    r.turn(-Math.PI / 2);
+    const turned = orbit.currentAzimuth;
+    expect(
+      Math.abs(Math.atan2(Math.sin(turned - settled + Math.PI / 2), Math.cos(turned - settled + Math.PI / 2))),
+    ).toBeLessThan(1e-9);
+    for (let f = 0; f < 120; f++) {
+      r.update(1 / 60, 30 + f / 60, { x: 0, y: 0, yaw: 0, speed: 5 });
+      const drift = Math.atan2(Math.sin(orbit.currentAzimuth - turned), Math.cos(orbit.currentAzimuth - turned));
+      expect(Math.abs(drift), `frame ${f}`).toBeLessThan(1e-6);
+    }
   });
 });

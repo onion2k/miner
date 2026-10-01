@@ -13,7 +13,7 @@
  * twenty leave.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { start, watch } from './pushminer';
+import { start, swapped, watch } from './pushminer';
 
 /** The most the swap may take, in milliseconds of the page's own clock, while the screen is black. */
 const SWAP_BUDGET_MS = 1000;
@@ -78,6 +78,7 @@ test('every way out swaps in under a second, and twenty swaps leave no more behi
       [beyond.x, beyond.y, Math.atan2(out[1], out[0])],
     );
     await page.evaluate(() => window.pushminer!.step(3));
+    await swapped(page);
     const now = await page.evaluate(() => window.pushminer!.state());
     expect(now.cave, `out of ${from}`).not.toBe(from);
     if (from === 'hollow') expect(now.trackMarks, 'the old cave’s tracks forgotten').toBeLessThan(marked / 2);

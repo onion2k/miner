@@ -18,7 +18,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { ARRIVAL_DARK, buildCave } from '../src/cave';
 import { RUN } from '../src/caves';
 import { runwayLights } from '../src/runway';
-import { ready, screen, start, steerTo, watch } from './pushminer';
+import { measuring, ready, screen, start, steerTo, swapped, watch } from './pushminer';
 
 /** How many runway lights a cave stands, down each cutting, as the lights work it out and the page should show. */
 function runwayOf(id: string, open: boolean) {
@@ -189,7 +189,7 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   );
   const dark: number[] = [];
   let speedBefore = 0;
-  const last = await steerTo(page, beyond, (s) => s.cave !== 'hollow', {
+  await steerTo(page, beyond, (s) => s.cave !== 'hollow', {
     frames: 60 * 60,
     seen: async (s) => {
       if (s.cave !== 'hollow') return;
@@ -213,6 +213,9 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   expect(Math.max(...dark), 'nearly black at the leaving line').toBeGreaterThan(0.85);
   for (let i = lastLight + 1; i < dark.length; i++)
     expect(dark[i], 'darker the further down').toBeGreaterThanOrEqual(dark[i - 1]);
+  // the next cave is built a frame after the black is drawn
+  await swapped(page);
+  const last = await page.evaluate(() => window.pushminer!.state());
   expect(last.cave, 'on into the next cave').toBe('south-gallery');
   expect(last.open, 'its way out is shut').toBe(false);
   expect(last.runway, 'the next cave’s way in is lit, and its way out dark').toEqual({
@@ -361,6 +364,7 @@ test('the Warrens, reached by a save, has two holes that each bank, no belt, and
     [beyond.x, beyond.y, Math.atan2(out[1], out[0])],
   );
   await play(page, 3, 'out of the Warrens');
+  await swapped(page);
   expect((await page.evaluate(() => window.pushminer!.state())).cave).toBe('west-gallery');
   expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
   expect(problems).toEqual([]);
@@ -382,6 +386,7 @@ test('a save in the West Gallery lands in the West Gallery, which has a way out 
     [exit!.beyond.x, exit!.beyond.y, Math.atan2(exit!.out[1], exit!.out[0])],
   );
   await play(page, 3, 'out of the West Gallery');
+  await swapped(page);
   const now = await page.evaluate(() => window.pushminer!.state());
   expect(now.cave).toBe('deep');
   const deep = await page.evaluate(() => window.pushminer!.content());
@@ -500,5 +505,177 @@ test('the end: the last cave, the Deep, cleared, and the vein runs', async ({ pa
   expect(end.fountains, 'the vein').toBe(1);
   expect((await screen(page)).progress).toBe('the cave is cleared');
   await info.attach('done', { body: await page.screenshot(), contentType: 'image/png' });
+  expect(problems).toEqual([]);
+});
+
+/** The size of the gap between two headings in degrees, however many turns each has been round. */
+const apart = (a: number, b: number) => {
+  let d = (a - b) % 360;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  return Math.abs(d);
+};
+
+/**
+ * Drive the machine out of the cave `id` with the keys, from a little way back from the mouth, on down the
+ * cutting and through the leaving line, and measure which way it heads on the screen in the very call that
+ * steps it over the line (the cave is still the old one then) and on the first frame after the swap, and a
+ * dozen frames on. The words and the black are read as the machine goes, to be what the game says.
+ */
+async function blink(page: Page, id: string, turn: number) {
+  const problems = watch(page);
+  await start(page, { seed: 5, paused: true, save: { cave: id, open: true } });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(5);
+  });
+  await measuring(page);
+  const { mouth, beyond, out } = (await page.evaluate(() => window.pushminer!.content())).exit!;
+  await page.evaluate(
+    ([x, y, yaw]) => {
+      window.pushminer!.teleport(x, y, yaw);
+      // the camera follows once for each call that draws, and not each frame, so it is let catch up call by call
+      for (let f = 0; f < 180; f++) window.pushminer!.step(1);
+    },
+    [mouth.x - out[0] * 24, mouth.y - out[1] * 24, Math.atan2(out[1], out[0])],
+  );
+
+  // down the cutting: lit, then the words come up with the dark
+  const ramp: number[] = [];
+  const cut = await steerTo(page, beyond, (s) => s.leaving, {
+    frames: 60 * 30,
+    seen: async (s) => {
+      if (s.leaving) return;
+      const shown = await screen(page);
+      expect(shown.words, `the words at ${s.keepGoing}`).toBeCloseTo(s.keepGoing, 2);
+      expect(shown.fade, `the black at ${s.darkness}`).toBeCloseTo(s.darkness, 2);
+      if (s.darkness === 0) expect(s.keepGoing, 'no words while it is lit').toBe(0);
+      if (s.keepGoing > 0) ramp.push(s.keepGoing);
+    },
+  });
+  expect(ramp.length, 'words seen coming up').toBeGreaterThan(2);
+  for (let i = 1; i < ramp.length; i++) expect(ramp[i], 'rising down the cutting').toBeGreaterThanOrEqual(ramp[i - 1]);
+  expect(ramp[ramp.length - 1], 'full at the line').toBeGreaterThan(0.9);
+  expect(cut.darkness, 'black at the cut').toBe(1);
+  expect(cut.keepGoing, 'and the words full').toBe(1);
+  expect(cut.heading).not.toBeNull();
+
+  // the swap, then the first frame of the new cave
+  await swapped(page);
+  const first = await page.evaluate(() => {
+    window.pushminer!.step(1);
+    const opacity = (id: string) => +getComputedStyle(document.getElementById(id)!).opacity;
+    return {
+      s: window.pushminer!.state(),
+      heading: window.screenHeading!(),
+      words: opacity('keepGoing'),
+      fade: opacity('fade'),
+    };
+  });
+  expect(first.s.cave, 'into the next cave').not.toBe(id);
+
+  // criterion 5: the same way on the screen, within 5 degrees; tilt and distance kept; the camera turned by the turn
+  expect(
+    apart(first.heading, cut.heading!),
+    `${id}: heading ${cut.heading} before, ${first.heading} after`,
+  ).toBeLessThan(5);
+  expect(first.s.camera.polar, 'tilt kept').toBeCloseTo(cut.camera.polar, 6);
+  expect(first.s.camera.distance, 'distance kept').toBeCloseTo(cut.camera.distance, 6);
+  const turned = ((first.s.camera.azimuth - cut.camera.azimuth) * 180) / Math.PI - (turn * 180) / Math.PI;
+  expect(apart(turned, 0), 'the camera turned by the change’s turn').toBeLessThan(0.01);
+
+  // criterion 6: no swing over the frames after
+  const later: number[] = [];
+  const azimuths: number[] = [];
+  for (let f = 0; f < 12; f++) {
+    const now = await page.evaluate(() => {
+      window.pushminer!.step(1);
+      return { azimuth: window.pushminer!.state().camera.azimuth, heading: window.screenHeading!() };
+    });
+    later.push(now.heading);
+    azimuths.push(now.azimuth);
+  }
+  for (const h of later) expect(apart(h, first.heading), `no swing: ${later.join(', ')}`).toBeLessThan(1);
+  for (const a of azimuths) expect(apart(((a - first.s.camera.azimuth) * 180) / Math.PI, 0)).toBeLessThan(0.01);
+
+  // criterion 3 and 4 in the page: up from black over 0.4 s, the words falling with it, and gone
+  expect(first.s.darkness, 'nearly black on the first frame').toBeGreaterThan(0.9);
+  expect(first.words, 'the words fading on the first frame').toBeGreaterThan(0.9);
+  expect(first.fade, 'and the page as black').toBeCloseTo(first.s.darkness, 2);
+  await page.evaluate(() => window.pushminer!.step(30));
+  const up = await page.evaluate(() => window.pushminer!.state());
+  const shown = await screen(page);
+  expect(up.keepGoing, 'the words gone').toBe(0);
+  expect(shown.words).toBe(0);
+  expect(shown.fade, 'the black down to the arrival’s').toBeCloseTo(up.darkness, 2);
+  expect(up.darkness, 'and no more than that').toBeLessThanOrEqual(0.45);
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+  return { before: cut.heading!, after: first.heading };
+}
+
+test('the camera keeps the machine’s heading on the screen at a change that turns: South Gallery to East Gallery', async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  const seen = await blink(page, 'south-gallery', -Math.PI / 2);
+  // up the screen going in, and up it going on: the dozer faces north out and east in, and the camera turned a quarter
+  expect(seen.before, 'up the screen').toBeGreaterThan(80);
+  expect(seen.before).toBeLessThan(100);
+  info.annotations.push({
+    type: 'heading, degrees',
+    description: `before ${seen.before.toFixed(2)}, after ${seen.after.toFixed(2)}`,
+  });
+});
+
+test('and at one that does not: Hollow to South Gallery', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const seen = await blink(page, 'hollow', 0);
+  // right across the screen out, and right across it in
+  expect(Math.abs(seen.before), 'across the screen').toBeLessThan(10);
+  info.annotations.push({
+    type: 'heading, degrees',
+    description: `before ${seen.before.toFixed(2)}, after ${seen.after.toFixed(2)}`,
+  });
+});
+
+test('the black is drawn, with the words in it, before the next cave is built', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { seed: 5, paused: true, save: { cave: 'hollow', open: true } });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(5);
+    window.pushminer!.step(5);
+    window.pushminer!.events();
+  });
+  // over the line, and the frame of that step: read in the same call, before the page's frame loop has been round
+  const between = await page.evaluate(() => {
+    const api = window.pushminer!;
+    const { beyond, out } = api.content().exit!;
+    api.teleport(beyond.x, beyond.y, Math.atan2(out[1], out[0]));
+    api.step(1);
+    const opacity = (id: string) => +getComputedStyle(document.getElementById(id)!).opacity;
+    return {
+      log: api.events(),
+      cave: api.state().cave,
+      leaving: api.state().leaving,
+      fade: opacity('fade'),
+      words: opacity('keepGoing'),
+    };
+  });
+  expect(between.log, 'told the black is on and has not swapped').toEqual([
+    'caveLeft hollow ' + between.log[0].split(' ')[2],
+    'blackout',
+  ]);
+  expect(between.leaving, 'waiting to build').toBe(true);
+  expect(between.fade, 'the black layer full').toBe(1);
+  expect(between.words, 'the words showing').toBe(1);
+  // then the page's own frame builds it
+  await swapped(page);
+  const log = await page.evaluate(() => window.pushminer!.events());
+  expect(
+    log.findIndex((e) => e.startsWith('swap south-gallery ')),
+    'the swap came after the blackout',
+  ).toBeGreaterThanOrEqual(0);
   expect(problems).toEqual([]);
 });

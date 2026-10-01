@@ -175,6 +175,7 @@ export class Hud {
   private readonly toast = byId('toast');
   private readonly noteLine = byId('cameraNote');
   private readonly fadeLayer = byId('fade');
+  private readonly keepGoingLine = byId('keepGoing');
   private readonly shopPanel = byId('shop');
   readonly shopRows = this.shopPanel.querySelector('.rows') as HTMLElement;
   readonly shopCosmetics = this.shopPanel.querySelector('.rows.cosmetics') as HTMLElement;
@@ -208,6 +209,12 @@ export class Hud {
     const v = Math.max(0, Math.min(1, darkness));
     this.fadeLayer.style.opacity = v === 0 ? '0' : v.toFixed(3);
     this.map.fade(v);
+  }
+
+  /** "Keep going", over the black: 0 not there, 1 in full, as the game says. */
+  keepGoing(strength: number) {
+    const v = Math.max(0, Math.min(1, strength));
+    this.keepGoingLine.style.opacity = v === 0 ? '0' : v.toFixed(3);
   }
 
   /** Time passes: the word at the top goes when its time is up. */

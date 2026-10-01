@@ -14,7 +14,7 @@ import { Orbit } from 'artshape-render/gpu/camera';
 import { bakeEnvironment } from 'artshape-render/render/env';
 import { GameRenderer } from 'artshape-render/game/renderer';
 import type { Emit } from 'artshape-render/game/particles';
-import { buildCave, nearHole, type Cave, type CaveSpec } from './cave';
+import { buildCave, headingTurn, nearHole, type Cave, type CaveSpec } from './cave';
 import { runCapacity } from './stock';
 import { RUN } from './caves';
 import { TRACK_GAUGE } from './dozer';
@@ -174,8 +174,16 @@ async function main() {
     },
     caveLeft(from, lost) {
       log(`caveLeft ${from} ${lost}`);
-      // the game that told of it is still in the middle of its step: the swap is made once it has returned
-      left = { lost };
+      // the game that told of it is still in the middle of its step, and its darkness is now black: that frame is
+      // drawn, and the browser gets to paint it, before the next cave is built, so the build is spent behind black
+      // and not behind a picture that has frozen
+      const pending = (left = { lost });
+      log('blackout');
+      requestAnimationFrame(() => {
+        if (left !== pending) return;
+        left = null;
+        enter(game.dozer.speed, lost, true);
+      });
     },
     chamberOpened(k, faces, [c, s]) {
       log(`chamberOpened ${k}`);
@@ -253,7 +261,7 @@ async function main() {
     },
   };
   let game = new Game(economy, cave, events);
-  /** The game has been driven out of its cave, with this much still in it: the page swaps to the next once the step is over. */
+  /** The game has been driven out of its cave, with this much still in it: the page swaps to the next a frame after the black is drawn. */
   let left: { lost: number } | null = null;
   addEventListener('pagehide', () => game.persist());
   addEventListener('visibilitychange', () => {
@@ -562,10 +570,13 @@ async function main() {
    * that twenty changes leave no more behind than one. It is timed, and logged for the test API, since it
    * is made with the screen black and has a second to do it in.
    */
-  function enter(speed: number, lost = 0) {
+  function enter(speed: number, lost = 0, leaving = false) {
     const began = performance.now();
+    // whatever swap was waiting on a frame is this one
+    left = null;
     game.persist();
     game.dispose();
+    const cutFrom = cave;
     spec = economy.cave();
     cave = buildCave(spec);
     game = new Game(economy, cave, events, { speed });
@@ -580,6 +591,8 @@ async function main() {
     gait.reset();
     lights.forget();
     rig.snapTo(game.dozer.x, game.dozer.y);
+    // driven out of the last cave, the camera turns with the change so the machine keeps its heading on the screen
+    if (leaving) rig.turn(headingTurn(cutFrom, cave));
     lastBank = -1;
     // a workshop left open sells this cave's belts now, and not the last one's
     if (shopOpen) renderShops();
@@ -612,11 +625,6 @@ async function main() {
 
     const drive = input.read();
     game.step(dt, drive, { horn });
-    if (left) {
-      const { lost } = left;
-      left = null;
-      enter(game.dozer.speed, lost);
-    }
     const { world, dozer, stock, tally } = game;
     if (save.body === 'spider') gait.update(dt, dozer);
 
@@ -670,8 +678,9 @@ async function main() {
     lightUp();
     upload();
     renderer.frame(ctx.context.getCurrentTexture().createView(), 'redraw', dt);
-    // the black of the cutting, as dark as the game says it is where the dozer is
+    // the black of the cutting, as dark as the game says it is where the dozer is, and the words in it
     hud.fade(game.darkness());
+    hud.keepGoing(game.keepGoing());
     // the map, a few times a second and not every frame: it turns with the camera, which has just moved
     if (game.t >= mapAt) {
       mapAt = game.t + MAP_EVERY;
@@ -714,6 +723,15 @@ async function main() {
     game: () => game,
     cave: () => cave,
     rebuild: () => enter(0),
+    camera: () => ({ azimuth: orbit.currentAzimuth, polar: orbit.currentPolar, distance: orbit.distance }),
+    project(x, y, z) {
+      // clip space by the camera's own matrix, out to the pixels of the canvas as it is on the page
+      const m = cam.viewProjection;
+      const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+      const nx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+      const ny = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+      return { x: ((nx + 1) / 2) * canvas.clientWidth, y: ((1 - ny) / 2) * canvas.clientHeight };
+    },
     ready: () => ready,
     paused: () => paused,
     setPaused: (p) => {

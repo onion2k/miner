@@ -813,11 +813,16 @@ function alongCutting(
 export const LEAVING_SHORT = 3 * TILE;
 /** How dark it is at the outer end of the way in, where the machine arrives. */
 export const ARRIVAL_DARK = 0.45;
+/**
+ * How far before the leaving line the way out starts to go dark: the runway lights the rest of the cutting,
+ * so the screen is dark for only the last of it, where the player is told to keep going.
+ */
+export const LEAVING_RAMP = 3 * TILE;
 
 /**
  * How dark it is at a point, 0 to 1: nothing outside the cuttings; down the
- * way out, rising from nothing at the cave's floor to black at the leaving
- * line; down the way in, from ARRIVAL_DARK at its outer end, falling to
+ * way out, nothing until LEAVING_RAMP before the leaving line, then rising to
+ * black at it; down the way in, from ARRIVAL_DARK at its outer end, falling to
  * nothing at the floor. The page fades to black by it, so the swap to the
  * next cave is made in the dark.
  */
@@ -828,9 +833,25 @@ export function darkness(cave: Cave, open: boolean, x: number, y: number): numbe
   if (a.inside) d = ARRIVAL_DARK * Math.max(0, Math.min(1, a.along / a.length));
   if (open && spec.exit) {
     const e = alongCutting(grid, spec.exit, x, y);
-    if (e.inside) d = Math.max(d, Math.max(0, Math.min(1, e.along / (e.length - LEAVING_SHORT))));
+    const start = e.length - LEAVING_SHORT - LEAVING_RAMP;
+    if (e.inside) d = Math.max(d, Math.max(0, Math.min(1, (e.along - start) / LEAVING_RAMP)));
   }
   return d;
+}
+
+/**
+ * How far the camera turns, in radians and by the shorter way, so that the machine keeps its heading on the
+ * screen across the change from one cave to the next. Every way out leads east or north and every way in but
+ * the West Gallery's faces east, so without it the direction of travel turns a quarter on the screen at the
+ * cut. It is the heading the machine arrives on minus the one it left by; nothing from the cave with no way out.
+ */
+export function headingTurn(from: Pick<Cave, 'spec'>, to: Pick<Cave, 'spec'>): number {
+  const { exit } = from.spec;
+  if (!exit) return 0;
+  const [ex, ey] = exit.out;
+  const [ix, iy] = to.spec.entry.out;
+  const turn = Math.atan2(-iy, -ix) - Math.atan2(ey, ex);
+  return Math.atan2(Math.sin(turn), Math.cos(turn));
 }
 
 /** Whether a point is down the way out, past its leaving line: where the machine has gone on into the next cave. */

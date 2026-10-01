@@ -19,7 +19,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { start, watch, type SaveSetup } from './pushminer';
+import { start, swapped, watch, type SaveSetup } from './pushminer';
 
 /** How far the pictures may differ before it is a change and not the GPU: a fiftieth of the pixels, each well off. */
 const TOLERANCE = { maxDiffPixelRatio: 0.002, threshold: 0.02 };
@@ -116,6 +116,39 @@ async function freshStart(page: Page, radius: number) {
     return api.state().darkness;
   }, radius);
   expect(dark, 'dark, but no darker than the arrival').toBeGreaterThan(0.3);
+  await hideStats(page);
+}
+
+/**
+ * The machine half way down the last three tiles of the way out, half in the dark with "Keep going" in full over it:
+ * six units short of the leaving line, which is six short of the point `beyond`. Read back, so a scene that missed
+ * the ramp is not a picture of something else.
+ */
+async function midRamp(page: Page, radius: number) {
+  await start(page, { seed: 11, paused: true, save: inCave('south-gallery', { open: true }) });
+  const shown = await page.evaluate((radius) => {
+    const api = window.pushminer!;
+    api.pause();
+    const { beyond, out } = api.content().exit!;
+    const x = beyond.x - out[0] * 12,
+      y = beyond.y - out[1] * 12;
+    api.teleport(x, y, Math.atan2(out[1], out[0]));
+    api.step(30);
+    api.look(x, y, { azimuth: -Math.PI / 2, polar: 0.62, radius });
+    api.step(1);
+    const s = api.state();
+    return {
+      dark: s.darkness,
+      words: s.keepGoing,
+      leaving: s.leaving,
+      dom: +getComputedStyle(document.getElementById('keepGoing')!).opacity,
+    };
+  }, radius);
+  expect(shown.leaving, 'not yet over the line').toBe(false);
+  expect(shown.dark, 'half dark').toBeGreaterThan(0.4);
+  expect(shown.dark).toBeLessThan(0.6);
+  expect(shown.words, 'the words up').toBeGreaterThan(0.9);
+  expect(shown.dom, 'and showing on the page').toBeCloseTo(shown.words, 2);
   await hideStats(page);
 }
 
@@ -428,7 +461,7 @@ test.describe('what it looks like', () => {
       const api = window.pushminer!;
       api.pause();
       const { mouth, beyond, out } = api.content().exit!;
-      // a quarter of the way down from the mouth to the leaving line, where it is dark and the headlights still show it
+      // a quarter of the way down from the mouth to the leaving line, where the runway lights it and it is not yet dark
       const at = { x: mouth.x + (beyond.x - mouth.x) * 0.25, y: mouth.y + (beyond.y - mouth.y) * 0.25 };
       api.teleport(at.x, at.y, Math.atan2(out[1], out[0]));
       api.step(30);
@@ -436,10 +469,16 @@ test.describe('what it looks like', () => {
       api.step(1);
       return api.state().darkness;
     });
-    expect(dark, 'dark, but not yet black').toBeGreaterThan(0.25);
-    expect(dark).toBeLessThan(0.7);
+    expect(dark, 'lit, the dark being only the last three tiles').toBe(0);
     await hideStats(page);
     await expect(page).toHaveScreenshot('cutting.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('half way into the dark at the end of the way out, Keep going over it', async ({ page }) => {
+    const problems = watch(page);
+    await midRamp(page, 78);
+    await expect(page).toHaveScreenshot('leaving.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 
@@ -461,8 +500,10 @@ test.describe('what it looks like', () => {
       const { beyond, out } = api.content().exit!;
       api.teleport(beyond.x, beyond.y, Math.atan2(out[1], out[0]));
       api.step(2);
-      api.step(20);
     });
+    // built a frame after the black is drawn, and then up out of it over 0.4 s: the words are gone by 26 frames
+    await swapped(page);
+    await page.evaluate(() => window.pushminer!.step(26));
     const now = await page.evaluate(() => window.pushminer!.state());
     expect(now.cave).toBe('south-gallery');
     await hideStats(page);
@@ -549,6 +590,28 @@ test.describe('what it looks like on a phone', () => {
     expect(problems).toEqual([]);
   });
 
+  test('half way into the dark at the end of the way out, on a phone', async ({ page }) => {
+    const problems = watch(page);
+    await midRamp(page, 84);
+    await expect(page.locator('#pad')).toBeVisible();
+    // the words are in the middle of the screen, whole, and clear of the map and the controls
+    const [words, map, pad] = await Promise.all(
+      ['#keepGoing', '#minimap', '#pad'].map((sel) =>
+        page.locator(sel).evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        }),
+      ),
+    );
+    expect(words.left, 'on the screen').toBeGreaterThanOrEqual(0);
+    expect(words.right, 'and on it').toBeLessThanOrEqual(400);
+    expect((words.left + words.right) / 2, 'centred').toBeCloseTo(200, 0);
+    expect(words.bottom, 'above the controls').toBeLessThan(pad.top);
+    expect(words.top, 'and below the map').toBeGreaterThan(map.bottom);
+    await expect(page).toHaveScreenshot('phone-leaving.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
   test('arriving in the next cave, on a phone', async ({ page }) => {
     const problems = watch(page);
     await start(page, { seed: 11, paused: true, save: inCave('hollow', { open: true }) });
@@ -559,8 +622,10 @@ test.describe('what it looks like on a phone', () => {
       const { beyond, out } = api.content().exit!;
       api.teleport(beyond.x, beyond.y, Math.atan2(out[1], out[0]));
       api.step(2);
-      api.step(20);
     });
+    // built a frame after the black is drawn, and then up out of it over 0.4 s: the words are gone by 26 frames
+    await swapped(page);
+    await page.evaluate(() => window.pushminer!.step(26));
     expect((await page.evaluate(() => window.pushminer!.state())).cave).toBe('south-gallery');
     // the three lines of the note keep clear of the map beside them
     const [note, map] = await Promise.all(

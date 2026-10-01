@@ -11,6 +11,8 @@ import type { PushminerApi } from '../src/debug';
 declare global {
   interface Window {
     pushminer?: PushminerApi;
+    /** The way the machine heads on the screen, in degrees anticlockwise from the right: put there by `measuring`. */
+    screenHeading?: () => number;
   }
 }
 
@@ -88,6 +90,29 @@ export async function ready(page: Page) {
 }
 
 /**
+ * Put in the page a way to read which way the machine heads on the screen: the machine and a point six units
+ * ahead of it, each projected through the camera's own matrix, and the angle between the two, up the screen being
+ * ninety. It is a function of the page and not of the test, so that it can be read in the very call that steps the
+ * game: a frame later, the page's own frame loop has been round and the swap made.
+ */
+export async function measuring(page: Page) {
+  await page.evaluate(() => {
+    window.screenHeading = () => {
+      const api = window.pushminer!;
+      const { x, y, yaw } = api.state().dozer;
+      const here = api.project(x, y, 1.5),
+        ahead = api.project(x + Math.cos(yaw) * 6, y + Math.sin(yaw) * 6, 1.5);
+      return (Math.atan2(here.y - ahead.y, ahead.x - here.x) * 180) / Math.PI;
+    };
+  });
+}
+
+/** Wait for the page to build the next cave after the machine has driven out: it does so a frame after the black is drawn. */
+export async function swapped(page: Page) {
+  await expect.poll(() => page.evaluate(() => !window.pushminer!.state().leaving), { timeout: 10_000 }).toBe(true);
+}
+
+/**
  * What the page shows of the way out: the black layer's opacity, the map's (shown or not, its opacity, and
  * whether it marks the way out and how many holes), any gold arrow left on the page, the note and the progress line.
  */
@@ -98,6 +123,7 @@ export async function screen(page: Page) {
     const marks = window.pushminer!.state().minimap;
     return {
       fade: +getComputedStyle(document.getElementById('fade')!).opacity,
+      words: +getComputedStyle(document.getElementById('keepGoing')!).opacity,
       map: {
         visible: !map.hidden && getComputedStyle(map).display !== 'none',
         opacity: +getComputedStyle(map).opacity,
@@ -120,8 +146,8 @@ export async function screen(page: Page) {
 export async function steerTo(
   page: Page,
   target: { x: number; y: number },
-  until: (state: GameStateLike) => boolean,
-  options: { frames?: number; every?: number; seen?: (state: GameStateLike) => Promise<void> | void } = {},
+  until: (state: SampleLike) => boolean,
+  options: { frames?: number; every?: number; seen?: (state: SampleLike) => Promise<void> | void } = {},
 ) {
   const { frames = 60 * 40, every = 5, seen } = options;
   const held = new Set<string>();
@@ -135,9 +161,10 @@ export async function steerTo(
   try {
     await hold('w', true);
     for (let f = 0; f < frames; f += every) {
+      // the heading is read in the call that steps, before the page's own frames can swap the cave
       const state = await page.evaluate((n) => {
         window.pushminer!.step(n);
-        return window.pushminer!.state();
+        return { ...window.pushminer!.state(), heading: window.screenHeading?.() ?? null };
       }, every);
       if (seen) await seen(state);
       if (until(state)) return state;
@@ -155,3 +182,5 @@ export async function steerTo(
 }
 
 type GameStateLike = ReturnType<PushminerApi['state']>;
+/** A state, and the way the machine heads on the screen where `measuring` has been called. */
+export type SampleLike = GameStateLike & { heading: number | null };

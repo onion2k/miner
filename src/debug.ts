@@ -40,6 +40,12 @@ export interface GameState {
   runway: { in: number; out: number };
   /** How dark it is where the dozer is, 0 to 1: the page fades to black by it down the way out. */
   darkness: number;
+  /** How strongly "Keep going" shows, 0 to 1. */
+  keepGoing: number;
+  /** Driven out of the cave and black, waiting for the page to build the next. */
+  leaving: boolean;
+  /** Where the camera stands about what it looks at: round and down from straight up, in radians, and how far. */
+  camera: { azimuth: number; polar: number; distance: number };
   done: boolean;
   secrets: boolean[];
   walls: boolean[];
@@ -152,6 +158,8 @@ export interface PushminerApi {
 
   /** The camera looking at a point, from `azimuth` round and `polar` down, `radius` away, at once. */
   look(x: number, y: number, view?: { azimuth?: number; polar?: number; radius?: number }): void;
+  /** A point of the world, as pixels of the canvas where it is drawn, for measuring which way things face on the screen. */
+  project(x: number, y: number, z?: number): Point;
   /** What drawing a frame of the scene as it stands costs, in milliseconds. */
   measureFrame(): Promise<number>;
   /** What one update of the map costs, view and draw, in milliseconds, averaged over `runs`. */
@@ -169,6 +177,10 @@ export interface DebugHost {
   cave(): Cave;
   /** Swap to the game and scene of the cave the save is in, as a change of cave does. */
   rebuild(): void;
+  /** Where the camera is, as it was last drawn. */
+  camera(): { azimuth: number; polar: number; distance: number };
+  /** A point of the world, as pixels of the canvas where it is drawn: the camera's own view and projection. */
+  project(x: number, y: number, z: number): Point;
   ready(): boolean;
   paused(): boolean;
   setPaused(paused: boolean): void;
@@ -231,6 +243,9 @@ export function createApi(host: DebugHost): PushminerApi {
         open: save.open,
         runway: host.runway(),
         darkness: g.darkness(),
+        keepGoing: g.keepGoing(),
+        leaving: g.left,
+        camera: host.camera(),
         done: save.done,
         secrets: [...save.secrets],
         walls: [...save.walls],
@@ -341,6 +356,7 @@ export function createApi(host: DebugHost): PushminerApi {
     },
 
     look: (x, y, view = {}) => host.look(x, y, view),
+    project: (x, y, z = 0) => host.project(x, y, z),
     measureFrame: () => host.measureFrame(),
     measureMap: (runs = 200) => host.measureMap(runs),
     get calibration() {
