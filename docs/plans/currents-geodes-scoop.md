@@ -374,44 +374,16 @@ not, and the frame is measured before and after.
       over glowing cracks; ice A, a frosted slide with snow drifting. The mock is `docs/plans/currents-mock.html`.
 - [x] R1 flow material: built and checked, `74b4c48` on the branch `flow-material` of artshape-render, not yet
       merged or released. Its frame timings were taken on a busy machine and are to be taken again first.
-- [ ] 0.23.0 released (artshape-render `ed9b117`, tagged and pushed, 2026-10-01); pin not yet moved
-- [ ] A2 the currents' look
+- [x] 0.23.0 released (artshape-render `ed9b117`, tagged and pushed, 2026-10-01); the pin moved in `1cdf977`
+- [x] A2 the currents' look: landed (2026-10-02). Water ripples with foam banks, lava is a glowing crust with
+      three lights along it, ice a frosted slide, each at 0.72 of its current's speed, which a coin ridden down
+      every current confirms. Timed in turn with its parent on a busy machine: no difference in the swap, and
+      none in the frame finer than the millisecond the machine wobbled by.
 
-## Handover, 2026-10-01: paused for the night
+## How it ended (2026-10-02)
 
-**On `main`, committed, not pushed:** S `8e071a6`, lint `dc53287`, the plan and mock `2a6d282`, the scoop
-`af04a37`, geodes `50cafe5`. Each had the full check green.
-
-**In the main checkout, applied and NOT committed: A1, currents and drains.** Everything staged or modified in
-the tree is A1 over the scoop and geodes, with what integration added:
-
-- conflicts resolved in `CLAUDE.md`, `README.md`, `scripts/fuzzer.ts`, `src/cave.ts`, `src/game.ts`, `src/invariants.ts`;
-- a drain's middle is put on the floor's lattice (`currentToDrain` in `caves.ts`, `drainOf` in `currents.ts`),
-  which cured a ragged collar; held by a test in `test/currents.test.ts`;
-- the west gallery's current moved to `48, 22` at 340 degrees: where the builder had it, its drain took coins
-  off the settling heap with nobody touching anything. `test/slow/currents.test.ts` now holds every cave, left
-  alone on four seeds, to losing nothing;
-- the drain tests send each kind down one at a time, a geode among them, and the two-hundred test allows a
-  body at rest past the strip's end; real geodes are held clear of real currents in `test/geode-stones.test.ts`.
-
-`npm run check:quick` and `npm run test:slow` are green on it. Twenty-odd pictures are written again and every
-one was looked at. **Still to do before it is committed:** `npm run check` in full on a quiet machine; the
-balance baseline and the budgets' terrain counts written again (both are meant to move) with the figures in the
-commit; then the commit.
-
-**Then:**
-
-1. The pin: artshape-render `v0.23.0` is released (`ed9b117`, pushed). One commit here moving 0.22.0 to 0.23.0,
-   installed by its tag outright, `npm run look` green with no picture moved.
-2. A2, the currents' look. From the renderer: `packFlow(patterns, i * PATTERN_STRIDE, { kind, scale, speed,
-glow, second })` from `artshape-render/game/flow`, kinds 5 ripple, 6 crust, 7 drift; the pattern runs along
-   the mesh's own +x; set `renderer.time = game.t` each frame; `await renderer.prepare()` after the groups are
-   set. Foam at a stream's banks is two narrow strips of the game's own. Lava wants two or three flickering lights.
-3. Clear the three worktrees under `.claude/worktrees`, each checked against what landed first.
-4. artshape-render's consumers' table: pushminer on v0.23.0, once the pin has moved.
-5. `npm run leaks`, and the report point by point.
-
-**Noticed, for you to decide:** the workshop's list now scrolls past four rows, so the conveyor and the drones
-are below the fold on a desk; a coin off the corner of a current's end can come to rest beside the drain; the
-bucket's lip passes through a lamp without knocking it; the scoop has no sound of its own; the currents are
-short (16 to 27 long) and their routes are the builder's, on `npm run caves:map`.
+Everything above is on `main`: S `8e071a6`, the scoop `af04a37`, geodes `50cafe5`, currents and drains
+`18085b2`, the pin `1cdf977`, and the currents' look after it. Still for the user to decide: the workshop's
+list scrolls past four rows on a desk; a coin off the corner of a current's end can rest beside its drain; the
+bucket's lip passes through a lamp; the scoop has no sound of its own; the currents are short, on the builder's
+routes. The balance gate's tolerance is narrower than what a shifted seeded stream does to six seeds.

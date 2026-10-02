@@ -9,10 +9,11 @@
  * has been broken into or the way out opened, which is all that changes their
  * shape; the rest is quick.
  */
-import { MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
+import { FLOW_CRUST, FLOW_DRIFT, FLOW_RIPPLE, packFlow } from 'artshape-render/game/flow';
+import { MATERIAL_STRIDE, PATTERN_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import type { Mesh } from 'artshape-render/mesh/types';
 import { LAMP_HEIGHT, TILE, type Cave } from './cave';
-import { FLOW_LOOK } from './currents';
+import { FLOW_LOOK, LAVA_LIGHT, RIDE, flowLights } from './currents';
 import { WALL_STRENGTH } from './economy';
 import { HOLE_CORD, HOLE_LAMP_HEIGHT, holeLamps, lampPose } from './lamps';
 import { box, collar, cone, cylinder, gem, lump, moved, pit } from './meshes';
@@ -36,6 +37,12 @@ import { BRICK_SIZE, standingBricks } from './walls';
 
 /** The collar of a drain: a hole's, a shade darker, so the two are not taken for each other from the ends of a current. */
 const DRAIN_COLLAR: Rgb = [0.23, 0.16, 0.1];
+
+/** The renderer's kind of flowing surface for each of the game's. */
+const FLOW_KIND = { ripple: FLOW_RIPPLE, crust: FLOW_CRUST, drift: FLOW_DRIFT } as const;
+/** How thick a current's strip is, and how far its top stands over the level of the floor, which is never higher than nought. */
+const STRIP_THICK = 0.2,
+  STRIP_TOP = 0.08;
 
 /** What has become of the cave, as the static scene is drawn from it. */
 export interface StaticState {
@@ -76,6 +83,13 @@ export class StaticScene {
   private readonly holes: { collar: Mesh; pit: Mesh }[];
   /** The same for each drain: cut as a hole is, but with no lamp over it and no glow, and a darker collar. */
   private readonly drains: { collar: Mesh; pit: Mesh }[];
+  /**
+   * Each current's strip, and a bank's for a stream: meshes of their real size, since a flowing surface is
+   * drawn from the mesh's own units and one stretched to fit would have its ripples stretched with it.
+   */
+  private readonly strips: { bed: Mesh; bank: Mesh | null }[];
+  /** The lights along the currents that give light, the same every time. */
+  private readonly flowLit: FeatureLight[];
   /** The lamps hanging over the holes, all together. */
   private readonly overHoles: [number, number][];
   private terrain: (Terrain & { key: string; decor: Decor; runway: FeatureLight[]; features: FeatureLight[] }) | null =
@@ -90,6 +104,28 @@ export class StaticScene {
       collar: collar(TILE * 3 + 0.2, d.radius),
       pit: pit(d.radius, d.depth),
     }));
+    this.strips = cave.currents.map((c) => {
+      const length = Math.hypot(c.x1 - c.x0, c.y1 - c.y0);
+      return {
+        bed: box(length, c.width, STRIP_THICK),
+        bank: c.flow === 'water' ? box(length, FLOW_LOOK.water.foamWidth, STRIP_THICK) : null,
+      };
+    });
+    this.flowLit = cave.currents.flatMap((c) =>
+      flowLights(c).map(([x, y], k): FeatureLight => ({
+        x,
+        y,
+        z: LAVA_LIGHT.z,
+        colour: [...LAVA_LIGHT.colour],
+        radius: LAVA_LIGHT.radius,
+        intensity: LAVA_LIGHT.intensity,
+        beat: 'flicker',
+        // the flow glows of itself: a glow on the screen over each light would be a row of lamps down it
+        glow: 0,
+        phase: k * 0.37,
+        biome: 'lava',
+      })),
+    );
     this.overHoles = holeLamps(cave.holes).flat();
   }
 
@@ -134,7 +170,7 @@ export class StaticScene {
       const decor = decorate(spec, built.samples),
         runway = runwayFeatures(this.cave, state.open);
       // put together here, once, so the lighting is not handed a new list every frame
-      this.terrain = { key, ...built, decor, runway, features: [...decor.lights, ...runway] };
+      this.terrain = { key, ...built, decor, runway, features: [...decor.lights, ...runway, ...this.flowLit] };
     }
     const terrain = this.terrain;
     const surface: GameGroup[] = terrain.groups.map((g) => {
@@ -303,21 +339,56 @@ export class StaticScene {
   }
 
   /**
-   * Each current, plainly: a flat strip in the colour of what flows, level with the floor. The cave is dark and
-   * nothing here glows, so the headlights and the lamps are what pick it out, as they do the floor; it is
-   * drawn for as long as the cave stands, since a current is never switched off.
+   * Each current, as what flows: a strip its own size laid along it, level with the floor, drawn as the
+   * renderer's flowing surface, whose pattern runs along the strip's own length at the pace of what the
+   * current carries. A stream has foam along each bank, a narrow strip of its own, so its edge shows where no
+   * light falls on the water. Drawn for as long as the cave stands, since a current is never switched off.
    */
   private currents(): GameGroup[] {
     const out: GameGroup[] = [];
-    for (const c of this.cave.currents) {
-      const len = Math.hypot(c.x1 - c.x0, c.y1 - c.y0),
-        yaw = Math.atan2(c.y1 - c.y0, c.x1 - c.x0);
-      const bed = new Float32Array(16);
-      // sunk a little under the floor, which is never lower than that, so there is no gap beneath its edges
-      placePart(bed, 0, (c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, -0.12, yaw, 0, 0, 0, 0, 0, len, c.width, 0.2);
+    this.cave.currents.forEach((c, k) => {
+      const { bed, bank } = this.strips[k];
+      const yaw = Math.atan2(c.y1 - c.y0, c.x1 - c.x0);
+      const cx = (c.x0 + c.x1) / 2,
+        cy = (c.y0 + c.y1) / 2;
       const look = FLOW_LOOK[c.flow];
-      out.push({ mesh: this.meshes.beltBase, matrices: bed, albedo: [...look.albedo], roughness: look.roughness });
-    }
+      const speed = c.speed * RIDE;
+      const laid = (across: number, lift: number) => {
+        const m = new Float32Array(16);
+        // across is to the left of the flow; the strip is turned to lie along it and is not scaled
+        const x = cx - Math.sin(yaw) * across,
+          y = cy + Math.cos(yaw) * across;
+        placePart(m, 0, x, y, STRIP_TOP - STRIP_THICK + lift, yaw, 0, 0, 0, 0, 0, 1, 1, 1);
+        return m;
+      };
+      const flowing = (scale: number, second: Rgb) =>
+        packFlow(new Float32Array(PATTERN_STRIDE), 0, {
+          kind: FLOW_KIND[look.kind],
+          scale,
+          speed,
+          glow: look.glow,
+          second,
+        });
+      out.push({
+        mesh: bed,
+        matrices: laid(0, 0),
+        patterns: flowing(look.scale, [...look.second]),
+        albedo: [...look.albedo],
+        roughness: look.roughness,
+      });
+      if (bank && c.flow === 'water') {
+        const water = FLOW_LOOK.water;
+        // foam with the water showing through it at the ripples' crests, a hair above the stream so the two do not fight
+        for (const side of [-1, 1])
+          out.push({
+            mesh: bank,
+            matrices: laid((side * c.width) / 2, 0.01),
+            patterns: flowing(water.foamScale, [...water.second]),
+            albedo: [...water.foam],
+            roughness: 0.6,
+          });
+      }
+    });
     return out;
   }
 }

@@ -673,6 +673,15 @@ test('a coin at the head of a current to a hole is banked, in the Hollow, with n
     'a brook to the hole in the Hollow',
   ).toEqual([['water', false]]);
   expect(content.drains, 'and no drain').toEqual([]);
+  // the brook is drawn flowing by the game's own clock: stepped, it has moved on by exactly the game's time, and a
+  // game that stands still draws it standing still
+  await play(page, 12, 'the brook flowing');
+  const clocks = () => page.evaluate(() => [window.pushminer!.state().t, window.pushminer!.flowClock()]);
+  const [t, drawn] = await clocks();
+  expect(t).toBeGreaterThan(0);
+  expect(drawn, 'the picture is at the game’s time').toBe(t);
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  expect(await clocks(), 'two frames on with the game stopped, nothing has flowed').toEqual([t, drawn]);
   const before = await page.evaluate(() => window.pushminer!.state());
   await coinOnCurrent(page, 0, 2);
   for (let f = 0; f < 60 * 20; f += 20) {

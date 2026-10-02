@@ -330,8 +330,9 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
-  // the currents, plainly: a flat strip in the colour of what flows, which the machine's lights pick out of the dark. Each is
-  // seen from above and a little way off, the machine at its head facing along it. A moving look comes with the renderer's.
+  // the currents, flowing: rippling water with foam at its banks, a crust of lava over glowing cracks, a frosted slide of ice.
+  // Each is seen from above and a little way off, the machine at its head facing along it, at the same moment of the game's
+  // clock every run, which is what the flow is drawn by.
   async function currentScene(page: Page, id: string, radius: number, aimAt: 'middle' | 'drain' = 'middle') {
     await begin(page, inCave(id));
     const { c, drain } = await page.evaluate(() => {

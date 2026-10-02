@@ -183,6 +183,8 @@ export interface PushminerApi {
   readonly calibration: number[];
   setCoinDetail(level: number): void;
   lampsLit(): number[];
+  /** The moment the currents are drawn flowing at: the game's time, as the renderer was last handed it. */
+  flowClock(): number;
 }
 
 /** What the page gives the API that is not the game's: time, the controls, the camera and the renderer. */
@@ -212,6 +214,7 @@ export interface DebugHost {
   calibration(): number[];
   setCoinDetail(level: number): void;
   lampsLit(): number[];
+  flowClock(): number;
   /** How many runway lights the scene stands, by the cutting each is in. */
   runway(): { in: number; out: number };
   trackMarks(): number;
@@ -400,5 +403,6 @@ export function createApi(host: DebugHost): PushminerApi {
     },
     setCoinDetail: (level) => host.setCoinDetail(level),
     lampsLit: () => host.lampsLit(),
+    flowClock: () => host.flowClock(),
   };
 }

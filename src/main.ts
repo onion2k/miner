@@ -439,6 +439,8 @@ async function main() {
   let { lampColours, overHoles } = lightsOf(cave, spec);
   function lightUp() {
     const { world, dozer, bots, barrels, tally } = game;
+    // the currents flow by the game's own clock, so a game stopped stands still and a picture is the same every run
+    renderer.time = game.t;
     lights.build({
       t: game.t,
       view: cam,
@@ -505,6 +507,9 @@ async function main() {
   }
   const forced = new URLSearchParams(location.search).get('coins');
   let calibration: number[] = [];
+  // The builds a flowing surface is drawn through are made when the first one is handed in, which the cave's
+  // currents just were. Waited for here, so the machine is measured drawing them and the first frame shown has them.
+  await renderer.prepare();
   if (forced !== null && Number.isFinite(+forced)) setCoinDetail(+forced);
   else {
     hud.booting('measuring this machine…');
@@ -800,6 +805,7 @@ async function main() {
     calibration: () => calibration,
     setCoinDetail,
     lampsLit: () => lights.lampsLit,
+    flowClock: () => renderer.time,
     runway: () => {
       const lit = staticScene.features.filter((f) => f.beat === 'runway');
       return { in: lit.filter((f) => f.cutting === 'in').length, out: lit.filter((f) => f.cutting === 'out').length };

@@ -91,7 +91,11 @@ the page says what was lost, and the next cave counts it among what was left
 behind. A drain lies beside the work, where a careless push or a blast feeds it,
 never across the way from a heap to its hole. The dozer and the drones are not
 moved by a current, and the drones never push anything onto one that ends in a
-drain.
+drain. Each is drawn as what flows, by the renderer's flowing surfaces and the
+game's own clock, so a game stopped stands still: water ripples and glints under
+the headlights, with foam along its banks; lava is dark plates drifting on cracks
+that glow, and lights what lies beside it; ice is a frosted slide with snow
+drifting down it. The picture moves at the pace of what the current carries.
 
 The cave is pitch black. What you see by is the dozer's own lights, the
 drones', and the lamps on posts along the cave's edges. Drive into a lamp and it goes over,
@@ -258,7 +262,7 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/game.ts           the game without the picture: a step of everything that happens, told as events
     src/debug.ts          window.pushminer, the test API
     src/invariants.ts     the rules that must always hold, whatever has been played
-    src/currents.ts       the currents' strips and drains: where each is, how far a point is from one, how it is drawn plainly
+    src/currents.ts       the currents' strips and drains: where each is, the pace of what one carries, and how each flow looks
     src/cave.ts           the tile grid of one cave: floor, rock, the way in and the way out, heaps, veins, belt routes, lamps, and how dark it is down the cuttings
     src/economy.ts        the bank, the upgrades, which cave is being cleared, the save, the shop
     src/stock.ts          what is in the cave, from where: put back from the save, spawned, banked, left behind

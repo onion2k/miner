@@ -11,12 +11,13 @@
 import { describe, expect, it } from 'vitest';
 import { Autopilot } from '../src/autopilot';
 import { TILE, buildCave, nearestHole, tileCentre, type Cave, type CurrentSpec } from '../src/cave';
-import { FLOW_LOOK, currentBelt, drainOf, flowOf } from '../src/currents';
+import { FLOW_LOOK, RIDE, currentBelt, drainOf, flowOf } from '../src/currents';
 import { Economy, memoryStore } from '../src/economy';
 import { Game } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { minimapView, type MinimapBodies } from '../src/minimap';
 import { StaticScene } from '../src/scene-static';
+import { FLOW_CRUST, FLOW_DRIFT, FLOW_RIPPLE, isFlowKind } from 'artshape-render/game/flow';
 import { buildTerrain, floorHeight, pitsOf } from '../src/terrain';
 import { BARREL_KIND, BRICK_KIND, GEODE_KIND, KINDS, KIND_VALUE } from '../src/physics';
 import { RUN, caveOf, gameIn, saveIn, specOf, withSeed } from './helpers';
@@ -496,6 +497,33 @@ describe('edge cases', () => {
   });
 });
 
+describe('the pace of what a current carries', () => {
+  it.each(ALL.map(({ id, c }) => [c.id, id, c] as const))(
+    'is `RIDE` of the speed of %s, which is the pace its picture moves at',
+    (_n, id, c) => {
+      withSeed(61, () => {
+        const game = gameIn(id);
+        const slot = aCoin(game);
+        put(game, slot, ...onIt(c, 1));
+        const [ux, uy] = flowOf(c);
+        const length = Math.hypot(c.x1 - c.x0, c.y1 - c.y0);
+        const along = () => (game.world.x[slot] - c.x0) * ux + (game.world.y[slot] - c.y0) * uy;
+        // let it fall and take up the current's pace, then time it over a stretch of the middle
+        until(game, 60 * 10, () => along() > length * 0.4);
+        const from = along(),
+          frames = 20;
+        for (let f = 0; f < frames; f++) game.step(DT, still);
+        expect(along(), 'still on the strip').toBeLessThan(length);
+        const pace = (along() - from) / (frames * DT);
+        expect(pace / c.speed, `a coin rides at ${pace.toFixed(2)} on a current of ${c.speed}`).toBeGreaterThan(
+          RIDE - 0.04,
+        );
+        expect(pace / c.speed).toBeLessThan(RIDE + 0.04);
+      });
+    },
+  );
+});
+
 describe('the map', () => {
   const NO_BODIES: MinimapBodies = {
     count: 0,
@@ -563,28 +591,124 @@ describe('the picture', () => {
     belts: [],
   });
 
-  it('draws a flat strip for each current at its place, in the colour of what flows, and a collar and a pit for each drain', () => {
+  /** The groups a cave's currents add to its picture, in the order they are drawn: the strip, then its banks. */
+  const drawn = (id: string) => {
+    const cave = caveOf(id);
+    const flowing = new StaticScene(cave).groups(state(cave)).filter((g) => g.patterns && isFlowKind(g.patterns[0]));
+    return { cave, flowing };
+  };
+  /** How far a mesh reaches along each of its own axes. */
+  const span = (mesh: { positions: Float32Array }) =>
+    [0, 1, 2].map((k) => {
+      let lo = Infinity,
+        hi = -Infinity;
+      for (let i = k; i < mesh.positions.length; i += 3) {
+        lo = Math.min(lo, mesh.positions[i]);
+        hi = Math.max(hi, mesh.positions[i]);
+      }
+      return hi - lo;
+    });
+
+  it('draws each current as a surface that flows: a strip its own size, laid along it, moving at the pace of what it carries', () => {
+    const KIND = { ripple: FLOW_RIPPLE, crust: FLOW_CRUST, drift: FLOW_DRIFT };
+    let strips = 0;
     for (const spec of WITH_CURRENTS) {
-      const cave = caveOf(spec.id);
-      const bare = new StaticScene(buildCave({ ...spec, currents: undefined })).groups(state(cave));
-      const groups = new StaticScene(cave).groups(state(cave));
-      expect(groups.length - bare.length, `${spec.id}: a strip a current, two groups a drain`).toBe(
-        cave.currents.length + 2 * cave.drains.length,
-      );
+      const { cave, flowing } = drawn(spec.id);
+      for (const c of cave.currents) {
+        const look = FLOW_LOOK[c.flow];
+        const len = Math.hypot(c.x1 - c.x0, c.y1 - c.y0);
+        const strip = flowing.find(
+          (g) =>
+            Math.abs(g.matrices[12] - (c.x0 + c.x1) / 2) < 1e-3 && Math.abs(g.matrices[13] - (c.y0 + c.y1) / 2) < 1e-3,
+        );
+        expect(strip, `${c.id} has its strip`).toBeDefined();
+        strips++;
+        const p = strip!.patterns!;
+        expect(p[0], `${c.id}: ${c.flow} is drawn as ${look.kind}`).toBe(KIND[look.kind]);
+        // the pattern is drawn from the mesh's own units, so the mesh is the strip's real size and is not stretched to it
+        const [long, wide] = span(strip!.mesh);
+        expect(long).toBeCloseTo(len, 4);
+        expect(wide).toBeCloseTo(c.width, 4);
+        // its own +x lies along the flow, which is the way the pattern runs
+        const [ux, uy] = flowOf(c);
+        expect(strip!.matrices[0]).toBeCloseTo(ux, 5);
+        expect(strip!.matrices[1]).toBeCloseTo(uy, 5);
+        // and it runs at the pace a coin on it settles to, not the belt's own, or the water would outrun what it carries
+        expect(p[2]).toBeCloseTo(c.speed * RIDE, 5);
+        expect([...p.subarray(4, 7)]).toEqual(look.second.map((v) => Math.fround(v)));
+        expect(strip!.albedo).toEqual([...look.albedo]);
+      }
     }
-    const cave = caveOf('east-gallery');
-    const strips = new StaticScene(cave)
-      .groups(state(cave))
-      .filter((g) => g.albedo && g.albedo.join() === FLOW_LOOK.lava.albedo.join());
-    expect(strips).toHaveLength(1);
-    const c = cave.currents[0];
-    expect(strips[0].matrices[12]).toBeCloseTo((c.x0 + c.x1) / 2, 3);
-    expect(strips[0].matrices[13]).toBeCloseTo((c.y0 + c.y1) / 2, 3);
+    expect(strips).toBe(ALL.length);
   });
 
-  it('is plain: each flow its own colour, and no two alike', () => {
-    const colours = (['water', 'lava', 'ice'] as const).map((f) => FLOW_LOOK[f].albedo.join());
-    expect(new Set(colours).size).toBe(3);
+  it('gives a stream foam along both banks, so its edge shows in the dark, and lava and ice none', () => {
+    for (const spec of WITH_CURRENTS) {
+      const { cave, flowing } = drawn(spec.id);
+      const water = cave.currents.filter((c) => c.flow === 'water');
+      expect(flowing, `${spec.id}: a strip a current, and two banks a stream`).toHaveLength(
+        cave.currents.length + 2 * water.length,
+      );
+      for (const c of water) {
+        const len = Math.hypot(c.x1 - c.x0, c.y1 - c.y0);
+        const [ux, uy] = flowOf(c);
+        const cx = (c.x0 + c.x1) / 2,
+          cy = (c.y0 + c.y1) / 2;
+        const sides = flowing
+          .map((g) => ({ g, across: -(g.matrices[12] - cx) * uy + (g.matrices[13] - cy) * ux }))
+          .filter(({ g, across }) => Math.abs(Math.abs(across) - c.width / 2) < 1e-3 && span(g.mesh)[1] < 2);
+        expect(sides.map((b) => Math.sign(b.across)).sort(), `${c.id}: a bank each side`).toEqual([-1, 1]);
+        for (const { g } of sides) {
+          expect(span(g.mesh)[0]).toBeCloseTo(len, 4);
+          expect(g.albedo, 'foam, not water').toEqual([...FLOW_LOOK.water.foam]);
+          expect(g.patterns![2], 'carried along with the stream').toBeCloseTo(c.speed * RIDE, 5);
+        }
+      }
+    }
+  });
+
+  it('makes lava glow and light what is beside it, and leaves water and ice to the lamps', () => {
+    expect(FLOW_LOOK.lava.glow).toBeGreaterThan(0);
+    expect(FLOW_LOOK.water.glow).toBe(0);
+    expect(FLOW_LOOK.ice.glow).toBe(0);
+    const { cave, flowing } = drawn('east-gallery');
+    expect(flowing[0].patterns![3], 'the glow reaches the renderer').toBe(Math.fround(FLOW_LOOK.lava.glow));
+    const c = cave.currents[0];
+    const scene = new StaticScene(cave);
+    scene.groups(state(cave));
+    const bare = new StaticScene(buildCave({ ...cave.spec, currents: undefined }));
+    bare.groups(state(cave));
+    const along = scene.features.slice(bare.features.length);
+    expect(along.length, 'a few lights along it').toBeGreaterThanOrEqual(2);
+    for (const l of along) {
+      expect(toSegment(l.x, l.y, [c.x0, c.y0, c.x1, c.y1]).d, 'over the flow').toBeLessThan(c.width / 2);
+      expect(l.beat).toBe('flicker');
+      expect(l.colour[0], 'warm').toBeGreaterThan(l.colour[2] * 3);
+    }
+    // a stream and a slide give out no light of their own
+    for (const id of ['hollow', 'north-vault']) {
+      const lit = new StaticScene(caveOf(id));
+      lit.groups(state(caveOf(id)));
+      const dark = new StaticScene(buildCave({ ...specOf(id), currents: undefined }));
+      dark.groups(state(caveOf(id)));
+      expect(lit.features.length, `${id}: no light of its own`).toBe(dark.features.length);
+    }
+  });
+
+  it('says each flow once: its own colours, its own kind of surface, and no two alike', () => {
+    const flows = ['water', 'lava', 'ice'] as const;
+    expect(new Set(flows.map((f) => FLOW_LOOK[f].albedo.join())).size).toBe(3);
+    expect(new Set(flows.map((f) => FLOW_LOOK[f].kind)).size).toBe(3);
+  });
+
+  it('draws a collar and a pit for each drain', () => {
+    for (const spec of WITH_CURRENTS) {
+      const cave = caveOf(spec.id);
+      const plain = (c: Cave) => new StaticScene(c).groups(state(cave)).filter((g) => !g.patterns);
+      expect(plain(cave).length - plain(buildCave({ ...spec, currents: undefined })).length, spec.id).toBe(
+        2 * cave.drains.length,
+      );
+    }
   });
 
   it('cuts a drain into the floor as a hole is: level round it, and in the list the terrain cuts', () => {

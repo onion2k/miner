@@ -86,7 +86,9 @@ What to copy the shape of, when building something new:
   `smoke/progress.spec.ts` for each ending, the fuzzer actions `onto a current`
   and `down the drain`, and pictures `current-water`, `current-lava`,
   `current-ice` and `drain`. Not fed to the barrel and lamp placers, whose
-  spots are pinned by hash.
+  spots are pinned by hash. How each flow looks is `FLOW_LOOK` in
+  `src/currents.ts`, drawn by artshape-render's flow kinds from the game's
+  clock (`renderer.time = game.t`), at `RIDE` of the current's speed.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the drone gate
   (`scripts/sim-check.ts`). Each has unit tests of its own working parts.
 - **Test helpers:** `withSeed` in `test/helpers.ts` for chance from a seed,
