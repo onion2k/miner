@@ -47,9 +47,23 @@ export function fallYaw(k: number): number {
   return hash(k, 3, 17) * Math.PI * 2;
 }
 
+/** A plate the machine carries ahead of it, in its own frame: its middle, how far it is turned from lying across, and how long. */
+export interface Plate {
+  x: number;
+  y: number;
+  turn: number;
+  length: number;
+}
+
+/** How near a plate's middle line a lamp's post has to be to be met by it: half the plate's thickness, the post's, and a little. */
+const PLATE_KNOCK = 0.6;
+
 /**
  * The lamps still standing that a machine is into, by its hull or its blade:
- * the machine at (x, y) facing `yaw`, its blade's face `bladeAt` ahead.
+ * the machine at (x, y) facing `yaw`, its blade's face `bladeAt` ahead. And by
+ * any of `plates`, the pieces of a scoop's bucket, which reach well past
+ * where a blade's face is: a lamp anywhere along one is met by it, at
+ * whatever height the bucket is, since a post stands taller than it rises.
  */
 export function lampsHit(
   lamps: readonly Lamp[],
@@ -58,13 +72,35 @@ export function lampsHit(
   y: number,
   yaw: number,
   bladeAt: number,
+  plates: readonly Plate[] = [],
 ): number[] {
-  const bx = x + Math.cos(yaw) * bladeAt,
-    by = y + Math.sin(yaw) * bladeAt;
+  const c = Math.cos(yaw),
+    s = Math.sin(yaw);
+  const bx = x + c * bladeAt,
+    by = y + s * bladeAt;
   const out: number[] = [];
   lamps.forEach((l, k) => {
     if (broken.includes(k)) return;
-    if (Math.hypot(l.x - x, l.y - y) <= LAMP_KNOCK || Math.hypot(l.x - bx, l.y - by) <= LAMP_KNOCK - 0.8) out.push(k);
+    if (Math.hypot(l.x - x, l.y - y) <= LAMP_KNOCK || Math.hypot(l.x - bx, l.y - by) <= LAMP_KNOCK - 0.8) {
+      out.push(k);
+      return;
+    }
+    if (!plates.length) return;
+    // the lamp in the machine's own frame, where the plates are
+    const dx = l.x - x,
+      dy = l.y - y;
+    const lx = dx * c + dy * s,
+      ly = -dx * s + dy * c;
+    for (const p of plates) {
+      // a plate lies along its own length, which is across the machine turned by `turn`
+      const ux = -Math.sin(p.turn),
+        uy = Math.cos(p.turn);
+      const along = Math.max(-p.length / 2, Math.min(p.length / 2, (lx - p.x) * ux + (ly - p.y) * uy));
+      if (Math.hypot(lx - (p.x + ux * along), ly - (p.y + uy * along)) <= PLATE_KNOCK) {
+        out.push(k);
+        return;
+      }
+    }
   });
   return out;
 }

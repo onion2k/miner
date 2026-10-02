@@ -65,7 +65,8 @@ the horn's place while the bucket is up) to tip it out ahead, at the dozer's
 speed and a little more: at the hole's lip, that banks it, and the empty
 bucket comes down by itself. It reaches back to the hull's nose, for the coins
 in a corner or against a wall that are behind its back when it is driven
-in. A load is not saved: leave the cave with one and it is lost with the
+in. Its walls knock over a lamp they meet, as the hull does, and light a
+barrel's fuse. A load is not saved: leave the cave with one and it is lost with the
 rest, and a reload puts it back in its heaps. The drones never take what is
 held up, and the autopilot neither buys nor works one.
 

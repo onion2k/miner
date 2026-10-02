@@ -686,6 +686,50 @@ describe('the scoop’s edge cases', () => {
     expect(lit, 'lit by the wall').toEqual([barrel]);
   });
 
+  it('lamps: one met by a wall of the bucket goes over, lowered or raised, where a blade as wide passes it by', () => {
+    const run = (save: Partial<Save>, raised = false) => {
+      const broken: number[] = [];
+      const game = gameIn('hollow', save, { lampBroken: (k) => broken.push(k) });
+      const width = SCOOP[2].width;
+      // a lamp and a heading that put the lamp just inside a wall's tip with the machine on open floor
+      const tip = { x: BLADE_AT + BUCKET_DEEP - 0.2, y: width / 2 - 0.1 };
+      const open = (x: number, y: number) => {
+        for (let a = 0; a < 8; a++) {
+          const t = game.nav.tileOf(x + Math.cos(a * 0.785) * 4, y + Math.sin(a * 0.785) * 4);
+          if (t < 0 || game.world.solid[t] === 1) return false;
+        }
+        return true;
+      };
+      for (const [k, l] of game.cave.lamps.entries())
+        for (let turn = 0; turn < 16; turn++) {
+          const yaw = (turn * Math.PI) / 8;
+          const x = l.x - (Math.cos(yaw) * tip.x - Math.sin(yaw) * tip.y),
+            y = l.y - (Math.sin(yaw) * tip.x + Math.cos(yaw) * tip.y);
+          if (!open(x, y)) continue;
+          // no other lamp near enough to go over with it
+          const others = game.cave.lamps.filter((o) => o !== l && Math.hypot(o.x - x, o.y - y) < 12);
+          if (others.length) continue;
+          Object.assign(game.dozer, { x, y, yaw, speed: 0, yawRate: 0 });
+          if (raised) {
+            play(game, 1, still, lift);
+            play(game, TRAVEL, still);
+            expect(game.scoop.lift).toBe(1);
+          }
+          play(game, 2, still);
+          return { k, broken, saved: game.economy.save.lampsBroken };
+        }
+      throw new Error('no lamp of the Hollow can be come at so');
+    };
+    const down = run({ scoop: 2 });
+    expect(down.broken, 'the wall knocked it over').toEqual([down.k]);
+    expect(down.saved).toEqual([down.k]);
+    const up = run({ scoop: 2 }, true);
+    expect(up.broken, 'a raised bucket’s wall meets the post all the same').toEqual([up.k]);
+    // the widest blade, which is wider than this bucket: its wings pass a lamp by, as they always did
+    const blade = run({ blade: 3 });
+    expect(blade.broken).toEqual([]);
+  });
+
   it('the magnet, belts and currents: a raised load is not pulled or carried off', () => {
     const magnet = scene(2, { magnet: 5 });
     coinsInBucket(magnet, 3, 3);

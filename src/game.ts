@@ -25,7 +25,7 @@ import {
 import { Barrels, type Blast } from './barrels';
 import { cracked, scatter } from './geode-stones';
 import { currentBelt } from './currents';
-import { BLADE_AT, Dozer, separate } from './dozer';
+import { BLADE_AT, Dozer, bucketPieces, separate } from './dozer';
 import { CLEAR_SHARE, Economy, WALL_STRENGTH } from './economy';
 import { Impacts } from './impacts';
 import type { Drive } from './input';
@@ -465,7 +465,10 @@ export class Game {
   /** Knock over any lamp the player's machine is into: its hull, or its blade. */
   private knockLamps() {
     const { cave, dozer, economy } = this;
-    const hits = lampsHit(cave.lamps, economy.save.lampsBroken, dozer.x, dozer.y, dozer.yaw, BLADE_AT);
+    // a scoop's bucket reaches well past where a blade's face is, and its walls meet what the blade's point misses
+    const spec = economy.spec();
+    const plates = spec.bucket ? bucketPieces(spec.bladeWidth) : [];
+    const hits = lampsHit(cave.lamps, economy.save.lampsBroken, dozer.x, dozer.y, dozer.yaw, BLADE_AT, plates);
     for (const k of hits) {
       const lit = lampOn(cave.lamps, k, economy.save);
       economy.breakLamp(k);
