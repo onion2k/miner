@@ -13,9 +13,8 @@
  * scene for the pennant, so a part that moves takes its light with it.
  */
 import { mergeMeshes, type Mesh } from 'artshape-render/mesh/types';
-import { BLADE_AT, BLADE_FLAT, BLADE_HEIGHT, TRACK_GAUGE, bladePieces } from './dozer';
-import { MOUTH_DEEP } from './scoop';
-import { ball, box, cone, cylinder, moved, pointed, scaled, turned } from './meshes';
+import { BLADE_AT, BLADE_HEIGHT, BUCKET_BACK, BUCKET_DEEP, TRACK_GAUGE, bladePieces, bucketPieces } from './dozer';
+import { ball, box, cone, cylinder, moved, pointed, scaled, slab, turned } from './meshes';
 
 type V3 = [number, number, number];
 
@@ -249,21 +248,25 @@ export function bladeMesh(width: number): Mesh {
   return mergeMeshes(parts);
 }
 
+/** How thick the bucket's floor is, lying on the ground, and its plates. */
+const BUCKET_FLOOR = 0.08,
+  BUCKET_PLATE = 0.35;
+
 /**
- * The scoop's bucket, which stands in for the blade once the workshop's scoop is bought, in the machine's own
- * frame and level and down: the blade's curved back, a floor ahead of it as wide as its straight middle and
- * as deep as the mouth, a cheek along each side of the floor, and a lip across its front. Held coins sit on
- * the floor between the cheeks (`seat` in `scoop.ts`). Kept apart from `MachineMeshes`, as the blade is,
- * since it follows the width bought.
+ * The scoop's bucket, which takes the blade's place once the workshop's scoop is bought, in the machine's own
+ * frame and level and down. It is drawn from the pieces the physics pushes with (`bucketPieces`), so what is
+ * seen is what is felt: a back and a wall each side flaring out to the mouth, each as tall as the blade, and
+ * a floor lying on the ground between them, out to a low lip across the mouth. Kept apart from
+ * `MachineMeshes`, as the blade is, since it follows the width bought.
  */
 export function scoopMesh(width: number): Mesh {
-  const pieces = bladePieces(width);
-  const back = pieces.map((p) =>
+  const plates = bucketPieces(width).map((p) =>
     moved(
       turned(
         mergeMeshes([
-          box(0.35, p.length, BLADE_HEIGHT, true),
-          moved(box(0.7, p.length, 0.22, true), 0.17, 0, BLADE_HEIGHT / 2 - 0.11),
+          box(BUCKET_PLATE, p.length, BLADE_HEIGHT, true),
+          // a rail along the top, proud of the plate on the outside
+          moved(box(BUCKET_PLATE + 0.3, p.length, 0.22, true), -0.1, 0, BLADE_HEIGHT / 2 - 0.11),
         ]),
         p.turn,
       ),
@@ -272,18 +275,28 @@ export function scoopMesh(width: number): Mesh {
       BLADE_HEIGHT / 2,
     ),
   );
-  const flat = (width / 2) * BLADE_FLAT;
-  // from just behind the blade's face to the mouth's far edge
-  const x0 = BLADE_AT - 0.2,
-    x1 = BLADE_AT + MOUTH_DEEP;
-  const mid = (x0 + x1) / 2,
-    long = x1 - x0;
+  const back = (width * BUCKET_BACK) / 2,
+    mouth = width / 2;
+  const x0 = BLADE_AT,
+    x1 = BLADE_AT + BUCKET_DEEP;
   return mergeMeshes([
-    ...back,
-    moved(box(long, flat * 2, 0.3, true), mid, 0, 0.15),
-    // the cheeks, taller toward the back
-    ...[1, -1].map((side) => moved(box(long, 0.3, 1.8, true), mid, side * flat, 0.9)),
-    // the lip across the front of the floor
-    moved(box(0.35, flat * 2 + 0.3, 0.5, true), x1, 0, 0.35),
+    ...plates,
+    // the floor, on the ground: as wide as the back at the back and as the bucket at the mouth
+    slab(
+      [
+        [x0, -back],
+        [x1, -mouth],
+        [x1, mouth],
+        [x0, back],
+      ],
+      0,
+      BUCKET_FLOOR,
+    ),
+    // the cutting edge across the mouth, low enough for a coin to ride over
+    moved(box(0.3, width, 0.14, true), x1, 0, 0.07),
+    // two ribs up the back, behind it
+    ...[1, -1].map((side) =>
+      moved(box(0.3, 0.2, BLADE_HEIGHT * 0.8, true), x0 - 0.3, side * back * 0.5, BLADE_HEIGHT / 2),
+    ),
   ]);
 }

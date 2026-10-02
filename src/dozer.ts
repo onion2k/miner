@@ -15,6 +15,11 @@ export interface DozerSpec {
   bladeWidth: number;
   magnetRadius: number;
   magnetStrength: number;
+  /**
+   * Whether what it pushes with is a scoop's bucket, `bladeWidth` across at its mouth, and not a blade; left
+   * out, a blade, as every drone's is.
+   */
+  bucket?: boolean;
 }
 
 /** The hull's footprint, from the pivot: half-length along and half-width across. */
@@ -23,10 +28,13 @@ export const HULL_HALF = [3.0, 2.5, 1.3] as const;
 export const BLADE_AT = 4.3;
 export const BLADE_HEIGHT = 3.0;
 /**
- * How far the blade is raised off the floor with a scoop's load up, at full lift: clear of the tallest single
- * coin or gem lying on the floor, so that what is under it is driven over and not shoved.
+ * How far a scoop's bucket is raised off the floor, at full lift: clear of the tallest single coin or gem
+ * lying on the floor, so that what is under it is driven over and not shoved.
  */
 export const BLADE_RISE = 3.0;
+/** A scoop's bucket: how far ahead of its back its mouth is, and the share of its width that its back is. */
+export const BUCKET_DEEP = 3.4;
+export const BUCKET_BACK = 0.6;
 /** The blade: a straight middle for this fraction of its width, and a curved wing each end. */
 export const BLADE_FLAT = 0.6;
 /** Pieces per wing, and how far forward a wing's tip sweeps, as a fraction of the blade's width. */
@@ -78,6 +86,29 @@ export function bladePieces(width: number): { x: number; y: number; turn: number
     }
   }
   return out;
+}
+
+/**
+ * Where each piece of a scoop's bucket sits in the dozer's own frame, as a blade's pieces do: a straight back
+ * where the blade's face stood, and a wall each side from the back's end out to the mouth, which is the
+ * bucket's width. The walls flare, as a blade's wings sweep, so what the mouth's edge meets is funnelled to
+ * the back and stays between them; and they are deep, so what is gathered is held and not shed off a tip.
+ */
+export function bucketPieces(width: number): { x: number; y: number; turn: number; length: number }[] {
+  const back = width * BUCKET_BACK;
+  // how far a wall goes out across the machine as it goes forward to the mouth
+  const out = (width - back) / 2;
+  const length = Math.hypot(BUCKET_DEEP, out);
+  const pieces = [{ x: BLADE_AT, y: 0, turn: 0, length: back }];
+  for (const side of [-1, 1])
+    pieces.push({
+      x: BLADE_AT + BUCKET_DEEP / 2,
+      y: side * (back / 2 + out / 2),
+      // a piece lies across the machine: turned this far, it lies along the wall
+      turn: -Math.atan2(BUCKET_DEEP, out) * side,
+      length,
+    });
+  return pieces;
 }
 
 export class Dozer {
@@ -256,9 +287,10 @@ export class Dozer {
   }
 
   /**
-   * The boxes the coins feel: the blade's pieces and the hull, scaled to the machine. `lift` is how far the
-   * scoop has raised the blade, 0 to 1: raised, the blade's boxes stand clear of the floor and push nothing
-   * that lies on it, while the hull still shoves. Nought, which is all a drone ever passes, is the blade down.
+   * The boxes the coins feel: the pieces of the blade, or of the scoop's bucket where the machine has one,
+   * and the hull, scaled to the machine. `lift` is how far a bucket is raised, 0 to 1: raised, its boxes stand
+   * clear of the floor and push nothing that lies on it, while the hull still shoves. Nought, which is all a
+   * drone ever passes, is down.
    */
   pushers(spec: DozerSpec, out: Pusher[], lift = 0): Pusher[] {
     const c = Math.cos(this.yaw),
@@ -268,7 +300,7 @@ export class Dozer {
     const k = this.scale,
       owner = this.owner;
     out.length = 0;
-    for (const piece of bladePieces(spec.bladeWidth)) {
+    for (const piece of spec.bucket ? bucketPieces(spec.bladeWidth) : bladePieces(spec.bladeWidth)) {
       out.push({
         x: this.x + (c * piece.x - s * piece.y) * k,
         y: this.y + (s * piece.x + c * piece.y) * k,

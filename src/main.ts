@@ -276,13 +276,19 @@ async function main() {
       else if (id.startsWith('body:')) standOn();
       else if (id === 'horn') pad?.showHorn(true);
       else if (id === 'scoop') {
+        // each size is a bucket of its own width, in the blade's place
         scene.setScoop(true);
+        scene.setBlade(economy.spec().bladeWidth);
         pad?.showScoop(true);
         hud.scoopKey(true);
       }
     },
     scooped(count) {
       log(`scooped ${count}`);
+      sound.clunk();
+    },
+    setDown(count) {
+      log(`set down ${count}`);
       sound.clunk();
     },
     tipped(count) {
@@ -530,6 +536,8 @@ async function main() {
   hud.onReset(() => economy.reset());
   /** A phone's buttons, when there are any. */
   let pad: ReturnType<typeof setupPad> | null = null;
+  /** Whether the pad was last told the scoop's bucket is up. */
+  let bucketShown = false;
   if (touch) {
     const controls = new TouchControls(
       document.getElementById('trackLeft')!,
@@ -543,6 +551,7 @@ async function main() {
         camera: () => input.pressCamera(),
         horn: () => input.pressHorn(),
         scoop: () => input.pressScoop(),
+        tip: () => input.pressTip(),
         mute: () => sound.toggleMute(),
         controls: () => {
           const scheme = controls.cycle();
@@ -661,7 +670,10 @@ async function main() {
     }
     const horn = input.takeHorn() && save.horn;
     if (horn) sound.horn();
-    const scoop = input.takeScoop() && save.scoop > 0;
+    // tipping wins a frame both are pressed in: it is the one that cannot be taken back
+    const lifted = input.takeScoop() && save.scoop > 0,
+      tipped = input.takeTip() && save.scoop > 0;
+    const scoop = tipped ? ('tip' as const) : lifted ? ('lift' as const) : undefined;
     if (input.takeRecentre()) rig.recentre();
     if (input.takeCamera()) hud.note(`camera: ${rig.cycle()}`);
     if (input.takeMute()) {
@@ -673,6 +685,8 @@ async function main() {
 
     const drive = input.read();
     game.step(dt, drive, { horn, scoop });
+    // the pad's tip button is there while the bucket is up, and gone when it is sent down
+    if (pad && bucketShown !== game.scoop.up) pad.showBucket((bucketShown = game.scoop.up));
     const { world, dozer, stock, tally } = game;
     if (save.body === 'spider') gait.update(dt, dozer);
 
@@ -792,6 +806,7 @@ async function main() {
       input.override = d;
     },
     pressScoop: () => input.pressScoop(),
+    pressTip: () => input.pressTip(),
     look(x, y, view) {
       orbit.setSpherical(view);
       mapAt = 0;

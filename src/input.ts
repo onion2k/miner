@@ -1,4 +1,4 @@
-/** The keyboard: WASD or arrows to drive, and a few one-shot keys, Space the scoop's. On a phone, the sliders. */
+/** The keyboard: WASD or arrows to drive, and a few one-shot keys, Space and E the scoop's. On a phone, the sliders. */
 export interface Drive {
   throttle: number;
   steer: number;
@@ -11,6 +11,7 @@ export class Input {
   private mute = false;
   private horn = false;
   private scoop = false;
+  private tip = false;
   private camera = false;
   /** The phone's sliders, when there are any: read when no drive key is down. */
   touch: { drive(): Drive } | null = null;
@@ -32,6 +33,7 @@ export class Input {
         // next size of the very thing the player has just bought
         if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
       }
+      if (k === 'e') this.tip = true;
       if (k === 'v') this.camera = true;
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
     });
@@ -67,9 +69,14 @@ export class Input {
     this.horn = true;
   }
 
-  /** The scoop's button, from the phone's pad. */
+  /** The scoop's button, which sends its bucket up and down, from the phone's pad. */
   pressScoop() {
     this.scoop = true;
+  }
+
+  /** The scoop's other button, which tips it out, from the phone's pad. */
+  pressTip() {
+    this.tip = true;
   }
 
   takeShop() {
@@ -95,6 +102,11 @@ export class Input {
   takeScoop() {
     const v = this.scoop;
     this.scoop = false;
+    return v;
+  }
+  takeTip() {
+    const v = this.tip;
+    this.tip = false;
     return v;
   }
   takeCamera() {

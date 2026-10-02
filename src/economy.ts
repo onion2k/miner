@@ -93,14 +93,14 @@ export interface Save {
 }
 
 /**
- * The scoop: what size 0 (none) to 3 holds at once, in bodies, and what the next size up costs. The workshop
- * sells it after the blade, and it is worked with Space or a button on the phone's pad.
+ * The scoop: how wide the bucket of size 0 (none) to 3 is at its mouth, and what the next size up costs. It
+ * takes the blade's place, whatever blade was bought, and is worked with Space and E, or the pad's buttons.
  */
-export const SCOOP: { load: number; cost: number }[] = [
-  { load: 0, cost: 0 },
-  { load: 12, cost: 250 },
-  { load: 24, cost: 700 },
-  { load: 40, cost: 1600 },
+export const SCOOP: { width: number; cost: number }[] = [
+  { width: 0, cost: 0 },
+  { width: 9, cost: 250 },
+  { width: 11.5, cost: 700 },
+  { width: 14, cost: 1600 },
 ];
 
 /** The sizes of scoop the workshop sells: a save is held to them. */
@@ -515,19 +515,17 @@ export class Economy {
   spec(): DozerSpec {
     const e = ENGINE[this.save.engine];
     const m = MAGNET[this.save.magnet];
+    // a scoop takes the blade's place: the machine pushes with a bucket of the scoop's own width, whatever blade it had
+    const scoop = this.save.scoop > 0;
     return {
       maxSpeed: e.maxSpeed,
       accel: e.accel,
       turnRate: e.turnRate,
-      bladeWidth: BLADE[this.save.blade].width,
+      bladeWidth: scoop ? SCOOP[this.save.scoop].width : BLADE[this.save.blade].width,
       magnetRadius: m.radius,
       magnetStrength: m.strength,
+      bucket: scoop,
     };
-  }
-
-  /** How many bodies the scoop fitted holds, 0 for none. */
-  scoopLoad(): number {
-    return SCOOP[this.save.scoop]?.load ?? 0;
   }
 
   /** How much a hit at this speed does to a brick wall, with the engine fitted now; 0 for too slow to count. */
@@ -597,11 +595,16 @@ export class Economy {
       owned: !e,
       available: !!e,
     });
-    const b = s.blade + 1 < BLADE.length ? BLADE[s.blade + 1] : null;
+    // a wider blade is no use to a machine that has a scoop where its blade was: the row is closed
+    const b = !s.scoop && s.blade + 1 < BLADE.length ? BLADE[s.blade + 1] : null;
     out.push({
       id: 'blade',
-      title: `Wider blade${b ? '' : ' (maxed)'}`,
-      sub: b ? `${b.width} across, up from ${BLADE[s.blade].width}` : `${BLADE[s.blade].width} across: the widest made`,
+      title: s.scoop ? 'Blade' : `Wider blade${b ? '' : ' (maxed)'}`,
+      sub: s.scoop
+        ? 'replaced by the scoop'
+        : b
+          ? `${b.width} across, up from ${BLADE[s.blade].width}`
+          : `${BLADE[s.blade].width} across: the widest made`,
       cost: b?.cost ?? 0,
       owned: !b,
       available: !!b,
@@ -611,10 +614,10 @@ export class Economy {
       id: 'scoop',
       title: `Scoop${c ? (s.scoop ? ` Mk ${s.scoop + 1}` : '') : ' maxed'}`,
       sub: !c
-        ? `holds ${SCOOP[s.scoop].load}: the biggest made`
+        ? `${SCOOP[s.scoop].width} across: the widest made`
         : s.scoop
-          ? `holds ${c.load}, up from ${SCOOP[s.scoop].load}`
-          : `lifts what is at the blade and carries it, then tips it out: holds ${c.load}`,
+          ? `${c.width} across, up from ${SCOOP[s.scoop].width}`
+          : `takes the blade's place, ${c.width} across: lifts what is in it, carries it and tips it out`,
       cost: c?.cost ?? 0,
       owned: !c,
       available: !!c,

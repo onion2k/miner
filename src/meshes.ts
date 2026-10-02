@@ -94,6 +94,23 @@ export function box(w: number, d: number, h: number, centred = false): Mesh {
 }
 
 /**
+ * A flat slab with four corners, given counter-clockwise seen from above, from `z0` up to `z1`: a floor that
+ * is not a rectangle.
+ */
+export function slab(corners: readonly [number, number][], z0: number, z1: number): Mesh {
+  const b = new MeshBuilder();
+  const top = corners.map(([x, y]): V3 => [x, y, z1]),
+    under = corners.map(([x, y]): V3 => [x, y, z0]);
+  face(b, top[0], top[1], top[2], top[3]);
+  face(b, under[3], under[2], under[1], under[0]);
+  for (let k = 0; k < 4; k++) {
+    const n = (k + 1) % 4;
+    face(b, under[k], under[n], top[n], top[k]);
+  }
+  return b.build();
+}
+
+/**
  * The coin's rungs, finest first: what a slower machine steps down to. Every
  * rung keeps a straight edge, which is what makes a coin read as a coin; the
  * rim, the sunk field and the emblem go first, then the roundness.

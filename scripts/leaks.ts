@@ -17,7 +17,8 @@
 import { Autopilot, PATCH, type Profile } from '../src/autopilot';
 import { TILE, buildCave, type CaveSpec } from '../src/cave';
 import { RUN } from '../src/caves';
-import { Economy, SCOOP, SCOOP_SIZES, memoryStore } from '../src/economy';
+import { Economy, memoryStore } from '../src/economy';
+import { SCOOP_MOST } from '../src/scoop';
 import { Game } from '../src/game';
 import { BARREL_KIND, GEODE_KIND } from '../src/physics';
 import { runCapacity } from '../src/stock';
@@ -79,8 +80,8 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
   'save bytes': { ceiling: 200_000 },
   'left rows': { ceiling: 400 },
   bots: { ceiling: 3 },
-  // what the biggest scoop can hold; it is emptied by a press, and by the cave being left
-  'scoop held': { ceiling: SCOOP[SCOOP_SIZES].load },
+  // the most one lift takes; it is emptied by a tip, by being set down, and by the cave being left
+  'scoop held': { ceiling: SCOOP_MOST },
   fountains: { ceiling: 8 },
   // held by its ceiling alone: it says how thick with coins the cave being cleared is, not how long anything is kept,
   // and the last caves are the biggest

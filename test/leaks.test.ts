@@ -10,7 +10,7 @@ import { PATCH } from '../src/autopilot';
 import { TILE } from '../src/cave';
 import { WATCH, grew, sizes, sweptCeiling, trouble } from '../scripts/leaks';
 import { Autopilot } from '../src/autopilot';
-import { SCOOP, SCOOP_SIZES } from '../src/economy';
+import { SCOOP_MOST } from '../src/scoop';
 import { RUN, caveOf, gameIn, newGame, withSeed } from './helpers';
 
 describe('what must stay bounded', () => {
@@ -35,14 +35,14 @@ describe('what must stay bounded', () => {
     });
   });
 
-  it('holds what the scoop carries to what the biggest scoop can, and sees a load in it', () => {
+  it('holds what the scoop carries to the most a lift takes, and sees a load in it', () => {
     withSeed(2, () => {
-      expect(WATCH['scoop held']!.ceiling).toBe(SCOOP[SCOOP_SIZES].load);
+      expect(WATCH['scoop held']!.ceiling).toBe(SCOOP_MOST);
       const game = gameIn('hollow', { scoop: 1 });
       expect(sizes(game)['scoop held']).toBe(0);
       const [x, y] = [game.dozer.x + 5.5, game.dozer.y];
       for (let k = 0; k < 5; k++) game.stock.spawn(0, x + k * 0.5, y, 0.6);
-      game.step(1 / 60, { throttle: 0, steer: 0 }, { scoop: true });
+      game.step(1 / 60, { throttle: 0, steer: 0 }, { scoop: 'lift' });
       expect(sizes(game)['scoop held']).toBe(5);
     });
   });

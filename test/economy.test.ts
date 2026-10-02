@@ -357,38 +357,55 @@ describe('the sources', () => {
 });
 
 describe('the scoop in the workshop', () => {
-  it('comes in three sizes, each dearer and larger than the last, and none is the machine as it starts', () => {
+  it('comes in three sizes, each dearer and wider than the last, and none is the machine as it starts', () => {
     expect(SCOOP_SIZES, 'the save is held to the sizes sold').toBe(SCOOP.length - 1);
     expect(SCOOP_SIZES).toBe(3);
-    expect(SCOOP[0]).toEqual({ load: 0, cost: 0 });
+    expect(SCOOP[0]).toEqual({ width: 0, cost: 0 });
     for (let k = 1; k < SCOOP.length; k++) {
-      expect(SCOOP[k].load, `size ${k} holds more`).toBeGreaterThan(SCOOP[k - 1].load);
+      expect(SCOOP[k].width, `size ${k} is wider`).toBeGreaterThan(SCOOP[k - 1].width);
       expect(SCOOP[k].cost, `size ${k} costs more`).toBeGreaterThan(SCOOP[k - 1].cost);
     }
   });
 
-  it('is offered after the blade, bought one size at a time for what that size costs, and holds what the size says', () => {
+  it('is offered after the blade, bought one size at a time for what that size costs, and is as wide as the size says', () => {
     const e = new Economy(memoryStore(), RUN);
     const ids = e.offers().map((o) => o.id);
     expect(ids.indexOf('scoop')).toBe(ids.indexOf('blade') + 1);
-    expect(e.scoopLoad(), 'none to begin with').toBe(0);
+    expect(e.spec().bucket, 'a blade to begin with').toBe(false);
     expect(e.save.scoop).toBe(0);
     expect(e.buy('scoop'), 'not without the money').toBe(false);
     for (let size = 1; size <= SCOOP_SIZES; size++) {
       const offer = e.offers().find((o) => o.id === 'scoop')!;
       expect(offer).toMatchObject({ owned: false, available: true, cost: SCOOP[size].cost });
+      expect(offer.sub, 'says how wide it is').toContain(`${SCOOP[size].width} across`);
       e.deposit(SCOOP[size].cost - 1);
       expect(e.buy('scoop'), `size ${size} one short`).toBe(false);
       e.deposit(1);
       expect(e.buy('scoop')).toBe(true);
       expect(e.save.scoop).toBe(size);
-      expect(e.scoopLoad()).toBe(SCOOP[size].load);
+      expect(e.spec()).toMatchObject({ bladeWidth: SCOOP[size].width, bucket: true });
       expect(e.bank, 'paid for, to the coin').toBe(0);
     }
     expect(e.offers().find((o) => o.id === 'scoop')).toMatchObject({ owned: true, available: false });
     e.deposit(1e6);
-    expect(e.buy('scoop'), 'no size past the biggest').toBe(false);
+    expect(e.buy('scoop'), 'no size past the widest').toBe(false);
     expect(e.save.scoop).toBe(SCOOP_SIZES);
+  });
+
+  it('takes the blade’s place: the blade’s row closes, and no wider blade can be bought for a machine with none', () => {
+    const e = new Economy(memoryStore(), RUN);
+    e.deposit(1e6);
+    expect(e.buy('blade')).toBe(true);
+    expect(e.spec().bladeWidth, 'a wider blade, while there is a blade').toBe(8);
+    expect(e.buy('scoop')).toBe(true);
+    // its own width, whatever the blade was
+    expect(e.spec().bladeWidth).toBe(SCOOP[1].width);
+    const blade = e.offers().find((o) => o.id === 'blade')!;
+    expect(blade).toMatchObject({ title: 'Blade', sub: 'replaced by the scoop', owned: true, available: false });
+    const bank = e.bank;
+    expect(e.buy('blade'), 'nothing to buy').toBe(false);
+    expect(e.bank).toBe(bank);
+    expect(e.save.blade, 'the blade it had is still on the books, for nothing').toBe(1);
   });
 
   it('tells the game it was bought, and is part of what the whole workshop costs', () => {
@@ -402,14 +419,11 @@ describe('the scoop in the workshop', () => {
     expect(workshopTotal(RUN)).toBe(17_280 + SCOOP.reduce((n, s) => n + s.cost, 0));
   });
 
-  it('loads from a save made before it with none, and keeps the one a save has', () => {
-    const old = new Economy(memoryStore(JSON.stringify({ bank: 12, engine: 2 })), RUN);
+  it('loads from a save made before it with a blade, and keeps the scoop a save has', () => {
+    const old = new Economy(memoryStore(JSON.stringify({ bank: 12, engine: 2, blade: 2 })), RUN);
     expect(old.save.scoop).toBe(0);
-    expect(old.scoopLoad()).toBe(0);
-    const bought = new Economy(memoryStore(JSON.stringify({ scoop: 2 })), RUN);
-    expect(bought.scoopLoad()).toBe(SCOOP[2].load);
-    // a size the workshop does not sell holds nothing, whatever a save or a test has put there
-    bought.save.scoop = 4;
-    expect(bought.scoopLoad()).toBe(0);
+    expect(old.spec()).toMatchObject({ bladeWidth: 10, bucket: false });
+    const bought = new Economy(memoryStore(JSON.stringify({ scoop: 2, blade: 3 })), RUN);
+    expect(bought.spec()).toMatchObject({ bladeWidth: SCOOP[2].width, bucket: true });
   });
 });

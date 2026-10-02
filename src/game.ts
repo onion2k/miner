@@ -71,9 +71,11 @@ export interface GameEvents {
   fuseLit?(barrel: number): void;
   /** A barrel gone off. */
   blast?(blast: Blast): void;
-  /** The scoop took up `count` bodies. */
+  /** The scoop's bucket went up, with `count` bodies in it. */
   scooped?(count: number): void;
-  /** The scoop tipped out `count` bodies. */
+  /** The bucket came down and set `count` bodies down inside it. */
+  setDown?(count: number): void;
+  /** The bucket tipped out `count` bodies. */
   tipped?(count: number): void;
   /** A geode cracked open by a blast, at (x, y), and the number of gems thrown out of it. */
   geodeCracked?(x: number, y: number, gems: number): void;
@@ -92,8 +94,11 @@ export interface GameEvents {
 /** The player's controls, beyond driving, for a step. */
 export interface Controls {
   horn?: boolean;
-  /** The scoop's button pressed this step: what is at the blade taken up, or what is held tipped out. */
-  scoop?: boolean;
+  /**
+   * What the scoop was told this step: `lift` sends its bucket up if it is down, with what is in it, and down
+   * if it is up; `tip` pours out what it holds.
+   */
+  scoop?: 'lift' | 'tip';
 }
 
 /** How long, in game seconds, the screen takes to come up from black once the machine has come into a cave. */
@@ -111,7 +116,7 @@ export class Game {
   readonly stock: Stock;
   readonly barrels: Barrels;
   readonly tally: Tally;
-  /** The scoop's bucket and what it holds; empty and down until the workshop's scoop is bought and worked. */
+  /** The scoop's bucket, where it is and what it holds; down and empty until the workshop's scoop is bought and worked. */
   readonly scoop: Scoop;
   /** Game time, in seconds. */
   t = 0;
@@ -235,9 +240,14 @@ export class Game {
 
     const spec = economy.spec();
     if (controls.scoop && save.scoop) {
-      const { took, tipped } = this.scoop.press(dozer, spec.bladeWidth, economy.scoopLoad());
-      if (took) this.events.scooped?.(took);
-      if (tipped) this.events.tipped?.(tipped);
+      const { scoop } = this;
+      if (controls.scoop === 'tip') {
+        const tipped = scoop.tip(dozer);
+        if (tipped) this.events.tipped?.(tipped);
+      } else {
+        const took = scoop.toggle(dozer, spec.bladeWidth);
+        if (scoop.up) this.events.scooped?.(took);
+      }
     }
     dozer.update(dt, drive, spec, world.load);
     this.knockLamps();
@@ -252,9 +262,10 @@ export class Game {
         for (let j = i + 1; j < machines.length; j++) separate(machines[i], machines[j]);
     }
     this.events.machinesMoved?.();
-    // what is held goes where the bucket is, before the world steps, which leaves it be; and with a load up
-    // the blade is raised, so that it pushes nothing
-    this.scoop.carry(dt, dozer, spec.bladeWidth);
+    // what is held goes where the bucket is, before the world steps, which leaves it be; and a bucket off
+    // the ground pushes nothing. Landed, it sets its load down inside it.
+    const setDown = this.scoop.carry(dt, dozer);
+    if (setDown) this.events.setDown?.(setDown);
     const pushers = dozer.pushers(spec, this.pushers, this.scoop.lift);
     for (const b of this.bots) {
       b.dozer.pushers(BOT_SPEC, this.botPushers);

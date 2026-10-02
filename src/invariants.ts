@@ -18,6 +18,7 @@ import { EXIT, TILE } from './cave';
 import { CLEAR_SHARE, FORMER_LAST, SCOOP_SIZES } from './economy';
 import type { Game } from './game';
 import { BARREL_KIND, GEODE_KIND, KINDS, KIND_NAME, KIND_VALUE } from './physics';
+import { SCOOP_MOST } from './scoop';
 import { NO_SOURCE } from './stock';
 
 /** How many broken rules of one sort are reported before the rest are only counted. */
@@ -93,8 +94,10 @@ export function checkInvariants(game: Game): string[] {
     else if (inRock(world.x[i], world.y[i])) misheld.push(`${at(i)} is held, in the rock`);
   }
   if (holds.size !== game.scoop.held.length) misheld.push('a body is held twice');
-  if (game.scoop.held.length > economy.scoopLoad())
-    misheld.push(`${game.scoop.held.length} held, and the scoop takes ${economy.scoopLoad()}`);
+  if (game.scoop.held.length && !save.scoop) misheld.push(`${game.scoop.held.length} held, and there is no scoop`);
+  if (game.scoop.held.length > SCOOP_MOST)
+    misheld.push(`${game.scoop.held.length} held, and a lift takes ${SCOOP_MOST}`);
+  if (game.scoop.held.length !== game.scoop.places.length) misheld.push('a held body with no place in the bucket');
   for (let i = 0; i < world.count; i++)
     if (world.alive[i] && world.carried[i] && !holds.has(i))
       misheld.push(`${at(i)} is carried, and the scoop does not hold it`);

@@ -57,8 +57,8 @@ export interface GameState {
   drained: number;
   drones: number;
   horn: boolean;
-  /** The size of scoop fitted, 0 for none, how many bodies it takes and how many it holds now, and how far up the bucket is, 0 to 1. */
-  scoop: { size: number; load: number; held: number; lift: number };
+  /** The size of scoop fitted, 0 for none, how wide its bucket is, whether it has been sent up, how many bodies it holds and how far up it is, 0 to 1. */
+  scoop: { size: number; width: number; up: boolean; held: number; lift: number };
   /** The body the machine stands on: 'dozer' on its tracks, or 'spider'. */
   body: string;
   /** How many bodies are in the cave, and how many of each kind, by name. */
@@ -151,8 +151,11 @@ export interface PushminerApi {
   drive(throttle: number, steer: number): void;
   release(): void;
   honk(): void;
-  /** The scoop's button pressed, as Space or the pad's does it: through the input, so it takes effect on the next step. */
-  scoop(): void;
+  /**
+   * One of the scoop's buttons pressed, as the keyboard's and the pad's are: `lift`, the default, sends the bucket
+   * up or down as Space does, and `tip` pours it out as E does. Through the input, so it takes effect on the next step.
+   */
+  scoop(what?: 'lift' | 'tip'): void;
   /** The dozer put at a point facing `yaw`, stopped. */
   teleport(x: number, y: number, yaw?: number): void;
   /** A body moved to a point, still, and woken. */
@@ -206,8 +209,9 @@ export interface DebugHost {
   draw(dt: number): void;
   frame(): number;
   setDrive(drive: { throttle: number; steer: number } | null): void;
-  /** The scoop's button, pressed as the keyboard's and the pad's are. */
+  /** The scoop's buttons, pressed as the keyboard's and the pad's are. */
   pressScoop(): void;
+  pressTip(): void;
   look(x: number, y: number, view: { azimuth?: number; polar?: number; radius?: number }): void;
   measureFrame(): Promise<number>;
   measureMap(runs: number): number;
@@ -275,7 +279,13 @@ export function createApi(host: DebugHost): PushminerApi {
         drained: save.drained,
         drones: save.drones,
         horn: save.horn,
-        scoop: { size: save.scoop, load: g.economy.scoopLoad(), held: g.scoop.held.length, lift: g.scoop.lift },
+        scoop: {
+          size: save.scoop,
+          width: save.scoop ? g.economy.spec().bladeWidth : 0,
+          up: g.scoop.up,
+          held: g.scoop.held.length,
+          lift: g.scoop.lift,
+        },
         body: save.body,
         live: g.world.live,
         kinds,
@@ -363,7 +373,7 @@ export function createApi(host: DebugHost): PushminerApi {
     drive: (throttle, steer) => host.setDrive({ throttle, steer }),
     release: () => host.setDrive(null),
     honk: () => game().honk(),
-    scoop: () => host.pressScoop(),
+    scoop: (what = 'lift') => (what === 'tip' ? host.pressTip() : host.pressScoop()),
     teleport(x, y, yaw) {
       const { dozer } = game();
       Object.assign(dozer, { x, y, speed: 0, yawRate: 0 });

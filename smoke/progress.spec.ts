@@ -36,7 +36,7 @@ async function play(page: Page, frames: number, stage: string) {
 }
 
 /**
- * The dozer put down at (x, y) facing north, and `n` coins laid in a block in its mouth, ahead of the blade, from
+ * The dozer put down at (x, y) facing north, and `n` coins laid in a block over its bucket's floor, from
  * what the cave has: the same every run, since the scene is seeded.
  */
 async function layInMouth(page: Page, x: number, y: number, n: number) {
@@ -162,58 +162,100 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   });
   await play(page, 30, 'the horn');
 
-  // the scoop, bought and worked with the keyboard's Space: taken up at the blade, carried to the hole's lip, and
-  // tipped in, which banks it. Its key is in the line of keys only once there is a scoop for it to work.
-  await expect(page.locator('#helpScoop'), 'no key listed for a scoop not yet bought').toBeHidden();
+  // The scoop, bought and worked with the keyboard: Space raises the bucket with what is in it, Space again sets it
+  // down a little further on, where more is gathered, Space raises the lot, and E tips it into the hole, which banks
+  // it. Its keys are in the line of keys only once there is a scoop for them to work.
+  await expect(page.locator('#helpScoop'), 'no keys listed for a scoop not yet bought').toBeHidden();
   const bought = await page.evaluate(() => {
     const p = window.pushminer!;
     p.deposit(5000);
     return p.buy('scoop');
   });
   expect(bought, 'the scoop bought').toBe(true);
-  await expect(page.locator('#helpScoop'), 'Space is listed with the other keys').toBeVisible();
-  expect(await page.evaluate(() => window.pushminer!.state().scoop), 'the smallest size, nothing held').toMatchObject({
+  await expect(page.locator('#helpScoop'), 'Space and E are listed with the other keys').toBeVisible();
+  await expect(page.locator('#helpScoop')).toContainText('tip');
+  const scoop = () => page.evaluate(() => window.pushminer!.state().scoop);
+  expect(await scoop(), 'the smallest size, in the blade’s place, down and empty').toMatchObject({
     size: 1,
-    load: 12,
+    width: 9,
+    up: false,
     held: 0,
   });
+  const said = async (what: string) =>
+    (await page.evaluate(() => window.pushminer!.events())).filter((e) => e.startsWith(what));
   await layInMouth(page, content.hole.x, content.hole.y - 24, 8);
+  await said('');
   await page.keyboard.press('Space');
-  await play(page, 2, 'the scoop taking up');
-  const taken = await page.evaluate(() => window.pushminer!.state().scoop.held);
-  expect(taken, 'Space takes up what is in the mouth').toBe(8);
+  await play(page, 2, 'the bucket going up');
+  expect((await scoop()).held, 'Space raises it with what is in it').toBe(8);
   const carried = (await page.evaluate(() => window.pushminer!.bodies('coin'))).filter((b) => b.carried);
-  expect(carried, 'and they are carried').toHaveLength(taken);
+  expect(carried, 'and they are carried').toHaveLength(8);
   const mine = carried.map((b) => b.slot);
-  expect((await page.evaluate(() => window.pushminer!.events())).filter((e) => e.startsWith('scooped'))).toEqual([
-    'scooped 8',
-  ]);
+  expect(await said('scooped')).toEqual(['scooped 8']);
   await play(page, 40, 'the bucket up');
-  expect(await page.evaluate(() => window.pushminer!.state().scoop.lift), 'the bucket is up').toBe(1);
+  expect(await scoop(), 'the bucket is up').toMatchObject({ up: true, lift: 1 });
+  // a little way on with it, stopped, and set down
+  await page.evaluate(() => window.pushminer!.drive(1, 0));
+  await play(page, 20, 'carrying it');
+  await page.evaluate(() => window.pushminer!.release());
+  await play(page, 90, 'stopped');
+  await page.keyboard.press('Space');
+  await play(page, 40, 'the bucket coming down');
+  expect(await scoop(), 'Space again lowers it, and what it held is set down').toMatchObject({
+    up: false,
+    lift: 0,
+    held: 0,
+  });
+  expect(await said('set down')).toEqual(['set down 8']);
+  const lying = async () => (await page.evaluate(() => window.pushminer!.bodies('coin'))).filter((b) => !b.carried);
+  for (const slot of mine)
+    expect(
+      (await lying()).map((b) => b.slot),
+      `coin ${slot} is on the floor again`,
+    ).toContain(slot);
+  // four more, just past the mouth: driven into, they are gathered in with the eight
+  const more = await page.evaluate(() => {
+    const api = window.pushminer!;
+    const d = api.state().dozer;
+    const coins = api
+      .bodies('coin')
+      .filter((b) => !b.carried)
+      .sort((a, b) => Math.hypot(b.x - d.x, b.y - d.y) - Math.hypot(a.x - d.x, a.y - d.y))
+      .slice(0, 4);
+    coins.forEach((c, k) => api.place(c.slot, d.x + (k - 1.5) * 0.9, d.y + 10, 0.6));
+    return coins.map((c) => c.slot);
+  });
+  await page.evaluate(() => window.pushminer!.drive(1, 0));
+  await play(page, 45, 'gathering more');
+  await page.evaluate(() => window.pushminer!.release());
+  await play(page, 90, 'stopped again');
+  await page.keyboard.press('Space');
+  await play(page, 40, 'the bucket up with the lot');
+  const lot = (await page.evaluate(() => window.pushminer!.bodies('coin'))).filter((b) => b.carried).map((b) => b.slot);
+  expect(lot, 'the eight came along and are lifted again').toEqual(expect.arrayContaining(mine));
+  expect(lot.filter((slot) => more.includes(slot)).length, 'with what was gathered since').toBeGreaterThanOrEqual(3);
+  expect(await said('scooped')).toEqual([`scooped ${lot.length}`]);
   // driven up to the hole's lip with it, and stopped
   await page.evaluate(() => window.pushminer!.drive(1, 0));
   for (let f = 0; f < 600; f += 5) {
     await play(page, 5, 'carrying it to the hole');
     const s = await page.evaluate(() => window.pushminer!.state());
-    if (Math.hypot(s.dozer.x - content.hole.x, s.dozer.y - content.hole.y) < content.hole.radius + 4.6) break;
+    if (Math.hypot(s.dozer.x - content.hole.x, s.dozer.y - content.hole.y) < content.hole.radius + 5.7) break;
   }
   await page.evaluate(() => window.pushminer!.release());
   await play(page, 90, 'stopped at the hole');
   const atLip = await page.evaluate(() => window.pushminer!.state());
-  expect(atLip.scoop.held, 'still holding all of it').toBe(8);
+  expect(atLip.scoop.held, 'still holding all of it').toBe(lot.length);
   // the drone bought earlier is banking coins of its own, so it is these coins that are watched, not the bank
-  const lying = async () => (await page.evaluate(() => window.pushminer!.bodies('coin'))).map((b) => b.slot);
-  expect(await lying(), 'all eight still in the cave, carried to the lip').toEqual(expect.arrayContaining(mine));
   const bankAtLip = atLip.bank;
-  await page.keyboard.press('Space');
+  await page.keyboard.press('e');
   await play(page, 240, 'tipped into the hole');
   const tipped = await page.evaluate(() => window.pushminer!.state());
-  expect(tipped.scoop.held, 'Space again tips it out').toBe(0);
-  for (const slot of mine) expect(await lying(), `coin ${slot} banked`).not.toContain(slot);
-  expect(tipped.bank - bankAtLip, 'banked, by at least the eight').toBeGreaterThanOrEqual(8);
-  expect((await page.evaluate(() => window.pushminer!.events())).filter((e) => e.startsWith('tipped'))).toEqual([
-    'tipped 8',
-  ]);
+  expect(tipped.scoop, 'E tips it out, and the bucket comes down').toMatchObject({ held: 0, up: false, lift: 0 });
+  const left = (await page.evaluate(() => window.pushminer!.bodies('coin'))).map((b) => b.slot);
+  for (const slot of lot) expect(left, `coin ${slot} banked`).not.toContain(slot);
+  expect(tipped.bank - bankAtLip, 'banked, by at least the load').toBeGreaterThanOrEqual(lot.length);
+  expect(await said('tipped')).toEqual([`tipped ${lot.length}`]);
 
   // the workshop sells the belts of the cave the player is in, and the hollow has none
   expect(content.belts, 'the hollow has no belt').toEqual([]);
@@ -916,41 +958,66 @@ test('the black is drawn, with the words in it, before the next cave is built', 
 test.describe('the scoop on a phone', () => {
   test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
 
-  test('has its button on the pad once bought, and tapping it takes up what is in the mouth and tips it out', async ({
+  test('has its button on the pad once bought: tapped, the bucket goes up and down, and a tip button takes the horn’s place while it is up', async ({
     page,
   }) => {
     const problems = watch(page);
     // with the horn too, which is the fullest the pad gets
     await start(page, { seed: 1, paused: true, save: { horn: true } });
     await page.evaluate(() => window.pushminer!.pause());
-    const button = page.locator('#scoopButton');
+    const button = page.locator('#scoopButton'),
+      tip = page.locator('#tipButton'),
+      horn = page.locator('#hornButton');
     await expect(button, 'no button before there is a scoop').toBeHidden();
+    await expect(tip).toBeHidden();
     await page.evaluate(() => {
       window.pushminer!.deposit(5000);
       window.pushminer!.buy('scoop');
     });
     await expect(button, 'the button once it is bought').toBeVisible();
-    // every button on the pad is on the screen and clear of the sliders, the horn's and the scoop's with the rest
-    await expect(page.locator('#hornButton')).toBeVisible();
-    for (const b of await page.locator('#pad button:visible').all()) {
-      const box = (await b.boundingBox())!;
-      expect(box.x, 'inside the left edge').toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width, 'inside the right edge').toBeLessThanOrEqual(400);
-      for (const id of ['#trackLeft', '#trackRight']) {
-        const rail = (await page.locator(id).boundingBox())!;
-        const apart = box.x + box.width <= rail.x || box.x >= rail.x + rail.width || box.y + box.height <= rail.y;
-        expect(apart, `a pad button clear of ${id}`).toBe(true);
+    await expect(tip, 'nothing to tip while the bucket is down').toBeHidden();
+    // every button on the pad is on the screen and clear of the sliders, whichever of them are showing
+    const clear = async (when: string) => {
+      for (const b of await page.locator('#pad button:visible').all()) {
+        const box = (await b.boundingBox())!;
+        expect(box.x, `${when}: inside the left edge`).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width, `${when}: inside the right edge`).toBeLessThanOrEqual(400);
+        for (const id of ['#trackLeft', '#trackRight']) {
+          const rail = (await page.locator(id).boundingBox())!;
+          const apart = box.x + box.width <= rail.x || box.x >= rail.x + rail.width || box.y + box.height <= rail.y;
+          expect(apart, `${when}: a pad button clear of ${id}`).toBe(true);
+        }
       }
-    }
+    };
+    await expect(horn).toBeVisible();
+    await clear('bucket down');
     const content = await page.evaluate(() => window.pushminer!.content());
+    const held = () => page.evaluate(() => window.pushminer!.state().scoop.held);
     await layInMouth(page, content.hole.x, content.hole.y - 24, 6);
     await button.tap();
-    await page.evaluate(() => window.pushminer!.step(2));
-    expect(await page.evaluate(() => window.pushminer!.state().scoop.held), 'tapped: taken up').toBe(6);
     await page.evaluate(() => window.pushminer!.step(40));
+    expect(await held(), 'tapped: up, with what was in it').toBe(6);
+    await expect(tip, 'a button to tip it, now there is something to tip').toBeVisible();
+    await expect(horn, 'in the horn’s place').toBeHidden();
+    await clear('bucket up');
+    // tapped again it comes down, and sets its load down
     await button.tap();
-    await page.evaluate(() => window.pushminer!.step(2));
-    expect(await page.evaluate(() => window.pushminer!.state().scoop.held), 'tapped again: tipped out').toBe(0);
+    await page.evaluate(() => window.pushminer!.step(40));
+    expect(await page.evaluate(() => window.pushminer!.state().scoop)).toMatchObject({ held: 0, up: false, lift: 0 });
+    await expect(tip).toBeHidden();
+    await expect(horn, 'the horn is back').toBeVisible();
+    // up once more, and tipped
+    await button.tap();
+    await page.evaluate(() => window.pushminer!.step(40));
+    expect(await held(), 'up again with it').toBe(6);
+    await page.evaluate(() => window.pushminer!.events());
+    await tip.tap();
+    await page.evaluate(() => window.pushminer!.step(40));
+    expect(await held(), 'tipped out').toBe(0);
+    expect((await page.evaluate(() => window.pushminer!.events())).filter((e) => e.startsWith('tipped'))).toEqual([
+      'tipped 6',
+    ]);
+    await expect(tip, 'and the bucket came down').toBeHidden();
     expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
     // a reload with the scoop bought shows the button from the start
     await page.evaluate(() => window.pushminer!.save());

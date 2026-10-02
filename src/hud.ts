@@ -308,7 +308,10 @@ export interface PadActions {
   shop(): void;
   camera(): void;
   horn(): void;
+  /** The scoop's bucket sent up, or down. */
   scoop(): void;
+  /** The scoop's bucket tipped out. */
+  tip(): void;
   /** Toggle the sound; whether it is muted now. */
   mute(): boolean;
   /** On to the next way of driving by touch; which it is now. */
@@ -327,6 +330,7 @@ export function setupPad(actions: PadActions, muted: boolean, scheme: 'tracks' |
   const controlsButton = byId<HTMLButtonElement>('controlsButton');
   const hornButton = byId<HTMLButtonElement>('hornButton');
   const scoopButton = byId<HTMLButtonElement>('scoopButton');
+  const tipButton = byId<HTMLButtonElement>('tipButton');
   const muteButton = byId<HTMLButtonElement>('muteButton');
   const showControls = (s: 'tracks' | 'stick') => {
     controlsButton.textContent = s === 'tracks' ? '⇅⇅' : '⇅⇆';
@@ -348,6 +352,19 @@ export function setupPad(actions: PadActions, muted: boolean, scheme: 'tracks' |
     e.preventDefault();
     actions.scoop();
   });
+  tipButton.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    actions.tip();
+  });
+  // The pad has room for six and no seventh, so the tip's button takes the horn's place while there is a
+  // bucket up to tip: with a load in the air the horn is the one that can wait.
+  const has = { horn: false, scoop: false, up: false };
+  const show = () => {
+    scoopButton.hidden = !has.scoop;
+    tipButton.hidden = !(has.scoop && has.up);
+    hornButton.hidden = !has.horn || !tipButton.hidden;
+    scoopButton.setAttribute('aria-label', has.up ? 'lower the scoop' : 'raise the scoop');
+  };
   // straight to the sound, not through the input's once-a-frame flag: two taps inside
   // one frame would be one toggle there, and the button would say the wrong thing
   muteButton.addEventListener('click', () => showMute(actions.mute()));
@@ -356,10 +373,17 @@ export function setupPad(actions: PadActions, muted: boolean, scheme: 'tracks' |
   return {
     showMute,
     showHorn: (owned: boolean) => {
-      hornButton.hidden = !owned;
+      has.horn = owned;
+      show();
     },
     showScoop: (owned: boolean) => {
-      scoopButton.hidden = !owned;
+      has.scoop = owned;
+      show();
+    },
+    /** Whether the bucket is up, which is when there is something to tip. */
+    showBucket: (up: boolean) => {
+      has.up = up;
+      show();
     },
   };
 }

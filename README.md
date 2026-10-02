@@ -48,20 +48,26 @@ Some walls have treasure set in them, a gold brick or a gem in the top of
 one, which comes loose with the rest. What is in a side room, or set in its
 wall, is over and above the cave, as a chamber's is, and left behind with it.
 
-The scoop, in three sizes, is a bucket in the blade's place that pushes as the
-blade does. Press **Space** (or its button on a phone's pad) with nothing held
-and whatever is worth something in its mouth, between the hull's nose and a
-little past the blade and as wide as the blade, is taken up, nearest the blade
-first, up to what that size holds: 12, 24 or 40 coins, gems and gold bars.
-Bricks and barrels are left. What is held rides in the bucket, which is raised
-and pushes nothing while a load is up, though the hull still shoves; and it
-does not slow the dozer the way pushing a heap does, since nothing carried
-presses on the blade. Press again to tip it out ahead, at the dozer's speed
-and a little more: at the hole's lip, that banks it. It is for the coins in a
-corner, or against a wall, that the blade cannot get a face to. A load is not
-saved: leave the cave with one and it is lost with the rest, and a reload puts
-it back in its heaps. The drones never take what is held, and the autopilot
-neither buys nor works one.
+The scoop, in three sizes, takes the blade's place: a bucket 9, 11.5 or 14
+across at its mouth, whatever blade the machine had, with a straight back and
+a wall each side flaring out to the mouth, all as tall as the blade, and a
+floor lying on the ground between them. Lowered, it pushes as a blade does,
+and the walls funnel what the mouth's edge meets in to the back and hold it
+there: over a long push it keeps hold of more than a blade of its width.
+Press **Space** (or its button on a phone's pad) and the bucket goes up with
+every coin, gem and gold bar over its floor, each where it lay; bricks,
+barrels and geodes are left. Raised, it pushes nothing, though the hull still
+shoves, and its load does not slow the dozer the way pushing a heap does,
+since nothing carried presses on it. Press **Space** again and it comes down
+and sets the load down inside it, to be pushed along while more is gathered,
+and lifted again with the rest. Press **E** (on a phone, the button that takes
+the horn's place while the bucket is up) to tip it out ahead, at the dozer's
+speed and a little more: at the hole's lip, that banks it, and the empty
+bucket comes down by itself. It reaches back to the hull's nose, for the coins
+in a corner or against a wall that are behind its back when it is driven
+in. A load is not saved: leave the cave with one and it is lost with the
+rest, and a reload puts it back in its heaps. The drones never take what is
+held up, and the autopilot neither buys nor works one.
 
 Barrels stand about each cave. Push one and it goes where it is pushed; hit
 one with the dozer and its fuse is lit. It flashes, faster and faster, beeping,
@@ -276,7 +282,7 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/vein.ts           the last cave's vein, once the cave is cleared
     src/physics.ts        the kinds of thing there are to push, and a world from this cave, made with artshape-physics
     src/dozer.ts          the bulldozer: tank steering, the blade and hull as pushers, load
-    src/scoop.ts          the scoop: what is in its mouth taken up, carried and tipped out, and where the bucket sits
+    src/scoop.ts          the scoop's bucket: what is over its floor raised, carried, set down and tipped out
     src/tools.ts          conveyor belts, drones, and the fountains
     src/autopilot.ts      the player's dozer driven by the drones' mind, for playing the whole game through
     src/nav.ts            the way round the rock and the heaps, for the drones
@@ -298,7 +304,7 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/machine.ts        the bulldozer and the robo-dozers as drawn, part by part, and where their lights attach
     src/spider.ts         the Spiderdozer's eight legs, walking in two sets from where the body is
     src/matrix.ts         column-major placements
-    src/input.ts          the keyboard: driving, and a few one-shot keys (the horn, the scoop)
+    src/input.ts          the keyboard: driving, and a few one-shot keys (the horn, the scoop's two)
     src/touch.ts          a phone's sliders
     scripts/sim.ts        the drones without the picture, for measuring them
     scripts/sim-check.ts  the drones held to a baseline

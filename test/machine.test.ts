@@ -10,10 +10,20 @@ import { LIGHT_STRIDE } from 'artshape-render/game/lights';
 import { lookAt, multiply, perspective } from 'artshape-render/gpu/camera';
 import type { Mesh } from 'artshape-render/mesh/types';
 import { BOT_SCALE, BOT_SPEC } from '../src/tools';
-import { BLADE_AT, BLADE_HEIGHT, BLADE_RISE, Dozer, TRACK_GAUGE, WING_SWEEP, bladePieces } from '../src/dozer';
+import {
+  BLADE_AT,
+  BLADE_HEIGHT,
+  BLADE_RISE,
+  BUCKET_BACK,
+  BUCKET_DEEP,
+  Dozer,
+  TRACK_GAUGE,
+  WING_SWEEP,
+  bladePieces,
+  bucketPieces,
+} from '../src/dozer';
 import { SceneLights } from '../src/lighting';
 import { ANCHORS, ENVELOPE, TRIANGLE_BUDGET, bladeMesh, machineMeshes, scoopMesh } from '../src/machine';
-import { MOUTH_DEEP, seat } from '../src/scoop';
 import { GEODE_KIND, makeWorld } from '../src/physics';
 import { GEODE_COLOUR } from '../src/palette';
 import { PATTERN_STRIDE } from 'artshape-render/game/renderer';
@@ -329,39 +339,55 @@ function machineMeshesOf(scene: DynamicScene) {
 }
 
 describe('the scoop as drawn', () => {
-  const [lo, hi] = [6.5, 12.5];
+  const [lo, hi] = [9, 14];
 
-  it('stands where the blade does, as wide as it, with a floor as deep as the mouth and no higher than the blade', () => {
-    for (const width of [lo, 8, 10, hi]) {
+  it('is drawn where the physics feels it: a back and two flared walls as tall as the blade, where its pieces are', () => {
+    for (const width of [lo, 11.5, hi]) {
       const bucket = scoopMesh(width);
-      const pieces = bladePieces(width);
-      const reach = Math.max(...pieces.map((p) => Math.abs(p.y) + p.length / 2)) + 0.3;
-      let front = -Infinity,
-        across = 0;
-      for (const [x, y, z] of vertices(bucket)) {
-        expect(x, `${width}: not behind the blade`).toBeGreaterThanOrEqual(BLADE_AT - 1.0);
-        expect(Math.abs(y), `${width}: no wider than the blade`).toBeLessThanOrEqual(reach);
+      const points = [...vertices(bucket)];
+      for (const [x, y, z] of points) {
+        expect(x, `${width}: not behind the back, but for its ribs`).toBeGreaterThanOrEqual(BLADE_AT - 1.0);
+        expect(x, `${width}: no further than the mouth`).toBeLessThanOrEqual(BLADE_AT + BUCKET_DEEP + 0.4);
+        expect(Math.abs(y), `${width}: no wider than the mouth`).toBeLessThanOrEqual(width / 2 + 0.5);
         expect(z, `${width}: no higher than the blade`).toBeLessThanOrEqual(BLADE_HEIGHT + 0.3);
-        expect(z, `${width}: on the floor and not under it`).toBeGreaterThanOrEqual(-0.05);
-        front = Math.max(front, x);
-        across = Math.max(across, Math.abs(y));
+        expect(z, `${width}: on the ground and not under it`).toBeGreaterThanOrEqual(-0.001);
       }
-      expect(front, `${width}: its lip is at the mouth's far edge`).toBeGreaterThanOrEqual(BLADE_AT + MOUTH_DEEP);
-      expect(across * 2, `${width}: edge to edge`).toBeGreaterThan(width * 0.95);
+      // each piece the physics pushes with has its plate there, bottom to top, at both of its ends
+      for (const p of bucketPieces(width)) {
+        for (const end of [-1, 1]) {
+          const ex = p.x - Math.sin(p.turn) * (p.length / 2) * end,
+            ey = p.y + Math.cos(p.turn) * (p.length / 2) * end;
+          const there = points.filter(([x, y]) => Math.hypot(x - ex, y - ey) < 0.45);
+          expect(there.length, `${width}: a plate at ${ex.toFixed(1)}, ${ey.toFixed(1)}`).toBeGreaterThan(0);
+          expect(Math.max(...there.map(([, , z]) => z)), 'as tall as the blade').toBeGreaterThanOrEqual(
+            BLADE_HEIGHT - 0.01,
+          );
+          expect(Math.min(...there.map(([, , z]) => z)), 'down to the ground').toBeLessThan(0.2);
+          // one plate from the ground to the top: a shorter one under a rail would have an edge part way up
+          for (const [, , z] of there)
+            expect(z < 0.3 || z > BLADE_HEIGHT - 0.4, `${width}: an edge at ${z.toFixed(2)}, part way up a wall`).toBe(
+              true,
+            );
+        }
+      }
+      const across = Math.max(...points.map(([, y]) => Math.abs(y)));
+      expect(across * 2, `${width}: the mouth is the bucket's width`).toBeGreaterThanOrEqual(width);
     }
   });
 
-  it('holds every body the scoop seats, on its floor and between its cheeks, at any width', () => {
-    for (const width of [lo, 8, 10, hi]) {
-      const bucket = scoopMesh(width);
-      const floor = [...vertices(bucket)].filter(([x, , z]) => z < 0.4 && x > BLADE_AT);
-      const wide = Math.max(...floor.map(([, y]) => Math.abs(y)));
-      const long = Math.max(...floor.map(([x]) => x));
-      for (let n = 0; n < 40; n++) {
-        const s = seat(n, width);
-        expect(Math.abs(s.y), `${width}: ${n} across`).toBeLessThan(wide);
-        expect(s.x, `${width}: ${n} along`).toBeLessThan(long);
-      }
+  it('has a floor lying on the ground, from the back out to the mouth, as wide as the walls stand apart', () => {
+    for (const width of [lo, 11.5, hi]) {
+      // what is drawn low is the floor and the cutting edge: nothing a coin could not ride over
+      const low = [...vertices(scoopMesh(width))].filter(([x, , z]) => z > 0.001 && z < 0.5 && x > BLADE_AT + 0.4);
+      expect(Math.max(...low.map(([, , z]) => z)), `${width}: flat on the ground`).toBeLessThanOrEqual(0.15);
+      const at = (x: number) => low.filter(([lx]) => Math.abs(lx - x) < 0.2).map(([, y]) => Math.abs(y));
+      expect(Math.max(...at(BLADE_AT + BUCKET_DEEP)), 'as wide as the bucket at the mouth').toBeCloseTo(width / 2, 1);
+      const underside = [...vertices(scoopMesh(width))].filter(
+        ([x, , z]) => z <= 0.001 && Math.abs(x - BLADE_AT) < 0.01,
+      );
+      expect(Math.max(...underside.map(([, y]) => Math.abs(y))), 'and as the back at the back').toBeGreaterThanOrEqual(
+        (width * BUCKET_BACK) / 2 - 0.01,
+      );
     }
   });
 
@@ -371,7 +397,7 @@ describe('the scoop as drawn', () => {
       tris(scoopMesh(hi)) +
       tris(bladeMesh(BOT_SPEC.bladeWidth));
     expect(total).toBeLessThan(TRIANGLE_BUDGET);
-    expect(tris(scoopMesh(lo))).toBeGreaterThan(100);
+    expect(tris(scoopMesh(lo))).toBeGreaterThan(60);
     for (let i = 0; i < scoopMesh(lo).normals.length; i += 3) {
       const m = scoopMesh(lo);
       expect(Math.hypot(m.normals[i], m.normals[i + 1], m.normals[i + 2])).toBeCloseTo(1, 3);

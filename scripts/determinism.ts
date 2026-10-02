@@ -110,6 +110,7 @@ export function hashGame(game: Game): string {
   for (const i of game.scoop.held) eat(i);
   eat(game.scoop.lift);
   eat(game.scoop.dump);
+  eat(game.scoop.up ? 1 : 0);
   for (const i of game.barrels.lit) {
     eat(i);
     eat(game.barrels.fuseLeft(i) ?? 0);
