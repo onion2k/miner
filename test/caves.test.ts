@@ -254,7 +254,8 @@ describe('several holes and belts in a cave', () => {
         { banked: (kind) => kind === BAR && bars.push(bars.length) },
       );
       expect(game.running(), 'both belts run').toEqual([0, 1]);
-      expect(game.world.belts, 'both are the physics’ belts').toHaveLength(2);
+      // and the cave's own current, which runs from the start, is the physics' belt too
+      expect(game.world.belts, 'both are the physics’ belts').toHaveLength(2 + game.cave.currents.length);
       const carried = east.spec.belts.map(({ spec: s }, k) => {
         const x = s.x0 + (s.x1 - s.x0) * 0.6,
           y = s.y0 + (s.y1 - s.y0) * 0.6;

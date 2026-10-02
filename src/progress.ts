@@ -25,6 +25,14 @@ export function arrivalNote(cave: { name: string; blurb: string }, lost: number)
   return { text: `${cave.name}\n${cave.blurb}${behind}`, seconds: ARRIVING_FOR };
 }
 
+/** What the note says of what has gone down the drains in the last few moments: a figure of coins. */
+export function drainNote(lost: number): string {
+  return `${Math.round(lost)} lost down the drain`;
+}
+
+/** How long a run of things down a drain is added up for one note, in seconds: after that gap a new one begins. */
+export const DRAIN_NOTE_RUN = 2;
+
 /** How far through the cave being cleared the player is, for the counters. */
 export function progressText(progress: Progress, banked: number): string {
   if (progress.save.done) return 'the cave is cleared';

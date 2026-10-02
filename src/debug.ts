@@ -53,6 +53,8 @@ export interface GameState {
   lampsBroken: number[];
   /** The ids of the belts bought for this cave, which are the ones running. */
   belts: string[];
+  /** What has gone down the cave's drains, in coins: lost, and counted against what is left behind. */
+  drained: number;
   drones: number;
   horn: boolean;
   /** The size of scoop fitted, 0 for none, how many bodies it takes and how many it holds now, and how far up the bucket is, 0 to 1. */
@@ -103,6 +105,9 @@ export interface Content {
   /** The cave's id and name. */
   id: string;
   name: string;
+  /** The currents, and the drains they end in, which are not holes: nothing banks there. */
+  currents: { id: string; flow: string; from: Point; to: Point; width: number; speed: number; drain: boolean }[];
+  drains: (Point & { radius: number })[];
   /** The first hole, which is the only one in a cave with one; and all of them. */
   hole: Point & { radius: number };
   holes: (Point & { radius: number })[];
@@ -264,6 +269,7 @@ export function createApi(host: DebugHost): PushminerApi {
         wallDamage: [...save.wallDamage],
         lampsBroken: [...save.lampsBroken],
         belts: [...save.belts],
+        drained: save.drained,
         drones: save.drones,
         horn: save.horn,
         scoop: { size: save.scoop, load: g.economy.scoopLoad(), held: g.scoop.held.length, lift: g.scoop.lift },
@@ -317,6 +323,16 @@ export function createApi(host: DebugHost): PushminerApi {
         name: spec.name,
         hole: holes[0],
         holes,
+        currents: cave.currents.map((c) => ({
+          id: c.id,
+          flow: c.flow,
+          from: { x: c.x0, y: c.y0 },
+          to: { x: c.x1, y: c.y1 },
+          width: c.width,
+          speed: c.speed,
+          drain: !!c.drain,
+        })),
+        drains: cave.drains.map((d) => ({ x: d.x, y: d.y, radius: d.radius })),
         heaps: spec.heaps.map((h) => ({ x: h.x, y: h.y, coins: h.coins })),
         vein: { x: spec.vein.x, y: spec.vein.y },
         barrels: cave.barrels.map((b) => ({ x: b.x, y: b.y })),

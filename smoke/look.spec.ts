@@ -330,6 +330,59 @@ test.describe('what it looks like', () => {
     expect(problems).toEqual([]);
   });
 
+  // the currents, plainly: a flat strip in the colour of what flows, which the machine's lights pick out of the dark. Each is
+  // seen from above and a little way off, the machine at its head facing along it. A moving look comes with the renderer's.
+  async function currentScene(page: Page, id: string, radius: number, aimAt: 'middle' | 'drain' = 'middle') {
+    await begin(page, inCave(id));
+    const { c, drain } = await page.evaluate(() => {
+      const api = window.pushminer!.content();
+      return { c: api.currents[0], drain: api.drains.length ? api.drains[0] : null };
+    });
+    const len = Math.hypot(c.to.x - c.from.x, c.to.y - c.from.y);
+    const ux = (c.to.x - c.from.x) / len,
+      uy = (c.to.y - c.from.y) / len;
+    const at: [number, number, number] =
+      aimAt === 'drain'
+        ? [c.to.x - ux * 12, c.to.y - uy * 12, Math.atan2(uy, ux)]
+        : [c.from.x - ux * 10, c.from.y - uy * 10, Math.atan2(uy, ux)];
+    const look =
+      aimAt === 'drain' && drain
+        ? { x: drain.x - ux * 6, y: drain.y - uy * 6, radius, polar: 0.9 }
+        : { x: (c.from.x + c.to.x) / 2, y: (c.from.y + c.to.y) / 2, radius, polar: 0.95 };
+    await scene(page, look, 120, at);
+    await hideStats(page);
+  }
+
+  test('a current of water, the Hollow’s brook running to the hole', async ({ page }) => {
+    const problems = watch(page);
+    await currentScene(page, 'hollow', 60);
+    await expect(cave(page)).toHaveScreenshot('current-water.png', CANVAS_ONLY);
+    expect(problems).toEqual([]);
+  });
+
+  test('a current of lava, the East Gallery’s, into its drain', async ({ page }) => {
+    const problems = watch(page);
+    await currentScene(page, 'east-gallery', 60);
+    await expect(cave(page)).toHaveScreenshot('current-lava.png', CANVAS_ONLY);
+    expect(problems).toEqual([]);
+  });
+
+  test('a current of ice, the North Vault’s, fast, to the second hole', async ({ page }) => {
+    const problems = watch(page);
+    await currentScene(page, 'north-vault', 60);
+    await expect(cave(page)).toHaveScreenshot('current-ice.png', CANVAS_ONLY);
+    expect(problems).toEqual([]);
+  });
+
+  test('a drain at the end of the South Gallery’s current, cut like a hole and with none of its glow', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await currentScene(page, 'south-gallery', 38, 'drain');
+    await expect(cave(page)).toHaveScreenshot('drain.png', CANVAS_ONLY);
+    expect(problems).toEqual([]);
+  });
+
   test('the dozer, up close', async ({ page }) => {
     const problems = watch(page);
     await begin(page, inCave('south-gallery', { flag: true }));

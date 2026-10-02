@@ -12,6 +12,7 @@
 import { MATERIAL_STRIDE, type GameGroup } from 'artshape-render/game/renderer';
 import type { Mesh } from 'artshape-render/mesh/types';
 import { LAMP_HEIGHT, TILE, type Cave } from './cave';
+import { FLOW_LOOK } from './currents';
 import { WALL_STRENGTH } from './economy';
 import { HOLE_CORD, HOLE_LAMP_HEIGHT, holeLamps, lampPose } from './lamps';
 import { box, collar, cone, cylinder, gem, lump, moved, pit } from './meshes';
@@ -32,6 +33,9 @@ import {
   type PropKind,
 } from './biomes';
 import { BRICK_SIZE, standingBricks } from './walls';
+
+/** The collar of a drain: a hole's, a shade darker, so the two are not taken for each other from the ends of a current. */
+const DRAIN_COLLAR: Rgb = [0.23, 0.16, 0.1];
 
 /** What has become of the cave, as the static scene is drawn from it. */
 export interface StaticState {
@@ -70,6 +74,8 @@ export class StaticScene {
    * where it is placed for why that overlap does not flicker.
    */
   private readonly holes: { collar: Mesh; pit: Mesh }[];
+  /** The same for each drain: cut as a hole is, but with no lamp over it and no glow, and a darker collar. */
+  private readonly drains: { collar: Mesh; pit: Mesh }[];
   /** The lamps hanging over the holes, all together. */
   private readonly overHoles: [number, number][];
   private terrain: (Terrain & { key: string; decor: Decor; runway: FeatureLight[]; features: FeatureLight[] }) | null =
@@ -79,6 +85,10 @@ export class StaticScene {
     this.holes = cave.holes.map((h) => ({
       collar: collar(TILE * 3 + 0.2, h.radius),
       pit: pit(h.radius, h.depth),
+    }));
+    this.drains = cave.drains.map((d) => ({
+      collar: collar(TILE * 3 + 0.2, d.radius),
+      pit: pit(d.radius, d.depth),
     }));
     this.overHoles = holeLamps(cave.holes).flat();
   }
@@ -100,6 +110,15 @@ export class StaticScene {
           { mesh: hole.pit, matrices: at(h.x, h.y, 0), albedo: [0.04, 0.035, 0.05], roughness: 0.95 },
         ];
       }),
+      ...this.drains.flatMap((drain, k): GameGroup[] => {
+        const d = this.cave.drains[k];
+        return [
+          { mesh: drain.collar, matrices: at(d.x, d.y, -0.01), albedo: DRAIN_COLLAR, roughness: 0.95 },
+          { mesh: drain.pit, matrices: at(d.x, d.y, 0), albedo: [0.02, 0.02, 0.03], roughness: 0.95 },
+        ];
+      }),
+      // the currents are always there, so they come before what comes and goes; the belts, which are bought, are last
+      ...this.currents(),
       ...this.lamps(state),
       ...this.walls(state),
       ...this.belts(state),
@@ -279,6 +298,25 @@ export class StaticScene {
       const mark = new Float32Array(16);
       placePart(mark, 0, s.x1, s.y1, 0, yaw, 0, 0, 0, 0, 0, 1.4, s.width + 1.8, 0.55);
       out.push({ mesh: this.meshes.dropMark, matrices: mark, albedo: [0.4, 0.9, 0.45], roughness: 0.45 });
+    }
+    return out;
+  }
+
+  /**
+   * Each current, plainly: a flat strip in the colour of what flows, level with the floor. The cave is dark and
+   * nothing here glows, so the headlights and the lamps are what pick it out, as they do the floor; it is
+   * drawn for as long as the cave stands, since a current is never switched off.
+   */
+  private currents(): GameGroup[] {
+    const out: GameGroup[] = [];
+    for (const c of this.cave.currents) {
+      const len = Math.hypot(c.x1 - c.x0, c.y1 - c.y0),
+        yaw = Math.atan2(c.y1 - c.y0, c.x1 - c.x0);
+      const bed = new Float32Array(16);
+      // sunk a little under the floor, which is never lower than that, so there is no gap beneath its edges
+      placePart(bed, 0, (c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, -0.12, yaw, 0, 0, 0, 0, 0, len, c.width, 0.2);
+      const look = FLOW_LOOK[c.flow];
+      out.push({ mesh: this.meshes.beltBase, matrices: bed, albedo: [...look.albedo], roughness: look.roughness });
     }
     return out;
   }

@@ -12,6 +12,7 @@ export class Sound {
   private engine: { osc: OscillatorNode; osc2: OscillatorNode; filter: BiquadFilterNode; gain: GainNode } | null = null;
   private rumble: { gain: GainNode } | null = null;
   private lastClink = 0;
+  private lastPlop = 0;
   muted = false;
 
   constructor() {
@@ -80,6 +81,26 @@ export class Sound {
       osc.start(now);
       osc.stop(now + decay + 0.05);
     }
+  }
+
+  /** Something into a drain: a low plop that falls away, and nothing of a coin's ring. Not more than one in a twentieth of a second. */
+  plop(value: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    if (now - this.lastPlop < 0.05) return;
+    this.lastPlop = now;
+    const base = value >= 40 ? 150 : 200;
+    const osc = ctx.createOscillator(),
+      gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(base * 1.6, now);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.45, now + 0.22);
+    gain.gain.setValueAtTime(0.28, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc.connect(gain).connect(this.master);
+    osc.start(now);
+    osc.stop(now + 0.35);
   }
 
   /** A gem: heavier, lower, and worth hearing on its own. */

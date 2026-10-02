@@ -43,6 +43,16 @@ the game to whatever it happened to draw that day.
   `caveLeft` the page swaps (`enter` in `main.ts`) to the next cave's game,
   static scene, track marks and camera, in the dark, timed and logged as
   `swap <id> <ms>`. What the minimap shows, and where, is `src/minimap.ts`'s; `hud.ts` only draws it.
+- Currents and drains: a current (`CurrentSpec`, in `caves.ts`) is a belt that
+  runs from the start, in the world's belt list; one to a hole is a drop-off
+  for the nav, one that ends in a drain is not (`nav.onDrain`), and the foreman
+  and the autopilot skip coins on any. A drain (`cave.drains`, `drainOf` in
+  `src/currents.ts`) is a hole the world lists **after** `cave.holes`: the hole
+  index `collect` is handed tells them apart, `Game.collect` loses what goes
+  down one (`save.drained`, the `drained` event) and looks at the way out's
+  share again, since the bank has not moved. A drain is never in `cave.holes`:
+  nav, the foreman, the autopilot, the tally and the minimap's holes read that
+  as where to deliver. Routes are content, and `npm run caves:map` draws them.
 - `src/debug.ts` is `window.pushminer`, the test API. `src/invariants.ts` lists
   the rules that must always hold.
 - Content (heaps, walls, barrels, lamps, the way in and the way out) is
@@ -70,6 +80,13 @@ What to copy the shape of, when building something new:
   key and another by the pad's button, and two pictures. What it holds is
   `world.carried`, which the physics leaves alone, so a new thing that reads
   bodies skips `carried` as the foreman, the autopilot, the horn and the map do.
+- **Currents and drains:** `test/currents.test.ts` (every cave's routes held
+  clear of what stands in it, and one cave of each ending played),
+  `test/slow/currents.test.ts` (every cave played), a step in
+  `smoke/progress.spec.ts` for each ending, the fuzzer actions `onto a current`
+  and `down the drain`, and pictures `current-water`, `current-lava`,
+  `current-ice` and `drain`. Not fed to the barrel and lamp placers, whose
+  spots are pinned by hash.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the drone gate
   (`scripts/sim-check.ts`). Each has unit tests of its own working parts.
 - **Test helpers:** `withSeed` in `test/helpers.ts` for chance from a seed,
@@ -140,7 +157,9 @@ For anything new in the cave, check what it does:
   hidden chambers, lamps, the scoop (a body held in it is carried: skipped, never
   banked, never in the rock, counted lost on leaving, and back in its heap on a reload),
   geodes (a blast cracks one within `CRACK_RADIUS`; its gems are a bonus source,
-  never toward `CLEAR_SHARE`)
+  never toward `CLEAR_SHARE`), currents (a body carried onto one, and down a drain:
+  a lit barrel, a brick, a gem, a geode; saved and reloaded with `drained`; the last
+  coins of a cave going down a drain still open the way out)
 - **rock:** against walls and in corridors; never left in rock
 - **caves:** in every cave and biome, the hollow included, and the last, which has no way out
 - **scale:** many at once, chains, at capacity (`KIND_CAPACITY`)

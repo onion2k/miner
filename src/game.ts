@@ -24,6 +24,7 @@ import {
 } from './cave';
 import { Barrels, type Blast } from './barrels';
 import { cracked, scatter } from './geode-stones';
+import { currentBelt } from './currents';
 import { BLADE_AT, Dozer, separate } from './dozer';
 import { CLEAR_SHARE, Economy, WALL_STRENGTH } from './economy';
 import { Impacts } from './impacts';
@@ -54,6 +55,8 @@ export interface GameEvents {
   exitOpened?(faces: readonly [number, number][], heading: Heading): void;
   /** The player has driven out through the way out of the cave `from`, leaving `lost` in coins still in it. The game is finished with. */
   caveLeft?(from: string, lost: number): void;
+  /** Something gone down a drain, worth `value` (nothing for a brick or a barrel), at (x, y): lost, and nothing banked. */
+  drained?(kind: number, value: number, x: number, y: number): void;
   /** A hidden chamber smashed open, the rock in front of it at `faces`. */
   chamberOpened?(chamber: number, faces: readonly [number, number][], heading: Heading): void;
   /** A brick wall hit and still standing, at the tile (x, y): how much of it is gone, and how many hits like it are left in it. */
@@ -120,6 +123,8 @@ export class Game {
   private readonly pushers: Pusher[] = [];
   private readonly botPushers: Pusher[] = [];
   private lastBank = -1;
+  /** Something has gone down a drain since the cave's share was last looked at: the bank has not moved, but the share has. */
+  private drainedSince = false;
   private recordAt = 0;
   private readonly unlisten: () => void;
   /** Made by driving in from another cave, so the screen comes up from black at the start. */
@@ -145,6 +150,7 @@ export class Game {
       cave.solid(save.open, save.secrets, save.walls),
       cave.grid,
       cave.holes,
+      cave.drains,
     );
     this.dozer = new Dozer(this.world.solid, cave.grid);
     this.scoop = new Scoop(this.world, (x, y) => this.rockAt(x, y));
@@ -288,7 +294,7 @@ export class Game {
     }
 
     // the coins, and the barrels going off among them
-    world.step(dt, (kind, x, y, i) => this.collect(kind, x, y, i));
+    world.step(dt, (kind, x, y, i, hole) => this.collect(kind, x, y, i, hole));
     this.tally.fade(dt);
     for (const blast of this.barrels.update(dt, (i) => this.stock.removeBarrel(i))) {
       this.events.blast?.(blast);
@@ -296,9 +302,12 @@ export class Game {
       this.crackGeodes(blast);
     }
 
-    // enough of the cave banked, its way out opens; through the way out, the cave is left behind
-    if (economy.bank !== this.lastBank) {
+    // enough of the cave banked, its way out opens; through the way out, the cave is left behind. What goes down a
+    // drain raises the share without the bank, so it is looked at then too, or the last coins of a cave lost that way
+    // would leave it cleared and shut
+    if (economy.bank !== this.lastBank || this.drainedSince) {
       this.lastBank = economy.bank;
+      this.drainedSince = false;
       if (!save.done && !save.open && this.stock.banked() >= CLEAR_SHARE) economy.open();
     }
     if (save.open && pastLeavingLine(this.cave, dozer.x, dozer.y)) {
@@ -318,7 +327,8 @@ export class Game {
    */
   private leave() {
     const from = this.economy.save.cave;
-    const lost = this.stock.lyingAll();
+    // what lay in it, and what went down its drains: both are gone with it
+    const lost = this.stock.lyingAll() + this.economy.save.drained;
     this.left = true;
     this.economy.moveOn();
     this.events.caveLeft?.(from, lost);
@@ -382,14 +392,24 @@ export class Game {
 
   // ---- what happens ----
 
-  private collect(kind: number, x: number, y: number, i: number) {
+  /**
+   * A body gone down hole number `hole` of the world's list: the cave's holes come first and the drains after,
+   * so a number past the holes is a drain.
+   */
+  private collect(kind: number, x: number, y: number, i: number, hole: number) {
     if (kind === BARREL_KIND) this.barrels.forget(i);
     const value = this.stock.collect(kind, i);
+    if (hole >= this.cave.holes.length) {
+      this.economy.drain(value);
+      this.drainedSince = true;
+      this.events.drained?.(kind, value, x, y);
+      return;
+    }
     // a brick, a barrel or a whole geode down the hole is only gone: nothing banked, and nothing to show for it
     if (kind === BRICK_KIND || kind === BARREL_KIND || kind === GEODE_KIND) return;
     this.economy.deposit(value);
-    const hole = this.cave.holes.indexOf(nearestHole(this.cave.holes, x, y));
-    const heat = this.tally.add(kind, hole);
+    const glow = this.cave.holes.indexOf(nearestHole(this.cave.holes, x, y));
+    const heat = this.tally.add(kind, glow);
     this.events.banked?.(kind, value, x, y, heat);
   }
 
@@ -418,9 +438,17 @@ export class Game {
     this.events.staticChanged?.();
   }
 
+  /**
+   * The belts the physics runs: those bought, and every current of the cave, which runs from the start. The nav is
+   * told which are somewhere to leave a load (a belt, and a current to a hole) and which are a drain's, which
+   * nothing is to be pushed onto.
+   */
   private runBelts() {
-    this.world.belts = this.running().map((b) => beltOf(this.cave.spec.belts[b].spec));
-    this.nav.setBelts(this.world.belts);
+    const bought = this.running().map((b) => beltOf(this.cave.spec.belts[b].spec));
+    const helping = this.cave.currents.filter((c) => !c.drain).map(currentBelt);
+    const draining = this.cave.currents.filter((c) => c.drain).map(currentBelt);
+    this.world.belts = [...bought, ...helping, ...draining];
+    this.nav.setBelts([...bought, ...helping], draining);
   }
 
   /** Knock over any lamp the player's machine is into: its hull, or its blade. */

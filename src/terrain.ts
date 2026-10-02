@@ -56,6 +56,16 @@ function rimOf(holes: readonly HoleSpec[], x: number, y: number): number {
   return rim;
 }
 
+const pitsCache = new WeakMap<object, readonly HoleSpec[]>();
+
+/** Every place the floor is cut away: the holes, and the drains, which are cut as a hole is. Made once for a cave. */
+export function pitsOf(cave: { holes: readonly HoleSpec[]; drains: readonly HoleSpec[] }): readonly HoleSpec[] {
+  if (!cave.drains.length) return cave.holes;
+  let pits = pitsCache.get(cave);
+  if (!pits) pitsCache.set(cave, (pits = [...cave.holes, ...cave.drains]));
+  return pits;
+}
+
 /** The height of the floor at a point: a shallow unevenness below zero, level round each hole. */
 export function floorHeight(holes: readonly HoleSpec[], x: number, y: number): number {
   const level = Math.min(1, Math.max(0, (rimOf(holes, x, y) - COLLAR) / 6));
@@ -283,6 +293,8 @@ class Builder {
 export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainStyle, open = false): Terrain {
   const { cols, rows, originX, originY } = cave.grid;
   const shapeAt = (x: number, y: number) => (style ? style.shape(x, y) : PLAIN_ROCK);
+  // a drain is cut as a hole is: the floor level round it, and the collar laid over it
+  const pits = pitsOf(cave);
   const GX = cols * SUB + 1,
     GY = rows * SUB + 1;
   const [depth, nearest] = depths(cave, revealed, open);
@@ -322,7 +334,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
       const y = originY + j * STEP + (hash(i, j, 2) - 0.5) * nudge;
       px[k] = x;
       py[k] = y;
-      pz[k] = d === 0 ? floorHeight(cave.holes, x, y) : rockHeight(x, y, d, shapeAt(x, y));
+      pz[k] = d === 0 ? floorHeight(pits, x, y) : rockHeight(x, y, d, shapeAt(x, y));
     }
   }
 
@@ -358,7 +370,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
       cz = (pz[a] + pz[b] + pz[c]) / 3;
     const rock = cz > 0.3;
     // each hole's collar is the floor there
-    if (!rock && rimOf(cave.holes, cx, cy) < COLLAR) return;
+    if (!rock && rimOf(pits, cx, cy) < COLLAR) return;
     const salt = hash(Math.round(cx * 7), Math.round(cy * 7), 23);
     // the foot: floor within the band of the rock, its edge ragged by a little noise, and the
     // triangles that climb from the floor into the fillet with it
@@ -479,7 +491,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
           yaw,
           shade: hash(i, j, 74),
         });
-      } else if (d === 0 && rimOf(cave.holes, x, y) > COLLAR + 1) {
+      } else if (d === 0 && rimOf(pits, x, y) > COLLAR + 1) {
         // The skirt of scree: what the rock has shed, thick against its foot and thinning out over
         // SCREE_REACH, chunks against the wall and grit further out, coloured as the rock it fell
         // from and half sunk in the floor; and past it the odd bit of grit about the floor.
@@ -494,7 +506,7 @@ export function buildTerrain(cave: Cave, revealed: boolean[], style?: TerrainSty
           stones.push({
             x,
             y,
-            z: floorHeight(cave.holes, x, y) - size * (0.2 + grade * 0.2),
+            z: floorHeight(pits, x, y) - size * (0.2 + grade * 0.2),
             yaw,
             tilt: (hash(i, j, 67) - 0.5) * 0.8,
             size: [size, size * (0.6 + hash(i, j, 68) * 0.6), size * 0.6],

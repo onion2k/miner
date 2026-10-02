@@ -645,6 +645,93 @@ test('the end: the last cave, the Deep, cleared, and the vein runs', async ({ pa
   expect(problems).toEqual([]);
 });
 
+/** A coin of the cave moved to a point on a current, `along` from its head, and woken: its slot. */
+async function coinOnCurrent(page: Page, current: number, along: number): Promise<number> {
+  return page.evaluate(
+    ([k, d]) => {
+      const api = window.pushminer!;
+      const c = api.content().currents[k];
+      const len = Math.hypot(c.to.x - c.from.x, c.to.y - c.from.y);
+      const coin = api.bodies('coin')[0];
+      api.place(coin.slot, c.from.x + ((c.to.x - c.from.x) / len) * d, c.from.y + ((c.to.y - c.from.y) / len) * d, 1.2);
+      return coin.slot;
+    },
+    [current, along] as const,
+  );
+}
+
+test('a coin at the head of a current to a hole is banked, in the Hollow, with nothing lost', async ({ page }) => {
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true, save: { cave: 'hollow' } });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(1);
+  });
+  const content = await page.evaluate(() => window.pushminer!.content());
+  expect(
+    content.currents.map((c) => [c.flow, c.drain]),
+    'a brook to the hole in the Hollow',
+  ).toEqual([['water', false]]);
+  expect(content.drains, 'and no drain').toEqual([]);
+  const before = await page.evaluate(() => window.pushminer!.state());
+  await coinOnCurrent(page, 0, 2);
+  for (let f = 0; f < 60 * 20; f += 20) {
+    await play(page, 20, 'a coin on a current to a hole');
+    if ((await page.evaluate(() => window.pushminer!.state().bank)) > before.bank) break;
+  }
+  const after = await page.evaluate(() => window.pushminer!.state());
+  expect(after.bank, 'the coin banked').toBe(before.bank + 1);
+  expect(after.drained, 'nothing lost').toBe(0);
+  expect(problems).toEqual([]);
+});
+
+test('a coin on a current to a drain is lost, in the South Gallery: the bank as it was, a note, and both on the map', async ({
+  page,
+}, info) => {
+  const problems = watch(page);
+  await start(page, { seed: 1, paused: true, save: { cave: 'south-gallery' } });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(1);
+  });
+  const content = await page.evaluate(() => window.pushminer!.content());
+  expect(content.currents.map((c) => [c.flow, c.drain])).toEqual([['water', true]]);
+  expect(content.drains, 'a drain, which is not a hole').toHaveLength(1);
+  expect(content.holes, 'one hole, as it was').toHaveLength(1);
+  // the machine beside the drain, so that the map has both in its window
+  const { drains } = content;
+  await page.evaluate(([x, y]) => window.pushminer!.teleport(x - 12, y, 0), [drains[0].x, drains[0].y]);
+  const before = await page.evaluate(() => window.pushminer!.state());
+  await coinOnCurrent(page, 0, 2);
+  await page.evaluate(() => window.pushminer!.events());
+  for (let f = 0; f < 60 * 20; f += 20) {
+    await play(page, 20, 'a coin on a current to a drain');
+    if ((await page.evaluate(() => window.pushminer!.state().drained)) > 0) break;
+  }
+  const after = await page.evaluate(() => window.pushminer!.state());
+  expect(after.drained, 'the coin lost').toBe(1);
+  expect(after.bank, 'the bank unchanged').toBe(before.bank);
+  expect(after.live, 'and gone from the cave').toBe(before.live - 1);
+  expect(await page.evaluate(() => window.pushminer!.events())).toContain('drained 0 1');
+  expect((await screen(page)).note, 'the page says what was lost').toBe('1 lost down the drain');
+  await play(page, 30, 'the map');
+  const map = (await page.evaluate(() => window.pushminer!.state())).minimap!;
+  expect(
+    map.currents.map((c) => c.flow),
+    'the current on the map',
+  ).toEqual(['water']);
+  expect(map.drains, 'the drain on it, and not as a hole').toHaveLength(1);
+  expect(map.holes.length, 'the hole too, which is a different mark').toBeLessThanOrEqual(1);
+  await info.attach('a drain', { body: await page.screenshot(), contentType: 'image/png' });
+  // saved and reloaded: what was lost is remembered
+  await page.evaluate(() => window.pushminer!.save());
+  await page.reload();
+  await ready(page);
+  expect((await page.evaluate(() => window.pushminer!.state())).drained, 'lost, and still lost').toBe(1);
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
 /** The size of the gap between two headings in degrees, however many turns each has been round. */
 const apart = (a: number, b: number) => {
   let d = (a - b) % 360;

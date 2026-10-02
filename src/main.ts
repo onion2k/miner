@@ -24,11 +24,12 @@ import { Economy, MAX_DRONES, WALL_NAME, browserStore, renderShop } from './econ
 import { BOT_SCALE, BOT_SPEC } from './tools';
 import { Sound } from './audio';
 import { COIN_LADDER } from './meshes';
-import { floorHeight } from './terrain';
+import { floorHeight, pitsOf } from './terrain';
 import { TrackMarks } from './tracks';
 import { SpiderGait } from './spider';
 import { FUSE } from './barrels';
-import { EXIT_OPEN_NOTE, arrivalNote, progressText } from './progress';
+import { DRAIN_NOTE_RUN, EXIT_OPEN_NOTE, arrivalNote, drainNote, progressText } from './progress';
+import { drainFlow } from './currents';
 import { cameraFacing, floorImage, minimapView, type MinimapView } from './minimap';
 import { holeLamps, lampOn } from './lamps';
 import { stashBehind, wallTiles } from './walls';
@@ -158,12 +159,25 @@ async function main() {
   const blasts: { x: number; y: number; z: number; left: number }[] = [];
   /** How hard the last blast shook the ground, fading. */
   let blastShake = 0;
+  /** What has gone down the drains in the run just now, and when (game time): for the one note that adds it up. */
+  let drainRun = { total: 0, at: -Infinity };
   const events: GameEvents = {
     banked(kind, value, x, y, heat) {
       if (kind > 0) sound.thunk(value);
       else sound.clink(game.tally.count);
       const colour: Rgb = kind === 0 ? [1.6, 1.2, 0.4] : (kindColour(kind).map((c) => c * 2) as Rgb);
       emit(fx.sparkle(x, y, colour, kind > 0, heat));
+    },
+    drained(kind, value, x, y) {
+      log(`drained ${kind} ${value}`);
+      sound.plop(value);
+      emit(fx.splash(x, y, drainFlow(cave.currents, x, y), kind > 0));
+      // what goes down a drain in a run is said once and added up, so a heap lost at a go reads as one figure
+      if (value > 0) {
+        const total = (game.t - drainRun.at < DRAIN_NOTE_RUN ? drainRun.total : 0) + value;
+        drainRun = { total, at: game.t };
+        hud.note(drainNote(total), DRAIN_NOTE_RUN);
+      }
     },
     exitOpened(faces, [c, s]) {
       log('exitOpened');
@@ -305,7 +319,7 @@ async function main() {
   buildStatic();
 
   // A mark a grouser apart, the width of a track, on the floor wherever there is floor: not over the
-  // hole, and not on rock, where a machine pushed into it for a moment is not really standing.
+  // hole or a drain, and not on rock, where a machine pushed into it for a moment is not really standing.
   const tracks = new TrackMarks({
     pageSize: TRACK_PAGE,
     pages: TRACK_PAGES,
@@ -314,9 +328,9 @@ async function main() {
     length: 0.32,
     width: 1.6,
     ground: (x, y) => {
-      if (nearHole(cave.holes, x, y, 0.6)) return null;
+      if (nearHole(cave.holes, x, y, 0.6) || nearHole(cave.drains, x, y, 0.6)) return null;
       const tile = game.nav.tileOf(x, y);
-      return tile < 0 || game.world.solid[tile] ? null : floorHeight(cave.holes, x, y);
+      return tile < 0 || game.world.solid[tile] ? null : floorHeight(pitsOf(cave), x, y);
     },
   });
   const capacity = runCapacity(RUN);
@@ -614,6 +628,7 @@ async function main() {
     tracks.clear();
     blasts.length = 0;
     blastShake = 0;
+    drainRun = { total: 0, at: -Infinity };
     flashed.clear();
     gait.reset();
     lights.forget();

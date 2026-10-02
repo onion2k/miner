@@ -6,12 +6,12 @@
       "build": 0.008791
     },
     "south-gallery": {
-      "vertices": 247212,
+      "vertices": 246348,
       "terrain": 1.652628,
       "build": 0.029015
     },
     "east-gallery": {
-      "vertices": 331596,
+      "vertices": 330732,
       "terrain": 2.125132,
       "build": 0.045953
     },
@@ -21,17 +21,17 @@
       "build": 0.019488
     },
     "warrens": {
-      "vertices": 360702,
+      "vertices": 359838,
       "terrain": 2.417992,
       "build": 0.070304
     },
     "west-gallery": {
-      "vertices": 199080,
+      "vertices": 198216,
       "terrain": 1.215868,
       "build": 0.021354
     },
     "deep": {
-      "vertices": 894078,
+      "vertices": 893214,
       "terrain": 5.934817,
       "build": 0.185103
     }

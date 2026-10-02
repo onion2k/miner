@@ -19,7 +19,19 @@
  * at the middle of it, so a cave hugs its grid and its ways in and out are a
  * short cutting and not a long one out to the far side of the page.
  */
-import { TILE, type BeltOffer, type CaveSpec, type Cutting, type Shape, type Stash, type Wall } from './cave';
+import {
+  TILE,
+  type BeltOffer,
+  type CaveSpec,
+  type CurrentSpec,
+  type Cutting,
+  type Flow,
+  type HoleSpec,
+  type Shape,
+  type Stash,
+  type Wall,
+} from './cave';
+import { DRAIN_GAP, HOLE_GAP } from './currents';
 
 /**
  * A cave's grid, with its hole at the tile `hx`, `hy` from the grid's corner, and the ways of saying
@@ -83,6 +95,60 @@ function plan(cols: number, rows: number, hx: number, hy: number) {
   };
 }
 
+/** How wide a current is, a little wider than the belt it is built on, and how deep and wide a drain is. */
+const CURRENT_WIDTH = 7;
+const DRAIN = { radius: 3.5, depth: 10 };
+/** How fast each flow runs: water and lava at about the pace of a belt, ice faster. */
+const FLOW_SPEED: Record<Flow, number> = { water: 9, lava: 9, ice: 13 };
+
+/**
+ * A current that runs to a hole: it starts `from` units away from the hole's middle in the direction `deg`
+ * degrees round it (0 east, 90 north), and runs at the hole, ending a rim's gap short of it so that the floor's
+ * slope into the pit takes what it carries, as a belt's end does.
+ */
+function currentToHole(id: string, flow: Flow, hole: HoleSpec, deg: number, from: number): CurrentSpec {
+  const a = (deg * Math.PI) / 180,
+    ux = Math.cos(a),
+    uy = Math.sin(a);
+  const end = hole.radius + HOLE_GAP;
+  return {
+    id,
+    flow,
+    x0: hole.x + ux * from,
+    y0: hole.y + uy * from,
+    x1: hole.x + ux * end,
+    y1: hole.y + uy * end,
+    width: CURRENT_WIDTH,
+    speed: FLOW_SPEED[flow],
+  };
+}
+
+/**
+ * A current that ends in a drain: it starts at (x, y), in world units as `npm run caves:map` prints them, and
+ * runs `length` units in the direction `deg` degrees round (0 east, 90 north). The cave puts the drain a rim's
+ * gap past its end (`DRAIN_GAP`), where the floor's slope takes what is carried over.
+ */
+function currentToDrain(id: string, flow: Flow, x: number, y: number, deg: number, length: number): CurrentSpec {
+  const a = (deg * Math.PI) / 180;
+  // The drain's middle goes on a whole unit each way, which is the lattice the floor is drawn on: a collar laid
+  // off it meets the floor in a ragged edge. The current is turned the little it takes to run at where that puts it.
+  const past = DRAIN.radius + DRAIN_GAP;
+  const dx = Math.round(x + Math.cos(a) * (length + past)) - x,
+    dy = Math.round(y + Math.sin(a) * (length + past)) - y;
+  const reach = Math.hypot(dx, dy);
+  return {
+    id,
+    flow,
+    x0: x,
+    y0: y,
+    x1: x + (dx / reach) * (reach - past),
+    y1: y + (dy / reach) * (reach - past),
+    width: CURRENT_WIDTH,
+    speed: FLOW_SPEED[flow],
+    drain: { ...DRAIN },
+  };
+}
+
 /** A side room: a corridor out from a cave, a wall across it, and a room at the end. */
 function sideRoom(
   name: string,
@@ -120,6 +186,8 @@ const hollow = (() => {
     vein: { ...p.pt(-36, -6), every: 1.2, coins: 1, gems: [[1, 0.04]] },
     cracks: [p.spot(-10, -14), p.spot(18, 12), p.spot(-28, -12), p.spot(34, 4)],
     belts: [],
+    // a brook from the south, which the first push to go astray is glad of: it runs into the hole
+    currents: [currentToHole('hollow-brook', 'water', p.hole, 300, 30)],
     entry: p.cutting(-28, -2, -12, 1, [-1, 0]),
     exit: p.cutting(12, -2, 27, 1, [1, 0]),
     secrets: [],
@@ -205,6 +273,8 @@ const southGallery = (() => {
     },
     cracks: [p.spot(-60, -24), p.spot(100, -6), p.spot(120, 30)],
     belts: [belt],
+    // a runnel along the foot of the west lobe, under the west heap: what slips off it is gone
+    currents: [currentToDrain('south-runnel', 'water', -66, -12, 345, 16)],
     entry: p.cutting(-48, -6, -24, -3, [-1, 0]),
     exit: p.cutting(24, 10, 27, 25, [0, 1]),
     secrets: [
@@ -311,6 +381,8 @@ const eastGallery = (() => {
     },
     cracks: [p.spot(60, 56), p.spot(212, -12), p.spot(100, -66)],
     belts: [belt, bottomBelt],
+    // a flow of lava past the top heap's east side, which pours away into a drain
+    currents: [currentToDrain('east-lava', 'lava', 46, 32, 90, 16)],
     entry: p.cutting(-25, -2, -6, 1, [-1, 0]),
     exit: p.cutting(20, 14, 23, 25, [0, 1]),
     secrets: [
@@ -410,6 +482,8 @@ const northVault = (() => {
     },
     cracks: [p.spot(-20, 10), p.spot(90, -14), p.spot(100, 20)],
     belts: [belt],
+    // a fast stream of ice down into the second hole, from the north of its cavern
+    currents: [currentToHole('north-ice', 'ice', p.holeAt(25, 0), 85, 34)],
     entry: p.cutting(-27, -2, -6, 1, [-1, 0]),
     exit: p.cutting(32, -2, 52, 1, [1, 0]),
     secrets: [
@@ -557,6 +631,12 @@ const warrens = (() => {
     },
     cracks: [p.spot(-88, -56), p.spot(88, -88), p.spot(196, 8)],
     belts: [],
+    // one into the fourth cavern's hole, down from the north-east above its heap, and one into a drain beside the
+    // first cavern's heap, on the side away from the tunnel
+    currents: [
+      currentToHole('warrens-spring', 'water', p.holeAt(44, -2), 45, 26),
+      currentToDrain('warrens-sump', 'water', -182, -26, 90, 22),
+    ],
     lampSpacing: 18,
     // its glowing caps want the dark between them
     floorLampSpacing: 28,
@@ -663,6 +743,9 @@ const westGallery = (() => {
     },
     cracks: [p.spot(60, -20), p.spot(100, 10), p.spot(150, 24)],
     belts: [belt],
+    // a drain off the lane the belt runs along, and well north of the two heaps at the far end: nearer, it took
+    // what rolled off the top one as it settled, with nobody touching anything
+    currents: [currentToDrain('west-seep', 'water', 48, 22, 340, 16)],
     entry: p.cutting(-4, -25, -1, -10, [0, -1]),
     // up out of the hall's north wall, in the middle of it, clear of the annex's room to the east and the pillars to the south
     exit: p.cutting(18, 10, 21, 26, [0, 1]),
@@ -830,6 +913,11 @@ const deep = (() => {
     belts: [
       beltTo('deep-belt-north', 'Conveyor, north-west hall', [30, 16], h1, 700),
       beltTo('deep-belt-south', 'Conveyor, south-east hall', [84, -16], h2, 800),
+    ],
+    // one into the far hole, which has no belt, from the north, and one into a drain beside the south-west heap
+    currents: [
+      currentToHole('deep-spring', 'water', h3, 90, 34),
+      currentToDrain('deep-sump', 'water', -126, -78, 105, 16),
     ],
     entry: p.cutting(-28, -2, -12, 1, [-1, 0]),
     exit: null,

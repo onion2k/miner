@@ -18,6 +18,7 @@
  * floor is z = 0.
  */
 
+import { drainOf } from './currents';
 import { hash, noise } from './noise';
 
 export { hash };
@@ -632,7 +633,7 @@ export function buildCave(spec: CaveSpec): Cave {
     lamps,
     barrels,
     currents: spec.currents ?? [],
-    drains: [],
+    drains: (spec.currents ?? []).flatMap((c) => drainOf(c) ?? []),
     // after the barrels, and never fed into them, so the barrels stand where they always have
     geodes: placeGeodes(cells, spec, grid, lamps, barrels),
     solid(open, revealed = [], broken = []) {

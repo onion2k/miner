@@ -505,6 +505,13 @@ export class Economy {
     this.persist();
   }
 
+  /** Something worth `value` gone down a drain: lost to the cave, and said so when it is left. Nothing is banked. */
+  drain(value: number) {
+    if (!(value > 0)) return;
+    this.save.drained += value;
+    this.persist();
+  }
+
   spec(): DozerSpec {
     const e = ENGINE[this.save.engine];
     const m = MAGNET[this.save.magnet];

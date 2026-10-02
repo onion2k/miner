@@ -81,6 +81,18 @@ ramming one, or a drone pushing it about, only moves it, and one pushed down
 the hole whole is only gone. (The Deep's biome is also called geode; the body
 is `src/geode-stones.ts`.)
 
+Every cave has a current or two, strips of the floor that are always running,
+water in most, lava in the East Gallery and ice in the North Vault, and they
+carry what lies on them as a conveyor does, whatever they are made of. One that
+runs into a hole is a help: what it carries is banked. One that ends in a drain,
+a hole that pays nothing, is a loss: what goes down it is gone from the cave, so
+the cave's share banked rises without the bank, and a cave can always be cleared;
+the page says what was lost, and the next cave counts it among what was left
+behind. A drain lies beside the work, where a careless push or a blast feeds it,
+never across the way from a heap to its hole. The dozer and the drones are not
+moved by a current, and the drones never push anything onto one that ends in a
+drain.
+
 The cave is pitch black. What you see by is the dozer's own lights, the
 drones', and the lamps on posts along the cave's edges. Drive into a lamp and it goes over,
 glass everywhere, and stays dark.
@@ -246,6 +258,7 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/game.ts           the game without the picture: a step of everything that happens, told as events
     src/debug.ts          window.pushminer, the test API
     src/invariants.ts     the rules that must always hold, whatever has been played
+    src/currents.ts       the currents' strips and drains: where each is, how far a point is from one, how it is drawn plainly
     src/cave.ts           the tile grid of one cave: floor, rock, the way in and the way out, heaps, veins, belt routes, lamps, and how dark it is down the cuttings
     src/economy.ts        the bank, the upgrades, which cave is being cleared, the save, the shop
     src/stock.ts          what is in the cave, from where: put back from the save, spawned, banked, left behind
@@ -272,7 +285,7 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/lighting.ts       each frame's lights and glows
     src/camera.ts         the camera rig: fixed, chase and free
     src/calibrate.ts      how much coin this machine can draw
-    src/minimap.ts        what the minimap shows, turned with the camera: the holes, the way out, the drones, what is left to bank, and the floor
+    src/minimap.ts        what the minimap shows, turned with the camera: the holes, the currents and the drains, the way out, the drones, what is left to bank, and the floor
     src/hud.ts            the page round the cave: counters, tally, notes, the minimap, the black layer of the fade, a phone's buttons
     src/palette.ts        the colours things are drawn in
     src/effects.ts        the bursts of particles: glass, chips, dust, sparkle

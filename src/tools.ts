@@ -537,7 +537,7 @@ export class Foreman {
         if (!world.alive[i] || world.carried[i] || !this.works(this.origin[i]) || world.z[i] < 0) continue;
         if (nearHole(nav.holes, world.x[i], world.y[i], 9)) continue;
         // on a belt, and on its way
-        if (nav.onBelt(world.x[i], world.y[i])) continue;
+        if (nav.onBelt(world.x[i], world.y[i]) || nav.onDrain(world.x[i], world.y[i])) continue;
         this.workable.push(i);
       }
     }

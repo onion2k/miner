@@ -2,8 +2,8 @@
  * The game played by a monkey: the real game, without the picture, driven
  * at random and made to do at random everything a player can make happen —
  * charging walls, chambers, lamps and barrels; pushing anything at all down
- * the hole; scooping up what lies at the blade, carrying it and tipping it
- * out; setting barrels off; buying things; opening the way out and
+ * the hole, or onto a current or down a drain; scooping up what lies at the blade,
+ * carrying it and tipping it out; setting barrels off; buying things; opening the way out and
  * driving out through it, on into the next cave; honking; saving and
  * loading — and checked after every few frames for anything that must always
  * hold and does not (`invariants.ts`), and for anything thrown.
@@ -186,6 +186,45 @@ export function fuzz(seed: number, frames: number): FuzzResult {
       [
         4,
         () => {
+          // onto a current, at its head, to be carried along it: to a hole, and banked, or to a drain, and lost
+          const { world, cave } = game;
+          const c = pick(cave.currents);
+          if (!c) return;
+          const slots = [...Array(world.count).keys()].filter((i) => world.alive[i] && !world.carried[i]);
+          const i = pick(slots);
+          if (i === undefined) return;
+          const len = Math.hypot(c.x1 - c.x0, c.y1 - c.y0);
+          const along = between(1, len * 0.5),
+            across = between(-c.width * 0.4, c.width * 0.4);
+          world.x[i] = c.x0 + ((c.x1 - c.x0) / len) * along - ((c.y1 - c.y0) / len) * across;
+          world.y[i] = c.y0 + ((c.y1 - c.y0) / len) * along + ((c.x1 - c.x0) / len) * across;
+          world.z[i] = 1.2;
+          world.vx[i] = world.vy[i] = world.vz[i] = 0;
+          world.wake(i);
+          act('onto a current', `${KIND_NAME[world.kind[i]]} ${i} on ${c.id}`);
+        },
+      ],
+      [
+        3,
+        () => {
+          // anything at all down a drain, a lit barrel and a brick included
+          const { world, cave } = game;
+          const drain = pick(cave.drains);
+          if (!drain) return;
+          const slots = [...Array(world.count).keys()].filter((i) => world.alive[i] && !world.carried[i]);
+          const i = pick(slots);
+          if (i === undefined) return;
+          world.x[i] = drain.x + between(-1, 1);
+          world.y[i] = drain.y + between(-1, 1);
+          world.z[i] = 2;
+          world.vx[i] = world.vy[i] = world.vz[i] = 0;
+          world.wake(i);
+          act('down the drain', `${KIND_NAME[world.kind[i]]} ${i}`);
+        },
+      ],
+      [
+        4,
+        () => {
           const { world } = game;
           const barrels = [...Array(world.count).keys()].filter((i) => world.alive[i] && world.kind[i] === BARREL_KIND);
           const i = pick(barrels);
@@ -354,7 +393,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           game = new Game(economy, buildCave(economy.cave()), events);
           visited.add(economy.save.cave);
           const after = game.economy.save;
-          const same = (['bank', 'cave', 'open', 'done', 'drones', 'body'] as const).filter(
+          const same = (['bank', 'cave', 'open', 'done', 'drones', 'body', 'drained'] as const).filter(
             (k) => before[k] !== after[k],
           );
           const sameLists = (['secrets', 'walls', 'lampsBroken', 'belts'] as const).filter(

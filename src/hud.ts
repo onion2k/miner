@@ -7,6 +7,7 @@
  * to show, and tells whoever set it up when a button is pressed. What the
  * map shows, and where, is worked out apart from the DOM, in `minimapView`.
  */
+import { FLOW_MAP } from './currents';
 import type { RunSummary } from './tally';
 import { FLOOR_LEVEL, ROCK_LEVEL, WALL_LEVEL, type FloorImage, type MinimapView } from './minimap';
 
@@ -103,6 +104,26 @@ export class Minimap {
       ctx.lineTo(b.x1, b.y1);
     }
     ctx.stroke();
+
+    // the currents, in what they are made of, and each drain a dark pit ringed in the same: nothing like a hole's green
+    ctx.lineWidth = 2.6 * px;
+    ctx.lineCap = 'butt';
+    for (const c of view.currents) {
+      ctx.strokeStyle = FLOW_MAP[c.flow];
+      ctx.beginPath();
+      ctx.moveTo(c.x0, c.y0);
+      ctx.lineTo(c.x1, c.y1);
+      ctx.stroke();
+    }
+    for (const d of view.drains) {
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, Math.max(2.6 * px, d.radius * 0.7), 0, Math.PI * 2);
+      ctx.fillStyle = MAP.hole;
+      ctx.fill();
+      ctx.strokeStyle = FLOW_MAP[d.flow];
+      ctx.lineWidth = 1.7 * px;
+      ctx.stroke();
+    }
 
     ctx.fillStyle = MAP.speck;
     for (const s of view.specks) ctx.fillRect(s.x - px, s.y - px, 2 * px, 2 * px);

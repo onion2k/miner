@@ -6,6 +6,7 @@
  * the shape of what it takes.
  */
 import type { Emit } from 'artshape-render/game/particles';
+import type { Flow } from './cave';
 import type { Rgb } from './palette';
 import { GEODE_KIND, KIND_RADIUS } from './physics';
 
@@ -62,6 +63,30 @@ export function sparkle(x: number, y: number, colour: Rgb, gem: boolean, heat: n
     colour,
     alpha: 0,
     gravity: 0.8,
+    floor: -30,
+  };
+}
+
+/** The colour of a splash, by what flows into the drain: bright, past white, so the bloom takes it. */
+const SPLASH: Record<Flow, Rgb> = { water: [0.5, 1.1, 2], lava: [2.2, 0.9, 0.2], ice: [1.4, 1.8, 2.2] };
+
+/**
+ * Something gone down a drain: a splash up out of it in the colour of what flows in, low and short, and nothing
+ * like the sparkle of a bank, which is gold and climbs. A gem throws more.
+ */
+export function splash(x: number, y: number, flow: Flow, gem: boolean): Emit {
+  return {
+    position: [x, y, 0.4],
+    velocity: [0, 0, 5],
+    spread: 2.5,
+    count: gem ? 22 : 9,
+    life: 0.6,
+    lifeSpread: 0.25,
+    size: gem ? 0.4 : 0.3,
+    growth: -0.3,
+    colour: SPLASH[flow],
+    alpha: 0,
+    gravity: 1.2,
     floor: -30,
   };
 }

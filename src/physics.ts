@@ -45,14 +45,17 @@ const TUNING = { sleepTogether: true, settle: 1 };
 /**
  * A world for a cave: its tile grid and its holes, the radius of each kind,
  * and `solid` for which tiles are rock, which the game rewrites in place as
- * gates open and walls come down. Chance is Math.random unless told
- * otherwise, so a seeded run is the same twice.
+ * gates open and walls come down. A cave's drains are holes that pay
+ * nothing: they go after its holes in the world's list and are never in the
+ * cave's own. Chance is Math.random unless told otherwise, so a seeded run
+ * is the same twice.
  */
 export function makeWorld(
   capacity: number,
   solid: Uint8Array,
   grid: Grid,
   holes: readonly HoleSpec[],
+  drains: readonly HoleSpec[] = [],
   random?: () => number,
 ): World {
   const options: WorldOptions = {
@@ -60,7 +63,8 @@ export function makeWorld(
     grid: { cols: grid.cols, rows: grid.rows, originX: grid.originX, originY: grid.originY, tile: TILE },
     solid,
     radii: KIND_RADIUS,
-    holes: holes.map((h) => ({ x: h.x, y: h.y, radius: h.radius, depth: h.depth })),
+    // the drains follow the holes, so the index the world reports a body's hole by tells them apart: a drain's is `holes.length` or more
+    holes: [...holes, ...drains].map((h) => ({ x: h.x, y: h.y, radius: h.radius, depth: h.depth })),
     random,
     tuning: TUNING,
   };

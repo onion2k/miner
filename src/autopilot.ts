@@ -394,7 +394,8 @@ export class Autopilot {
       if (from === NO_SOURCE) continue;
       const x = world.x[i],
         y = world.y[i];
-      if (nearHole(cave.holes, x, y, 6) || nav.onBelt(x, y)) continue;
+      // a coin on a belt or a current is on its way, and one on a current to a drain is lost already
+      if (nearHole(cave.holes, x, y, 6) || nav.onBelt(x, y) || nav.onDrain(x, y)) continue;
       const toDrop = nav.distance(nav.toDrop, x, y);
       if (!Number.isFinite(toDrop)) continue;
       // what a drone is already after is the drone's
@@ -480,7 +481,7 @@ export class Autopilot {
       if (from === NO_SOURCE) continue;
       const x = world.x[i],
         y = world.y[i];
-      if (nearHole(cave.holes, x, y, 6)) continue;
+      if (nearHole(cave.holes, x, y, 6) || nav.onDrain(x, y)) continue;
       const key = (Math.floor(x / PATCH) + 2048) * 4096 + Math.floor(y / PATCH) + 2048;
       value.set(key, (value.get(key) ?? 0) + KIND_VALUE[world.kind[i]]);
     }

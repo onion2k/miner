@@ -335,6 +335,29 @@ describe('what is in the cave when it is built (criterion 7)', () => {
     }
   });
 
+  it('stands clear of the currents and drains each cave really has', () => {
+    const R = KIND_RADIUS[GEODE_KIND];
+    let currents = 0;
+    for (const spec of RUN) {
+      const cave = buildCave(spec);
+      for (const g of cave.geodes) {
+        for (const c of cave.currents) {
+          currents++;
+          // how far the geode is from the current's middle line, between its two ends
+          const dx = c.x1 - c.x0,
+            dy = c.y1 - c.y0;
+          const k = Math.max(0, Math.min(1, ((g.x - c.x0) * dx + (g.y - c.y0) * dy) / (dx * dx + dy * dy)));
+          const d = Math.hypot(g.x - (c.x0 + dx * k), g.y - (c.y0 + dy * k));
+          expect(d, `${spec.id}: a geode at ${g.x},${g.y} in ${c.id}`).toBeGreaterThan(c.width / 2 + R);
+        }
+        for (const d of cave.drains)
+          expect(Math.hypot(g.x - d.x, g.y - d.y), `${spec.id}: a geode over a drain`).toBeGreaterThan(d.radius + R);
+      }
+    }
+    // doing nothing is a failure: every cave has a current, so every geode was held to one
+    expect(currents).toBeGreaterThanOrEqual(RUN.reduce((n, s) => n + (s.geodes?.count ?? 0), 0));
+  });
+
   it('keeps clear of a current, by its width and a margin, wherever one is laid', () => {
     for (const spec of RUN) {
       const g = buildCave(spec).geodes[0];

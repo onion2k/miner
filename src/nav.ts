@@ -66,6 +66,8 @@ export class Nav {
   /** The same for a load that is for one hole only, by the hole's place in the list: that hole, or a running belt. One hole has only `toDrop`. */
   readonly toDropEach: Float32Array[];
   private belts: Belt[] = [];
+  /** The currents that end in a drain: never a place to leave a load, and nothing is to be pushed onto them. */
+  private drains: Belt[] = [];
   /**
    * How far each tile is from a running belt alone, handover and ride counted, as last laid. The drop fields
    * are the nearer of this and the hole's own field, so a belt bought or sold is one pass and not one for each hole.
@@ -147,10 +149,19 @@ export class Nav {
     return this.distance(this.toEach[hole], x, y);
   }
 
-  /** The belts running now: bought, and in a room not sealed. */
-  setBelts(belts: Belt[]) {
+  /**
+   * The belts running now, which are somewhere to leave a load: those bought, in a room not sealed, and the
+   * currents that run to a hole. `drains` are the currents that end in a drain, which are not.
+   */
+  setBelts(belts: Belt[], drains: Belt[] = []) {
     this.belts = belts;
+    this.drains = drains;
     this.fillDrop();
+  }
+
+  /** Whether a point is on a current that ends in a drain, within `margin` of its edges. */
+  onDrain(x: number, y: number, margin = 0): Belt | null {
+    return stripAt(this.drains, x, y, margin);
   }
 
   /**
@@ -170,14 +181,7 @@ export class Nav {
 
   /** Whether a point is on a running belt, within `margin` of its edges. */
   onBelt(x: number, y: number, margin = 0): Belt | null {
-    for (const b of this.belts) {
-      const dx = x - b.cx,
-        dy = y - b.cy;
-      const along = dx * b.dx + dy * b.dy,
-        across = -dx * b.dy + dy * b.dx;
-      if (Math.abs(along) <= b.half + margin && Math.abs(across) <= b.width / 2 + margin) return b;
-    }
-    return null;
+    return stripAt(this.belts, x, y, margin);
   }
 
   /** The open tiles by each hole, in one pass over the floor, that its field runs out from. */
@@ -421,4 +425,16 @@ export class Nav {
       }
     }
   }
+}
+
+/** The first of `strips` a point is on, within `margin` of its edges. */
+function stripAt(strips: readonly Belt[], x: number, y: number, margin: number): Belt | null {
+  for (const b of strips) {
+    const dx = x - b.cx,
+      dy = y - b.cy;
+    const along = dx * b.dx + dy * b.dy,
+      across = -dx * b.dy + dy * b.dx;
+    if (Math.abs(along) <= b.half + margin && Math.abs(across) <= b.width / 2 + margin) return b;
+  }
+  return null;
 }

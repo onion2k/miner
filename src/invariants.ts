@@ -4,7 +4,8 @@
  *
  * Nothing solid is in the rock and nothing is not a number. What the scoop
  * holds is carried, worth something, and no more than it takes. The counts the
- * game keeps of what is in the cave agree with what is in it. The bank is a
+ * game keeps of what is in the cave agree with what is in it. The world's
+ * holes are the cave's holes and then its drains. The bank is a
  * number, the scoop is a size the workshop sells, the save's cave is in the
  * run and every list of it is the cave's size, and the way out is open only
  * when enough is banked. The save is plain
@@ -114,6 +115,12 @@ export function checkInvariants(game: Game): string[] {
   // the barrels' fuses are on barrels
   const badFuses = barrels.lit.filter((i) => !world.alive[i] || world.kind[i] !== BARREL_KIND).map((i) => `slot ${i}`);
   report('a fuse on no barrel', badFuses);
+
+  // the world holds the cave's holes and then its drains, which is what tells a hole that banks from one that does not
+  if (world.holes.length !== cave.holes.length + cave.drains.length)
+    out.push(
+      `the world has ${world.holes.length} holes, and the cave ${cave.holes.length} and ${cave.drains.length} drains`,
+    );
 
   // the machines out of the rock
   const machines = [game.dozer, ...game.bots.map((b) => b.dozer)];

@@ -8,7 +8,9 @@
  * North is up. Rock is dark, floor pale; the way in is tinted blue and the
  * way out red, with a line across it where going past leaves the cave; holes
  * are black rings, heaps gold discs as big as they spread, belts green,
- * brick walls orange, hidden chambers purple, lamps white dots, barrels
+ * currents the colour of what flows (water blue, lava orange, ice pale) with a
+ * bar across the end where they run into a hole, and each drain a dark disc
+ * ringed in its flow's colour, brick walls orange, hidden chambers purple, lamps white dots, barrels
  * brown, the vein magenta and the cracks cyan. No image library: the PNG is
  * written here, from the tiles, with zlib from Node.
  *
@@ -17,7 +19,19 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
-import { BRICK, EXIT, LEAVING_SHORT, OPEN, SECRET, TILE, buildCave, arrival, type Cave } from '../src/cave';
+import {
+  BRICK,
+  EXIT,
+  LEAVING_SHORT,
+  OPEN,
+  SECRET,
+  TILE,
+  buildCave,
+  arrival,
+  type Cave,
+  type CurrentSpec,
+} from '../src/cave';
+import { drainOf } from '../src/currents';
 import { RUN } from '../src/caves';
 import { HAUL_LIMIT, haulField, haulOf } from './hauls';
 
@@ -81,8 +95,15 @@ const ROCK_COLOUR: Rgb = [38, 38, 46],
     [140, 150, 170],
     [70, 76, 92],
   ],
+  FLOWS: Record<string, Rgb> = { water: [40, 110, 230], lava: [255, 110, 20], ice: [150, 225, 255] },
   CHAMBER: Rgb = [116, 66, 158],
   CHAMBER_FACE: Rgb = [170, 120, 210];
+
+/** How far a drain is from where the current's own drain stands: nought for the drain of that current. */
+function drainDistance(c: CurrentSpec, d: { x: number; y: number }): number {
+  const own = drainOf(c);
+  return own ? Math.hypot(own.x - d.x, own.y - d.y) : Infinity;
+}
 
 /** The cave as a picture, `scale` pixels a tile, and the lines to say of it. */
 export function drawCave(cave: Cave, scale = 7): { width: number; height: number; rgb: Uint8Array; notes: string[] } {
@@ -145,6 +166,28 @@ export function drawCave(cave: Cave, scale = 7): { width: number; height: number
   // the belts, holes, heaps, vein and cracks, and the lamps and barrels
   for (const { spec: b } of spec.belts)
     line(b.x0, b.y0, b.x1, b.y1, [40, 150, 70], Math.max(1, Math.round((b.width / TILE) * scale * 0.5)), 0.85);
+  for (const c of cave.currents) {
+    line(c.x0, c.y0, c.x1, c.y1, FLOWS[c.flow], Math.max(1, Math.round((c.width / TILE) * scale * 0.5)), 0.9);
+    // a bar across its end, and an arrow's head on it, so the way it runs can be read
+    const len = Math.hypot(c.x1 - c.x0, c.y1 - c.y0),
+      ux = (c.x1 - c.x0) / len,
+      uy = (c.y1 - c.y0) / len;
+    line(
+      c.x1 - uy * (c.width / 2),
+      c.y1 + ux * (c.width / 2),
+      c.x1 + uy * (c.width / 2),
+      c.y1 - ux * (c.width / 2),
+      [255, 255, 255],
+      0,
+    );
+    for (const s of [-1, 1])
+      line(c.x1, c.y1, c.x1 - ux * 6 - s * uy * 3, c.y1 - uy * 6 + s * ux * 3, [255, 255, 255], 0);
+  }
+  for (const d of cave.drains) {
+    const flow = cave.currents.find((c) => c.drain && Math.hypot(drainDistance(c, d)) < 1e-6)?.flow ?? 'water';
+    disc(d.x, d.y, d.radius * (scale / TILE), [20, 20, 30]);
+    ring(d.x, d.y, d.radius * (scale / TILE) + 1, FLOWS[flow]);
+  }
   for (const l of cave.lamps) disc(l.x, l.y, 1.5, [255, 255, 255]);
   for (const b of cave.barrels) disc(b.x, b.y, 3, [120, 70, 30]);
   spec.heaps.forEach((h) => disc(h.x, h.y, (Math.sqrt(h.coins) * 0.36 + 1.5) * (scale / TILE), [230, 180, 30], 0.85));
@@ -187,6 +230,10 @@ export function drawCave(cave: Cave, scale = 7): { width: number; height: number
       `  heap ${k} at ${h.x},${h.y}: ${haul.toFixed(0)} along the floor, ${straight.toFixed(0)} straight${haul > limit ? '  OVER' : ''}`,
     );
   });
+  for (const c of cave.currents)
+    notes.push(
+      `  current ${c.id}: ${c.flow}, ${Math.hypot(c.x1 - c.x0, c.y1 - c.y0).toFixed(0)} long and ${c.width} wide at ${c.speed}, ${c.x0.toFixed(0)},${c.y0.toFixed(0)} to ${c.x1.toFixed(0)},${c.y1.toFixed(0)}, ${c.drain ? 'into a drain' : 'to a hole'}`,
+    );
   return { width, height, rgb, notes };
 }
 

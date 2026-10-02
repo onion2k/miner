@@ -8,7 +8,8 @@
  * Map space is the page's: x to the right, y down, the dozer at (0, 0), in world units, so that a mark at
  * (0, -30) is thirty units straight ahead on the screen.
  */
-import { BRICK, EXIT, TILE, exitPoints, nearestHole, type BeltSpec, type Cave } from './cave';
+import { drainOf } from './currents';
+import { BRICK, EXIT, TILE, exitPoints, nearestHole, type BeltSpec, type Cave, type Flow } from './cave';
 import { KIND_VALUE } from './physics';
 
 /** The grey of a floor tile, a brick wall that still stands and rock, in the image `floorImage` makes. */
@@ -71,6 +72,10 @@ export interface MinimapView {
   /** Where valuable bodies lie, a mark to a bucket. */
   specks: Mark[];
   belts: { x0: number; y0: number; x1: number; y1: number }[];
+  /** The currents of the cave, always running: each in what it is made of, drawn apart from a belt, which is bought. */
+  currents: { x0: number; y0: number; x1: number; y1: number; flow: Flow }[];
+  /** The drains in the window, which take what they are given and pay nothing: drawn apart from a hole. */
+  drains: (Mark & { radius: number; flow: Flow })[];
   /**
    * Where the floor image goes, as a canvas transform [a, b, c, d, e, f] taking one image pixel (a tile) to map
    * units: turned, and placed so that the dozer's place in the cave is the middle.
@@ -99,6 +104,14 @@ export function minimapView(input: MinimapInput): MinimapView {
     const m = at(h.x, h.y);
     if (inside(m)) holes.push({ ...m, radius: h.radius, rim: false });
     else if (h === near) holes.push({ ...pinned(m), radius: h.radius, rim: true });
+  }
+
+  const drains: MinimapView['drains'] = [];
+  for (const c of cave.currents) {
+    const d = drainOf(c);
+    if (!d) continue;
+    const m = at(d.x, d.y);
+    if (inside(m)) drains.push({ ...m, radius: d.radius, flow: c.flow });
   }
 
   let exit: MinimapView['exit'];
@@ -135,6 +148,12 @@ export function minimapView(input: MinimapInput): MinimapView {
       return { x0: p.x, y0: p.y, x1: q.x, y1: q.y };
     }),
     // a tile along the image's x is a tile along the floor's x, and likewise y: put through the same turn
+    currents: cave.currents.map((c) => {
+      const p = at(c.x0, c.y0),
+        q = at(c.x1, c.y1);
+      return { x0: p.x, y0: p.y, x1: q.x, y1: q.y, flow: c.flow };
+    }),
+    drains,
     floor: [fy * TILE, -fx * TILE, -fx * TILE, -fy * TILE, corner.x, corner.y],
   };
 }
