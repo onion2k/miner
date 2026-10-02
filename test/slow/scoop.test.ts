@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { gridOf } from '../../src/cave';
 import { BLADE_AT, Dozer, type DozerSpec } from '../../src/dozer';
-import { SCOOP } from '../../src/economy';
+import { BLADE, SCOOP } from '../../src/economy';
 import { makeWorld, type Pusher } from '../../src/physics';
 import { PLAYER_SPEC } from '../helpers';
 
@@ -75,5 +75,34 @@ describe('criterion 1: lowered, the scoop keeps hold of as much as a blade of it
     bucket.forEach((r, k) => expect(r.kept, `seed ${SEEDS[k]}: ${said}`).toBeGreaterThan(blade[k].kept - BODIES / 10));
     // it is slower only by what it is pushing: never by more than a quarter
     expect(mean(bucket.map((r) => r.seconds)), said).toBeLessThan(mean(blade.map((r) => r.seconds)) * 1.25);
+  });
+});
+
+describe('what a scoop costs, against the blades that push as well', () => {
+  const kept = (spec: DozerSpec) => mean(SEEDS.map((seed) => push(spec, seed).kept));
+  /** What every level up to and including `level` costs together. */
+  const upTo = (table: readonly { cost: number }[], level: number) =>
+    table.slice(0, level + 1).reduce((n, row) => n + row.cost, 0);
+
+  it('is dearer than them, at every size: a scoop does what they do and carries as well', () => {
+    const blades = BLADE.map((b, level) => ({
+      width: b.width,
+      paid: upTo(BLADE, level),
+      kept: kept({ ...PLAYER_SPEC, bladeWidth: b.width }),
+    }));
+    for (let size = 1; size < SCOOP.length; size++) {
+      const bucket = kept({ ...PLAYER_SPEC, bladeWidth: SCOOP[size].width, bucket: true });
+      const paid = upTo(SCOOP, size);
+      // the dearest blade that pushes no better than this bucket: to match it by blades costs at least that
+      const matched = blades.filter((b) => b.kept <= bucket + BODIES / 50).pop()!;
+      const said = `scoop ${size} keeps ${bucket.toFixed(0)} for ${paid}; a blade ${matched.width} across keeps ${matched.kept.toFixed(0)} for ${matched.paid}`;
+      expect(matched.paid, `${said}: it has a blade to be held to`).toBeGreaterThan(0);
+      // half as much again, for the carrying, and no more than three times: dearer, not out of reach
+      expect(paid, said).toBeGreaterThanOrEqual(matched.paid * 1.4);
+      expect(paid, said).toBeLessThanOrEqual(matched.paid * 3.2);
+    }
+    // each size costs more than the last, and the steps grow, as every other line of the workshop's do
+    for (let size = 2; size < SCOOP.length; size++)
+      expect(SCOOP[size].cost).toBeGreaterThan(SCOOP[size - 1].cost * 1.5);
   });
 });

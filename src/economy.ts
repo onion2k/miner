@@ -95,12 +95,18 @@ export interface Save {
 /**
  * The scoop: how wide the bucket of size 0 (none) to 3 is at its mouth, and what the next size up costs. It
  * takes the blade's place, whatever blade was bought, and is worked with Space and E, or the pad's buttons.
+ *
+ * Priced against the blades it replaces. Over a long push the first keeps hold of what a blade 10 across
+ * does, which is 380 of blades, and the second of what the widest does, which is 1,180; each costs about half
+ * as much again as those, for the lifting and carrying a blade cannot do. The third pushes more than any
+ * blade made, and its step is as much again as the second's, as the steps of the engine and the magnet grow.
+ * `test/slow/scoop.test.ts` measures the pushing and holds the prices to it.
  */
 export const SCOOP: { width: number; cost: number }[] = [
   { width: 0, cost: 0 },
-  { width: 9, cost: 250 },
-  { width: 11.5, cost: 700 },
-  { width: 14, cost: 1600 },
+  { width: 9, cost: 600 },
+  { width: 11.5, cost: 1100 },
+  { width: 14, cost: 2000 },
 ];
 
 /** The sizes of scoop the workshop sells: a save is held to them. */
@@ -170,7 +176,8 @@ export const WALL_STRENGTH = [0, 40, 110, 260];
 /** A hit counts from this speed, and at this one and above is a full one. */
 const RAM_FROM = 3,
   RAM_FULL = 11;
-const BLADE: { width: number; cost: number }[] = [
+/** The blade at each level: how wide it is, and what that level costs. */
+export const BLADE: { width: number; cost: number }[] = [
   { width: 6.5, cost: 0 },
   { width: 8, cost: 80 },
   { width: 10, cost: 300 },
