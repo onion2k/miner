@@ -129,6 +129,51 @@ async function loadBucket(page: Page, n: number, view = { radius: 20, ahead: 0 }
   expect(held.lift, raised ? 'and the bucket is up' : 'and the bucket is on the ground').toBe(raised ? 1 : 0);
 }
 
+/**
+ * What the workshop's rows say, top to bottom: each thing's name and what is in its price's place. Read as
+ * words, beside the picture, because a price is a few pixels: 250 turned to 600 and the picture's tolerance
+ * did not notice, so the picture alone held the workshop to a figure it no longer showed.
+ */
+async function workshopSays(page: Page): Promise<[string, string][]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('#shop .rows button')).map((b): [string, string] => [
+      // the name is the row's first words, before the smaller line under it
+      (b.querySelector('span')?.childNodes[0].textContent ?? '').trim(),
+      (b.querySelector('.cost')?.textContent ?? '').trim(),
+    ]),
+  );
+}
+
+/**
+ * What the workshop sells a machine with one drone and a horn and nothing else, and for how much, written out
+ * here and not read from the game: a price changed in the game changes this by hand, and the pictures with it.
+ * The belts are the cave's, and go between the magnet and the drone.
+ */
+const SOLD = (belts: [string, string][]): [string, string][] => [
+  ['Engine Mk 2', '50'],
+  ['Wider blade', '80'],
+  ['Scoop', '600'],
+  ['Magnet Mk 2', '100'],
+  ...belts,
+  ['Robo-dozer 2', '1200'],
+  ['Works Yellow', 'worn'],
+  ['Fire Engine', '150'],
+  ['Deep Sea', '150'],
+  ['Mint Choc', '200'],
+  ['Bubblegum', '200'],
+  ['Midnight', '300'],
+  ['Chrome', '800'],
+  ['Tracks', 'worn'],
+  ['Spiderdozer', '800'],
+  ['Air horn', '✓'],
+  ['Pennant', '120'],
+];
+const SOUTH_BELTS: [string, string][] = [['Conveyor to the South Gallery', '250']];
+const EAST_BELTS: [string, string][] = [
+  ['Conveyor, top of the ring', '400'],
+  ['Conveyor, bottom of the ring', '450'],
+];
+
 /** The middle of the cave's heaps, so each picture is aimed at where its coins are and not at a hard-coded point. */
 async function heart(page: Page): Promise<[number, number]> {
   return page.evaluate(() => {
@@ -691,6 +736,7 @@ test.describe('what it looks like', () => {
     await page.keyboard.press('b');
     await page.evaluate(() => window.pushminer!.step(1));
     await expect(page.locator('#shop')).toBeVisible();
+    expect(await workshopSays(page), 'every name and price, as words').toEqual(SOLD(SOUTH_BELTS));
     await hideStats(page);
     await expect(page).toHaveScreenshot('workshop.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -839,6 +885,7 @@ test.describe('what it looks like on a phone', () => {
       buttons.map((b) => b.scrollWidth <= b.clientWidth + 1 && b.getBoundingClientRect().right <= window.innerWidth),
     );
     expect(fits, 'both belt buttons fit the screen, names and all').toEqual([true, true]);
+    expect(await workshopSays(page), 'every name and price, as words').toEqual(SOLD(EAST_BELTS));
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone-workshop-east.png', TOLERANCE);
     expect(problems).toEqual([]);
@@ -863,6 +910,7 @@ test.describe('what it looks like on a phone', () => {
     await page.locator('#shopButton').click();
     await page.evaluate(() => window.pushminer!.step(1));
     await expect(page.locator('#shop')).toBeVisible();
+    expect(await workshopSays(page), 'every name and price, as words').toEqual(SOLD(SOUTH_BELTS));
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone-workshop.png', TOLERANCE);
     expect(problems).toEqual([]);
