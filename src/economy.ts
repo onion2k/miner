@@ -794,6 +794,8 @@ export function renderShop(rows: HTMLElement, economy: Economy, offers = economy
     btn.className = o.active ? 'owned active' : o.owned ? 'owned' : '';
     const cost = o.active ? 'worn' : o.owned ? (wearable ? 'wear' : '✓') : !o.available ? 'locked' : `${o.cost}`;
     btn.innerHTML = `<span>${o.title}<small>${o.sub}</small></span><span class="cost">${cost}</span>`;
+    // the paint shop's rows are drawn small at a desk, their second line left out: it is here for the pointer to ask for
+    if (rows.classList.contains('cosmetics')) btn.title = o.sub;
   });
   while (rows.children.length > offers.length) rows.lastChild!.remove();
 }

@@ -221,6 +221,46 @@ test('opens and closes the workshop', async ({ page }, info) => {
   expect(problems).toEqual([]);
 });
 
+test('shows the whole workshop at a desk with nothing to scroll, in the cave with the most to sell', async ({
+  page,
+}) => {
+  const problems = watch(page);
+  // the east gallery has two belts, so its workshop is the longest there is
+  await start(page, { save: { cave: 'east-gallery' } });
+  await page.keyboard.press('b');
+  const shop = page.locator('#shop');
+  await expect(shop).toBeVisible();
+  const seen = await page.evaluate(() => {
+    const shop = document.getElementById('shop')!;
+    const scrolls = (e: Element) => e.scrollHeight > e.clientHeight + 1;
+    const rows = Array.from(shop.querySelectorAll('.rows button')).map((b) => {
+      const r = b.getBoundingClientRect();
+      return { id: (b as HTMLElement).dataset.id, top: r.top, bottom: r.bottom, height: r.height };
+    });
+    return {
+      rows,
+      scrolling: [shop, ...Array.from(shop.querySelectorAll('.rows'))].filter(scrolls).length,
+      panel: shop.getBoundingClientRect().toJSON() as { top: number; bottom: number },
+      height: innerHeight,
+    };
+  });
+  expect(
+    seen.rows.map((r) => r.id).filter((id) => /^(engine|blade|scoop|magnet|drone|belt:)/.test(id ?? '')),
+    'everything the workshop sells here',
+  ).toHaveLength(7);
+  expect(seen.rows.length, 'and the paint shop under it').toBeGreaterThan(7);
+  expect(seen.scrolling, 'no list of it scrolls, and nor does the panel').toBe(0);
+  expect(seen.panel.top, 'the panel is on the screen').toBeGreaterThanOrEqual(0);
+  expect(seen.panel.bottom).toBeLessThanOrEqual(seen.height);
+  for (const r of seen.rows) {
+    expect(r.top, `${r.id} is on the screen`).toBeGreaterThanOrEqual(seen.panel.top);
+    expect(r.bottom, `${r.id} is on the screen`).toBeLessThanOrEqual(seen.panel.bottom);
+    // small, but still something a pointer can hit
+    expect(r.height, `${r.id} is big enough to press`).toBeGreaterThanOrEqual(24);
+  }
+  expect(problems).toEqual([]);
+});
+
 test('keeps the game where it was across a reload', async ({ page }) => {
   const problems = watch(page);
   await start(page);

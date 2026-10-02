@@ -209,8 +209,6 @@
   #shop .rows {
     display: grid;
     gap: 6px;
-    max-height: 70vh;
-    overflow: auto;
   }
   #shop button {
     font: inherit;
@@ -252,8 +250,31 @@
   #shop h2.later {
     margin-top: 12px;
   }
-  #shop .rows {
-    max-height: 34vh;
+  /* At a desk the whole workshop is on the screen at once, with nothing to scroll: a list that scrolled hid
+     the conveyor and the drones under the fold. Its rows are small, and the paint shop's, which all say much
+     the same under their names, stand two to a line with those words left to the tooltip. Only a window
+     too short for even that scrolls, and then as one panel. */
+  body:not(.touch) #shop {
+    width: 360px;
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+  }
+  body:not(.touch) #shop .rows {
+    gap: 4px;
+  }
+  body:not(.touch) #shop button {
+    padding: 4px 9px;
+    font-size: 13px;
+    line-height: 1.25;
+  }
+  body:not(.touch) #shop button small {
+    font-size: 12px;
+  }
+  body:not(.touch) #shop .rows.cosmetics {
+    grid-template-columns: 1fr 1fr;
+  }
+  body:not(.touch) #shop .rows.cosmetics small {
+    display: none;
   }
   #shop .foot {
     margin-top: 8px;
