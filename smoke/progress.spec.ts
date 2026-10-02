@@ -958,7 +958,7 @@ test('the black is drawn, with the words in it, before the next cave is built', 
 test.describe('the scoop on a phone', () => {
   test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
 
-  test('has its button on the pad once bought: tapped, the bucket goes up and down, and a tip button takes the horn’s place while it is up', async ({
+  test('has its button on the pad once bought: tapped, the bucket goes up and down, and a tip button is there beside it while it is up', async ({
     page,
   }) => {
     const problems = watch(page);
@@ -976,21 +976,8 @@ test.describe('the scoop on a phone', () => {
     });
     await expect(button, 'the button once it is bought').toBeVisible();
     await expect(tip, 'nothing to tip while the bucket is down').toBeHidden();
-    // every button on the pad is on the screen and clear of the sliders, whichever of them are showing
-    const clear = async (when: string) => {
-      for (const b of await page.locator('#pad button:visible').all()) {
-        const box = (await b.boundingBox())!;
-        expect(box.x, `${when}: inside the left edge`).toBeGreaterThanOrEqual(0);
-        expect(box.x + box.width, `${when}: inside the right edge`).toBeLessThanOrEqual(400);
-        for (const id of ['#trackLeft', '#trackRight']) {
-          const rail = (await page.locator(id).boundingBox())!;
-          const apart = box.x + box.width <= rail.x || box.x >= rail.x + rail.width || box.y + box.height <= rail.y;
-          expect(apart, `${when}: a pad button clear of ${id}`).toBe(true);
-        }
-      }
-    };
     await expect(horn).toBeVisible();
-    await clear('bucket down');
+    expect(await reachable(page), 'bucket down: every button is where a finger gets it').toEqual([]);
     const content = await page.evaluate(() => window.pushminer!.content());
     const held = () => page.evaluate(() => window.pushminer!.state().scoop.held);
     await layInMouth(page, content.hole.x, content.hole.y - 24, 6);
@@ -998,14 +985,13 @@ test.describe('the scoop on a phone', () => {
     await page.evaluate(() => window.pushminer!.step(40));
     expect(await held(), 'tapped: up, with what was in it').toBe(6);
     await expect(tip, 'a button to tip it, now there is something to tip').toBeVisible();
-    await expect(horn, 'in the horn’s place').toBeHidden();
-    await clear('bucket up');
+    await expect(horn, 'and the horn is still there').toBeVisible();
+    expect(await reachable(page), 'bucket up: every button is where a finger gets it').toEqual([]);
     // tapped again it comes down, and sets its load down
     await button.tap();
     await page.evaluate(() => window.pushminer!.step(40));
     expect(await page.evaluate(() => window.pushminer!.state().scoop)).toMatchObject({ held: 0, up: false, lift: 0 });
     await expect(tip).toBeHidden();
-    await expect(horn, 'the horn is back').toBeVisible();
     // up once more, and tipped
     await button.tap();
     await page.evaluate(() => window.pushminer!.step(40));
@@ -1027,6 +1013,92 @@ test.describe('the scoop on a phone', () => {
     expect(problems).toEqual([]);
   });
 });
+
+/**
+ * Whether a finger on each button of a phone gets that button: at its middle and near each of its corners, the
+ * thing on top there is the button itself. A slider's hit area is wider than what is drawn of it, so a button
+ * whose box is clear of a slider's box can still be under the slider; this asks what the finger asks.
+ */
+async function reachable(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const under: string[] = [];
+    for (const b of Array.from(document.querySelectorAll<HTMLElement>('#pad button, #options button'))) {
+      if (b.hidden) continue;
+      const r = b.getBoundingClientRect();
+      if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight)
+        under.push(`${b.id} is off the screen`);
+      const inset = 4;
+      for (const [x, y] of [
+        [(r.left + r.right) / 2, (r.top + r.bottom) / 2],
+        [r.left + inset, (r.top + r.bottom) / 2],
+        [r.right - inset, (r.top + r.bottom) / 2],
+        [(r.left + r.right) / 2, r.top + inset],
+        [(r.left + r.right) / 2, r.bottom - inset],
+      ]) {
+        const top = document.elementFromPoint(x, y);
+        if (top !== b && !b.contains(top)) {
+          under.push(
+            `${b.id} is under ${top instanceof HTMLElement ? top.id || top.className || top.tagName : 'nothing'}`,
+          );
+          break;
+        }
+      }
+    }
+    return under;
+  });
+}
+
+for (const [name, viewport] of [
+  ['a Pixel 7a', { width: 412, height: 839 }],
+  ['a small phone', { width: 320, height: 640 }],
+  ['a phone on its side', { width: 839, height: 412 }],
+] as const) {
+  test.describe(`the buttons on ${name}`, () => {
+    test.use({ viewport, hasTouch: true, isMobile: true });
+
+    test('are each where a finger gets them and not a slider: the controls along the bottom, the options in the top left corner', async ({
+      page,
+    }) => {
+      const problems = watch(page);
+      // everything owned and the bucket up, which is the most buttons there are at once
+      await start(page, { seed: 1, paused: true, save: { horn: true, scoop: 1 } });
+      await page.evaluate(() => {
+        const p = window.pushminer!;
+        p.pause();
+        p.scoop();
+        p.step(30);
+      });
+      for (const id of ['shopButton', 'hornButton', 'scoopButton', 'tipButton'])
+        await expect(page.locator(`#pad #${id}`), `${id} is a control, along the bottom`).toBeVisible();
+      // what is set once and left is out of the way of the thumbs, in the corner
+      for (const id of ['muteButton', 'cameraButton', 'controlsButton']) {
+        const b = page.locator(`#options #${id}`);
+        await expect(b, `${id} is an option, in the corner`).toBeVisible();
+        const box = (await b.boundingBox())!;
+        expect(box.y + box.height, `${id} at the top`).toBeLessThan(viewport.height / 4);
+        expect(box.x + box.width, `${id} on the left`).toBeLessThan(viewport.width / 2);
+      }
+      expect(await reachable(page), 'a lever each track').toEqual([]);
+      // and with the steering lying across on the right, which is the other way of driving
+      await page.locator('#controlsButton').tap();
+      await expect(page.locator('#steer')).toBeVisible();
+      expect(await reachable(page), 'throttle and steering').toEqual([]);
+      // the word at the top is not laid over the options: said, then looked for
+      await page.evaluate(() => window.pushminer!.step(1));
+      const note = (await page.locator('#cameraNote').boundingBox())!;
+      for (const id of ['muteButton', 'cameraButton', 'controlsButton']) {
+        const box = (await page.locator(`#${id}`).boundingBox())!;
+        const apart =
+          box.x + box.width <= note.x ||
+          box.x >= note.x + note.width ||
+          box.y + box.height <= note.y ||
+          box.y >= note.y + note.height;
+        expect(apart, `the note clear of ${id}`).toBe(true);
+      }
+      expect(problems).toEqual([]);
+    });
+  });
+}
 
 test('Space after buying the scoop from the workshop works the scoop and does not buy the next size', async ({
   page,

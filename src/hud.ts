@@ -202,6 +202,7 @@ export class Hud {
   readonly shopRows = this.shopPanel.querySelector('.rows') as HTMLElement;
   readonly shopCosmetics = this.shopPanel.querySelector('.rows.cosmetics') as HTMLElement;
   private readonly shopButton = byId<HTMLButtonElement>('shopButton');
+  private readonly options = byId('options');
   readonly map = new Minimap();
   private noteFor = 0;
 
@@ -277,6 +278,8 @@ export class Hud {
     this.shopPanel.hidden = !open;
     this.shopButton.textContent = open ? 'close' : 'shop';
     this.map.cover(open);
+    // the workshop fills the top of a phone's screen too, and an option half under its edge is one half pressable
+    this.options.classList.toggle('covered', open);
   }
 
   /**
@@ -319,14 +322,15 @@ export interface PadActions {
 }
 
 /**
- * A phone's buttons along the bottom, and the sliders either side: shown, and
- * wired to `actions`. Returns what the page needs to keep them saying the
+ * A phone's buttons, the controls along the bottom and the options in the top
+ * left corner, and the sliders either side: shown, and wired to `actions`. Returns what the page needs to keep them saying the
  * right thing.
  */
 export function setupPad(actions: PadActions, muted: boolean, scheme: 'tracks' | 'stick') {
   document.body.classList.add('touch');
   byId('tracks').hidden = false;
   byId('pad').hidden = false;
+  byId('options').hidden = false;
   const controlsButton = byId<HTMLButtonElement>('controlsButton');
   const hornButton = byId<HTMLButtonElement>('hornButton');
   const scoopButton = byId<HTMLButtonElement>('scoopButton');
@@ -356,13 +360,12 @@ export function setupPad(actions: PadActions, muted: boolean, scheme: 'tracks' |
     e.preventDefault();
     actions.tip();
   });
-  // The pad has room for six and no seventh, so the tip's button takes the horn's place while there is a
-  // bucket up to tip: with a load in the air the horn is the one that can wait.
+  // the tip's button is there while there is a bucket up to tip, beside the others
   const has = { horn: false, scoop: false, up: false };
   const show = () => {
     scoopButton.hidden = !has.scoop;
     tipButton.hidden = !(has.scoop && has.up);
-    hornButton.hidden = !has.horn || !tipButton.hidden;
+    hornButton.hidden = !has.horn;
     scoopButton.setAttribute('aria-label', has.up ? 'lower the scoop' : 'raise the scoop');
   };
   // straight to the sound, not through the input's once-a-frame flag: two taps inside

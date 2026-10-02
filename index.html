@@ -298,6 +298,7 @@
      Kept small and see-through: on a 412 by 915 phone the first version's sliders and buttons covered
      nearly half the cave. A slider's hit area is wider than what is drawn of it. ---- */
   #pad,
+  #options,
   #tracks {
     display: none;
   }
@@ -317,10 +318,13 @@
   body.touch #tracks:not([hidden]) {
     display: block;
   }
-  body.touch #pad:not([hidden]) {
+  body.touch #pad:not([hidden]),
+  body.touch #options:not([hidden]) {
     display: flex;
   }
-  /* the buttons, in one row at the bottom between the sliders: mute, shop, and the horn and the scoop once they are bought */
+  /* The controls, in one row at the bottom between the sliders: the shop, and the horn and the scoop's two once
+     they are bought. Four at the most, which is what fits between two sliders on the narrowest phone: a
+     slider is touched well past what is drawn of it, and a button laid under that is a button that steers. */
   #pad {
     position: fixed;
     bottom: calc(14px + env(safe-area-inset-bottom));
@@ -329,7 +333,26 @@
     gap: 10px;
     align-items: center;
   }
-  #pad button {
+  /* The options, in the top left corner: the sound, the camera and the way of driving are set and left, so
+     they are out of the way of the thumbs, across the top from the map. */
+  #options {
+    position: fixed;
+    top: calc(12px + env(safe-area-inset-top));
+    left: calc(12px + env(safe-area-inset-left));
+    gap: 8px;
+    align-items: center;
+  }
+  #options.covered {
+    visibility: hidden;
+  }
+  /* on its side a phone's left slider runs the whole height of the screen, and the options stand clear of it */
+  @media (orientation: landscape) {
+    #options {
+      left: calc(14vmin + 8px + env(safe-area-inset-left));
+    }
+  }
+  #pad button,
+  #options button {
     font: inherit;
     color: var(--ink);
     background: rgba(14, 12, 20, 0.55);
@@ -342,7 +365,8 @@
   #pad button[hidden] {
     display: none;
   }
-  #pad button:active {
+  #pad button:active,
+  #options button:active {
     background: rgba(242, 193, 78, 0.25);
   }
   #hornButton,
@@ -542,8 +566,9 @@
     height: 88px;
     border-radius: 10px;
   }
-  /* the word at the top keeps to the room the map leaves it, and is centred in that */
+  /* the word at the top keeps to the room the map leaves it, and is centred in that, under the options */
   body.touch #cameraNote {
+    top: calc(60px + env(safe-area-inset-top));
     left: 12px;
     right: calc(var(--map-right) + 88px + 8px);
     transform: none;
@@ -609,11 +634,13 @@
     <button id="reset" type="button">start over</button>
   </div>
 </div>
-<div id="pad" hidden>
+<div id="options" hidden>
   <button id="muteButton" type="button" aria-label="mute">🔊</button>
   <button id="cameraButton" type="button" aria-label="camera">🎥</button>
-  <button id="shopButton" type="button">shop</button>
   <button id="controlsButton" type="button" aria-label="switch controls">⇅⇅</button>
+</div>
+<div id="pad" hidden>
+  <button id="shopButton" type="button">shop</button>
   <button id="hornButton" type="button" aria-label="horn" hidden>📯</button>
   <button id="scoopButton" type="button" aria-label="raise the scoop" hidden>🪣</button>
   <button id="tipButton" type="button" aria-label="tip the scoop out" hidden>⤵</button>

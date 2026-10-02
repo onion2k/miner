@@ -911,8 +911,13 @@ test.describe('what it looks like on a phone', () => {
     await page.evaluate(() => window.pushminer!.step(1));
     await expect(page.locator('#shop')).toBeVisible();
     expect(await workshopSays(page), 'every name and price, as words').toEqual(SOLD(SOUTH_BELTS));
+    // the options step aside, as the map does: one half under the workshop's edge would be half a button
+    await expect(page.locator('#muteButton')).toBeHidden();
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone-workshop.png', TOLERANCE);
+    await page.locator('#shopButton').click();
+    await page.evaluate(() => window.pushminer!.step(1));
+    await expect(page.locator('#muteButton'), 'and are back when it shuts').toBeVisible();
     expect(problems).toEqual([]);
   });
 });

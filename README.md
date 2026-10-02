@@ -60,8 +60,8 @@ barrels and geodes are left. Raised, it pushes nothing, though the hull still
 shoves, and its load does not slow the dozer the way pushing a heap does,
 since nothing carried presses on it. Press **Space** again and it comes down
 and sets the load down inside it, to be pushed along while more is gathered,
-and lifted again with the rest. Press **E** (on a phone, the button that takes
-the horn's place while the bucket is up) to tip it out ahead, at the dozer's
+and lifted again with the rest. Press **E** (on a phone, the button beside the
+scoop's while the bucket is up) to tip it out ahead, at the dozer's
 speed and a little more: at the hole's lip, that banks it, and the empty
 bucket comes down by itself. It reaches back to the hull's nose, for the coins
 in a corner or against a wall that are behind its back when it is driven

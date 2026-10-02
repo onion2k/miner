@@ -316,7 +316,14 @@ test.describe('on a phone', () => {
     await page.locator('#cameraButton').tap();
     await page.evaluate(() => window.pushminer!.step(1));
     await expect(page.locator('#cameraNote')).toBeVisible();
-    const mine = await expectMapClear(page, ['#trackLeft', '#trackRight', '#pad button', '#cameraNote', '#toast']);
+    const mine = await expectMapClear(page, [
+      '#trackLeft',
+      '#trackRight',
+      '#pad button',
+      '#options button',
+      '#cameraNote',
+      '#toast',
+    ]);
     const inset = await page.evaluate(() => {
       const probe = document.createElement('div');
       probe.style.cssText =
@@ -360,7 +367,13 @@ test.describe('on a phone turned on its side', () => {
     await page.evaluate(() => window.pushminer!.step(30));
     await page.locator('#cameraButton').tap();
     await page.evaluate(() => window.pushminer!.step(1));
-    const mine = await expectMapClear(page, ['#trackLeft', '#trackRight', '#pad button', '#cameraNote']);
+    const mine = await expectMapClear(page, [
+      '#trackLeft',
+      '#trackRight',
+      '#pad button',
+      '#options button',
+      '#cameraNote',
+    ]);
     expect(mine.top, 'still at the top').toBeLessThan(40);
     expect(mine.right, 'inside the screen').toBeLessThanOrEqual(860);
     expect(problems).toEqual([]);
