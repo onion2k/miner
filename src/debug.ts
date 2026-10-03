@@ -33,6 +33,8 @@ export interface GameState {
   paused: boolean;
   bank: number;
   banked: number;
+  /** What has been paid of the cave's toll, and what it is in all (nought for the last cave). */
+  toll: { paid: number; of: number };
   /** The id of the cave the game is in, and whether its way out is open. */
   cave: string;
   open: boolean;
@@ -160,6 +162,7 @@ export interface PushminerApi {
   teleport(x: number, y: number, yaw?: number): void;
   /** A body moved to a point, still, and woken. */
   place(slot: number, x: number, y: number, z?: number): void;
+  /** Money put straight in the bank, past the toll: what a test needs to buy with. Not banked in the cave, so it opens nothing. */
   deposit(value: number): void;
   buy(id: string): boolean;
   /** The way out opened, as banking enough of the cave would. */
@@ -263,6 +266,7 @@ export function createApi(host: DebugHost): PushminerApi {
         paused: host.paused(),
         bank: save.bank,
         banked: save.banked,
+        toll: { paid: save.toll, of: g.economy.tollDue() },
         cave: save.cave,
         open: save.open,
         runway: host.runway(),
@@ -388,7 +392,7 @@ export function createApi(host: DebugHost): PushminerApi {
       world.vx[slot] = world.vy[slot] = world.vz[slot] = 0;
       world.wake(slot);
     },
-    deposit: (value) => game().economy.deposit(value),
+    deposit: (value) => game().economy.grant(value),
     buy: (id) => game().economy.buy(id),
     openExit: () => game().economy.open(),
     rebuild: () => host.rebuild(),

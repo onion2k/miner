@@ -329,7 +329,8 @@ test.describe('what it looks like', () => {
   // the map where it is busiest: the Warrens by its second hole, drones at work, the camera off its home heading
   test('the map in the warrens, by the second hole, with drones at work', async ({ page }) => {
     const problems = watch(page);
-    await begin(page, inCave('warrens', { bank: 500, drones: 3 }));
+    // the toll owed, so the drones' first coins do not open the way out and turn the map gold
+    await begin(page, inCave('warrens', { bank: 500, drones: 3, toll: 0 }));
     const hole = (await page.evaluate(() => window.pushminer!.content().holes))[1];
     await scene(page, { x: hole.x, y: hole.y, radius: 70 }, 1200, [hole.x, hole.y - 14, Math.PI / 2]);
     await expect(page.locator('#minimap')).toBeVisible();
@@ -783,7 +784,8 @@ test.describe('what it looks like on a phone', () => {
 
   test('the map on a phone in the warrens, by the second hole, with drones at work', async ({ page }) => {
     const problems = watch(page);
-    await begin(page, inCave('warrens', { bank: 500, drones: 3 }));
+    // the toll owed, so the drones' first coins do not open the way out and turn the map gold
+    await begin(page, inCave('warrens', { bank: 500, drones: 3, toll: 0 }));
     const hole = (await page.evaluate(() => window.pushminer!.content().holes))[1];
     await scene(page, { x: hole.x, y: hole.y, radius: 84 }, 1200, [hole.x, hole.y - 14, Math.PI / 2]);
     await expect(page.locator('#minimap')).toBeVisible();

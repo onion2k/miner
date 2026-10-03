@@ -247,14 +247,15 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   const atLip = await page.evaluate(() => window.pushminer!.state());
   expect(atLip.scoop.held, 'still holding all of it').toBe(lot.length);
   // the drone bought earlier is banking coins of its own, so it is these coins that are watched, not the bank
-  const bankAtLip = atLip.bank;
+  // (and by the haul and not the bank, since half of each coin banked in a cave is its toll's)
+  const bankAtLip = atLip.banked;
   await page.keyboard.press('e');
   await play(page, 240, 'tipped into the hole');
   const tipped = await page.evaluate(() => window.pushminer!.state());
   expect(tipped.scoop, 'E tips it out, and the bucket comes down').toMatchObject({ held: 0, up: false, lift: 0 });
   const left = (await page.evaluate(() => window.pushminer!.bodies('coin'))).map((b) => b.slot);
   for (const slot of lot) expect(left, `coin ${slot} banked`).not.toContain(slot);
-  expect(tipped.bank - bankAtLip, 'banked, by at least the load').toBeGreaterThanOrEqual(lot.length);
+  expect(tipped.banked - bankAtLip, 'banked, by at least the load').toBeGreaterThanOrEqual(lot.length);
   expect(await said('tipped')).toEqual([`tipped ${lot.length}`]);
 
   // the workshop sells the belts of the cave the player is in, and the hollow has none
@@ -460,7 +461,8 @@ test('a geode in the Hollow cracked by a barrel put beside it and lit: gems thro
 
   // pushed down the hole, they pay: the bank rises by what they are worth, and the cave is no nearer cleared
   const worth = { ruby: 10, emerald: 25, sapphire: 40, diamond: 100, 'gold bar': 250 } as Record<string, number>;
-  const bankBefore = after.bank;
+  // by the haul, and not the bank: half of what is banked in the cave goes to its toll, a bonus like any other
+  const bankBefore = after.banked;
   await page.evaluate(
     (slots) => {
       const p = window.pushminer!;
@@ -470,9 +472,89 @@ test('a geode in the Hollow cracked by a barrel put beside it and lit: gems thro
   );
   await play(page, 240, 'the gems down the hole');
   const paid = await page.evaluate(() => window.pushminer!.state());
-  expect(paid.bank - bankBefore, 'paid for what went down').toBe(gems.reduce((sum, g) => sum + worth[g.kind], 0));
+  expect(paid.banked - bankBefore, 'paid for what went down').toBe(gems.reduce((sum, g) => sum + worth[g.kind], 0));
+  expect(paid.toll.paid, 'the toll took about half').toBeGreaterThan(0);
+  expect(paid.toll.paid + paid.bank, 'and the bank the rest').toBe(paid.banked);
   expect(paid.geodes.gems, 'none left lying').toBe(0);
   expect(paid.open, 'a bonus does not open the way out').toBe(false);
+  expect(problems).toEqual([]);
+});
+
+test('the Hollow’s toll, from a fresh save: half of each coin fills it, the bank has the other half, and paying it opens the way out', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const problems = watch(page);
+  // a fresh game: no save, so nothing is paid, and the toll is owed in full
+  await start(page, { seed: 3, paused: true });
+  await page.evaluate(() => {
+    window.pushminer!.pause();
+    window.pushminer!.seed(3);
+  });
+  const hole = (await page.evaluate(() => window.pushminer!.content())).hole;
+  /** `n` coins from the heaps set down at the hole, a ring of them, and let fall. */
+  const send = (n: number) =>
+    page.evaluate(
+      ([n, x, y]) => {
+        const api = window.pushminer!;
+        const coins = api.bodies('coin').filter((b) => !b.carried && Math.hypot(b.x - x, b.y - y) > 8);
+        if (coins.length < n) throw new Error(`only ${coins.length} coins left to send`);
+        coins.slice(0, n).forEach((c, k) => {
+          const a = k * 2.399,
+            r = 0.4 + (k % 7) * 0.25;
+          api.place(c.slot, x + Math.cos(a) * r, y + Math.sin(a) * r, 2 + (k % 5) * 0.1);
+        });
+        api.step(300);
+      },
+      [n, hole.x, hole.y] as const,
+    );
+  const read = () => page.evaluate(() => window.pushminer!.state());
+
+  await page.evaluate(() => window.pushminer!.step(2));
+  /** `n` coins banked, in batches that fit round the hole. */
+  const bank = async (n: number) => {
+    for (let left = n; left > 0; left -= 400) await send(Math.min(400, left));
+  };
+  const fresh = await read();
+  expect(fresh.toll, 'owed in full to begin with').toEqual({ paid: 0, of: 1000 });
+  expect((await screen(page)).progress, 'the line says what is owed').toBe('The Hollow: toll 0 of 1,000');
+
+  await bank(640);
+  const part = await read();
+  expect(part.toll, 'half of each coin went to the toll').toEqual({ paid: 320, of: 1000 });
+  expect(part.bank, 'and half is the bank’s').toBe(320);
+  expect(part.banked, 'every coin banked').toBe(640);
+  expect(part.open).toBe(false);
+  expect((await screen(page)).progress, 'the line fills').toBe('The Hollow: toll 320 of 1,000');
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
+
+  await bank(1358);
+  const nearly = await read();
+  expect([nearly.toll.paid, nearly.bank, nearly.open], 'of 1,998, half and half').toEqual([999, 999, false]);
+  expect((await screen(page)).progress).toBe('The Hollow: toll 999 of 1,000');
+  await page.evaluate(() => window.pushminer!.events());
+
+  // the coin that pays it opens the way out, and the page says so
+  await send(1);
+  const paid = await read();
+  expect(paid.toll, 'paid').toEqual({ paid: 1000, of: 1000 });
+  expect(paid.bank, 'and the bank has had its half').toBe(999);
+  expect(paid.open, 'the way out is open').toBe(true);
+  const heard = await page.evaluate(() => window.pushminer!.events());
+  expect(
+    heard.filter((e) => e === 'tollPaid'),
+    'told once',
+  ).toHaveLength(1);
+  expect(heard).toContain('exitOpened');
+  const words = await screen(page);
+  expect(words.progress, 'the line is as it is for any open cave').toContain('the way out is open');
+  expect(words.progress).not.toContain('toll');
+
+  // and the next coin is the player’s
+  await send(1);
+  const after = await read();
+  expect([after.toll.paid, after.bank, after.banked], 'of 2,000, a thousand each').toEqual([1000, 1000, 2000]);
+  expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
   expect(problems).toEqual([]);
 });
 
@@ -953,6 +1035,33 @@ test('the black is drawn, with the words in it, before the next cave is built', 
     'the swap came after the blackout',
   ).toBeGreaterThanOrEqual(0);
   expect(problems).toEqual([]);
+});
+
+test.describe('the toll on a phone', () => {
+  test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
+
+  test('is on the line the phone shows, in the workshop’s foot, whole and on the screen, while its balance is nothing but what it has been given', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 1, paused: true });
+    await page.evaluate(() => {
+      window.pushminer!.pause();
+      window.pushminer!.step(2);
+    });
+    // the counters at the top are not shown on a phone: the cave gets the screen, and the workshop is where the line is read
+    await expect(page.locator('#bank'), 'no counters on a phone').toBeHidden();
+    await page.locator('#shopButton').tap();
+    await page.evaluate(() => window.pushminer!.step(2));
+    const line = page.locator('#shopProgress');
+    await expect(line, 'the toll, in words').toHaveText('The Hollow: toll 0 of 1,000');
+    await expect(line).toBeVisible();
+    const box = (await line.boundingBox())!;
+    expect(box.x, 'on the screen at the left').toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, 'and not past the right').toBeLessThanOrEqual(400);
+    await expect(page.locator('#shopBalance'), 'nothing banked yet').toHaveText('0');
+    expect(problems).toEqual([]);
+  });
 });
 
 test.describe('the scoop on a phone', () => {

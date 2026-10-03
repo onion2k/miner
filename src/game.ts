@@ -55,6 +55,8 @@ export interface GameEvents {
   exitOpened?(faces: readonly [number, number][], heading: Heading): void;
   /** The player has driven out through the way out of the cave `from`, leaving `lost` in coins still in it. The game is finished with. */
   caveLeft?(from: string, lost: number): void;
+  /** The toll of the cave paid, by the coin just banked: the way out opens with it. Raised once. */
+  tollPaid?(): void;
   /** Something gone down a drain, worth `value` (nothing for a brick or a barrel), at (x, y): lost, and nothing banked. */
   drained?(kind: number, value: number, x: number, y: number): void;
   /** A hidden chamber smashed open, the rock in front of it at `faces`. */
@@ -127,7 +129,11 @@ export class Game {
   private readonly foreman: Foreman;
   private readonly pushers: Pusher[] = [];
   private readonly botPushers: Pusher[] = [];
-  private lastBank = -1;
+  private lastBanked = -1;
+  /** What had been banked in all when this game began, to tell whether anything has been banked in it since. */
+  private readonly haulAtStart: number;
+  /** The toll was owed when this game began and has not been paid since: said once, on the step it is. */
+  private owing: boolean;
   /** Something has gone down a drain since the cave's share was last looked at: the bank has not moved, but the share has. */
   private drainedSince = false;
   private recordAt = 0;
@@ -146,6 +152,8 @@ export class Game {
     arrived?: { speed: number },
   ) {
     this.arrived = !!arrived;
+    this.owing = economy.owed() > 0;
+    this.haulAtStart = economy.save.banked;
     const save = economy.save;
     this.cave = cave;
     this.capacity = capacityOf(cave.spec);
@@ -183,6 +191,11 @@ export class Game {
     // what the drones go for: the cave being cleared, and any chamber broken into off it
     this.foreman = new Foreman(this.world, this.nav, this.bots, this.stock.origin, (from) => from !== NO_SOURCE);
     this.unlisten = economy.onChange((id) => this.changed(id));
+  }
+
+  /** Whether anything has been banked since this game began: what the toll's opening of the way out waits for. */
+  get banking(): boolean {
+    return this.economy.save.banked !== this.haulAtStart;
   }
 
   /** Let go of the economy: a game that is finished with no longer hears of what is bought. */
@@ -316,10 +329,21 @@ export class Game {
     // enough of the cave banked, its way out opens; through the way out, the cave is left behind. What goes down a
     // drain raises the share without the bank, so it is looked at then too, or the last coins of a cave lost that way
     // would leave it cleared and shut
-    if (economy.bank !== this.lastBank || this.drainedSince) {
-      this.lastBank = economy.bank;
+    // the toll takes half of a coin, so the bank may not move with it, and it is the lifetime haul that says a coin was banked
+    if (save.banked !== this.lastBanked || this.drainedSince) {
+      this.lastBanked = save.banked;
       this.drainedSince = false;
-      if (!save.done && !save.open && this.stock.banked() >= CLEAR_SHARE) economy.open();
+      if (this.owing && economy.owed() === 0) {
+        this.owing = false;
+        this.events.tollPaid?.();
+      }
+      if (!save.done && !save.open) {
+        // the last cave has no toll to pay: it is cleared at the share alone. A save that arrives with its toll paid and
+        // the way out shut (paid by what was gone from the heaps before there was a toll) is as it says until a coin is
+        // banked, which settles it at once
+        const paid = !economy.isLast() && this.banking && economy.owed() === 0;
+        if (paid || this.stock.banked() >= CLEAR_SHARE) economy.open();
+      }
     }
     if (save.open && pastLeavingLine(this.cave, dozer.x, dozer.y)) {
       this.leave();

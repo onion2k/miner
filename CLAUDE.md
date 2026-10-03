@@ -57,9 +57,20 @@ the game to whatever it happened to draw that day.
   the rules that must always hold.
 - Content (heaps, walls, barrels, lamps, the way in and the way out) is
   built from a `CaveSpec` by `cave.ts`; the five specs, the run, are in
-  `caves.ts`. Prices and the save live in `economy.ts`. A cave is cleared at
-  `CLEAR_SHARE` banked, which opens its way out: a cutting of rock at the far
-  end, solid until then, through which the dozer drives into the next cave.
+  `caves.ts`. Prices and the save live in `economy.ts`. A cave with a way out has
+  a toll (`tollOf`: `TOLL_SHARE`, four tenths, of its heaps, to the nearest
+  hundred; none for the last cave): `TOLL_TAKE`, half, of every coin banked in it goes to the toll
+  until it is paid (whole coins: an odd value's odd coin goes to the toll when the lifetime haul is even and
+  to the bank when odd, so single coins alternate), and the rest raises `bank` (`save.toll` is what has been paid,
+  `Economy.owed()` what is left, `save.banked` still takes every coin). The way
+  out opens when the toll is paid or at `CLEAR_SHARE` banked, so a player is never
+  stranded: a cutting of rock at the far end, solid until then, through which the
+  dozer drives into the next cave. Nothing in the game is timed. The way-out check
+  in `Game.step` watches `save.banked`, since the toll may leave `bank` where it was;
+  a save that arrives with its toll paid and the way out shut waits for the next
+  coin. `Economy.grant` puts money straight in the bank (the test API's `deposit` uses it; the fuzzer's
+  `deposit`s go through the toll, to play it). Tests start paid: `PAID` in `test/helpers.ts`
+  (`saveIn`) and `smoke/pushminer.ts`; a test of the toll gives `toll: 0`.
   The page fades to black by `game.darkness()`, which is by position.
 
 ## Model features
@@ -158,6 +169,7 @@ For anything new in the cave, check what it does:
 
 - **the hole:** pushed down it, lit or moving
 - **leaving:** the cave left with it in it (lit, moving, on the way out's tiles when it opens): counted as lost, never carried over
+- **the toll:** banked while it is owed (it takes half of each coin, a find as a coin; the odd coin of an odd value), the coin that pays it (the rest of a deposit that is more than owed is the bank's), saved part paid, left with it paid (the next cave owes its own), the last cave (none), an old save without `toll` (paid by half of what has gone from the heaps)
 - **save:** saved, reloaded, and loaded from an old save without the field
 - **drones:** pushed by one, or targeted by the foreman
 - **other features:** blasts, the horn, belts, the magnet, brick walls and rubble,
@@ -165,7 +177,7 @@ For anything new in the cave, check what it does:
   banked, never in the rock, counted lost on leaving, and back in its heap on a reload;
   set down in it, it is on the floor like any other),
   geodes (a blast cracks one within `CRACK_RADIUS`; its gems are a bonus source,
-  never toward `CLEAR_SHARE`), currents (a body carried onto one, and down a drain:
+  never toward `CLEAR_SHARE`, though they pay the toll), currents (a body carried onto one, and down a drain:
   a lit barrel, a brick, a gem, a geode; saved and reloaded with `drained`; the last
   coins of a cave going down a drain still open the way out)
 - **rock:** against walls and in corridors; never left in rock

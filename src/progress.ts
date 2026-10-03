@@ -8,7 +8,11 @@ import { CLEAR_SHARE } from './economy';
 export interface Progress {
   cave(): { name: string };
   isLast(): boolean;
-  readonly save: { readonly done: boolean; readonly open: boolean };
+  readonly save: { readonly done: boolean; readonly open: boolean; readonly toll: number };
+  /** What is still owed of the cave's toll. */
+  owed(): number;
+  /** The cave's toll in all: nought for the last. */
+  tollDue(): number;
 }
 
 /** What the note says when the cave is cleared and the way out comes down. */
@@ -33,10 +37,16 @@ export function drainNote(lost: number): string {
 /** How long a run of things down a drain is added up for one note, in seconds: after that gap a new one begins. */
 export const DRAIN_NOTE_RUN = 2;
 
+/** A figure of coins with a comma at the thousands, the same in every locale. */
+const figure = (n: number) => Math.floor(n).toLocaleString('en-US');
+
 /** How far through the cave being cleared the player is, for the counters. */
 export function progressText(progress: Progress, banked: number): string {
   if (progress.save.done) return 'the cave is cleared';
   const name = progress.cave().name;
+  // while a toll is owed it is the first thing to do in the cave: the share it goes on to is for when it is paid
+  if (!progress.save.open && progress.owed() > 0)
+    return `${name}: toll ${figure(progress.save.toll)} of ${figure(progress.tollDue())}`;
   const share = `${name}: ${Math.floor(banked * 100)}% banked`;
   if (progress.save.open) return `${share} · the way out is open`;
   return `${share} · ${Math.round(CLEAR_SHARE * 100)}% ${progress.isLast() ? 'clears the cave' : 'opens the way out'}`;

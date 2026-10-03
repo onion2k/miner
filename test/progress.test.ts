@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { CLEAR_SHARE } from '../src/economy';
+import { CLEAR_SHARE, tollOf } from '../src/economy';
 import { ARRIVING_FOR, EXIT_OPEN_NOTE, arrivalNote, progressText, type Progress } from '../src/progress';
 import { RUN } from './helpers';
 
 /** What the economy says of where the player is: the cave `n` of the run, its way out open or not, the game done or not. */
-const at = (n: number, open: boolean, done = false): Progress => ({
+const at = (n: number, open: boolean, done = false, toll = tollOf(RUN[n])): Progress => ({
   cave: () => RUN[n],
   isLast: () => n === RUN.length - 1,
-  save: { open, done },
+  save: { open, done, toll },
+  owed: () => tollOf(RUN[n]) - toll,
+  tollDue: () => tollOf(RUN[n]),
 });
 
 describe('the progress line', () => {
@@ -16,6 +18,17 @@ describe('the progress line', () => {
       `${RUN[0].name}: 45% banked · ${CLEAR_SHARE * 100}% opens the way out`,
     );
     expect(progressText(at(1, false), 0.2)).toBe('South Gallery: 20% banked · 90% opens the way out');
+  });
+
+  it('says how much of the toll is paid while one is owed, with a comma at the thousands', () => {
+    expect(progressText(at(0, false, false, 640), 0.2)).toBe('The Hollow: toll 640 of 1,000');
+    expect(progressText(at(0, false, false, 0), 0)).toBe('The Hollow: toll 0 of 1,000');
+    expect(progressText(at(2, false, false, 1234), 0.3)).toBe('East Gallery: toll 1,234 of 1,500');
+  });
+
+  it('goes back to the share once the way out is open, whether the toll was paid or not', () => {
+    expect(progressText(at(0, true, false, 1000), 0.7)).toBe('The Hollow: 70% banked · the way out is open');
+    expect(progressText(at(0, true, false, 100), 0.95)).toBe('The Hollow: 95% banked · the way out is open');
   });
 
   it('says so when the way out is open', () => {

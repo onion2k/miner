@@ -6,7 +6,7 @@
  * holds is carried, worth something, and no more than it takes. The counts the
  * game keeps of what is in the cave agree with what is in it. The world's
  * holes are the cave's holes and then its drains. The bank is a
- * number, the scoop is a size the workshop sells, the save's cave is in the
+ * number, the toll paid is a number up to the cave's own and opens the way out, the scoop is a size the workshop sells, the save's cave is in the
  * run and every list of it is the cave's size, and the way out is open only
  * when enough is banked. The save is plain
  * data that comes back as it went.
@@ -15,7 +15,7 @@
  * and by the unit tests. Each broken rule is a line saying what and where.
  */
 import { EXIT, TILE } from './cave';
-import { CLEAR_SHARE, FORMER_LAST, SCOOP_SIZES } from './economy';
+import { CLEAR_SHARE, FORMER_LAST, SCOOP_SIZES, tollOf } from './economy';
 import type { Game } from './game';
 import { BARREL_KIND, GEODE_KIND, KINDS, KIND_NAME, KIND_VALUE } from './physics';
 import { SCOOP_MOST } from './scoop';
@@ -136,6 +136,8 @@ export function checkInvariants(game: Game): string[] {
   // the bank, and where the player has got to
   if (!Number.isFinite(save.bank) || save.bank < 0) out.push(`the bank: ${save.bank}`);
   if (!Number.isInteger(save.scoop) || save.scoop < 0 || save.scoop > SCOOP_SIZES) out.push(`the scoop: ${save.scoop}`);
+  const due = tollOf(spec);
+  if (!Number.isFinite(save.toll) || save.toll < 0 || save.toll > due) out.push(`the toll: ${save.toll} of ${due}`);
   if (!Number.isFinite(save.drained) || save.drained < 0) out.push(`down the drains: ${save.drained}`);
   if (!economy.run.some((c) => c.id === save.cave)) out.push(`the save's cave is not in the run: ${save.cave}`);
   else if (save.cave !== spec.id) out.push(`the game is in ${spec.id} and the save in ${save.cave}`);
@@ -164,6 +166,9 @@ export function checkInvariants(game: Game): string[] {
   // a game not yet stepped has not had the chance to notice that a save it was given has cleared the cave
   if (game.t > 0 && stock.banked() >= CLEAR_SHARE && !save.open && !save.done)
     out.push(`enough is banked (${Math.floor(stock.banked() * 100)}%) and the way out is shut`);
+  // the toll paid opens the way out, on the step its last coin is banked (a save that arrives paid and shut waits for one)
+  if (game.banking && due > 0 && save.toll >= due && !save.open && !save.done)
+    out.push(`the toll is paid (${save.toll} of ${due}) and the way out is shut`);
   // the way out's rock is solid exactly when it is shut
   for (let t = 0; t < cave.cells.length; t++) {
     if (cave.cells[t] === EXIT && world.solid[t] !== (save.open ? 0 : 1)) {

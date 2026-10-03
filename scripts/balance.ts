@@ -87,7 +87,7 @@ export function report(runs: PlayRun[]): string[] {
     `  purchases: ${f(mean(bought))} (${f((mean(runs.map((r) => r.spent)) / runs[0].workshop) * 100, 0)}% of the workshop), a thing every ${f(median(gaps))} min, longest wait ${f(mean(runs.map((r) => Math.max(0, ...r.purchases.slice(1).map((p, k) => p.minute - r.purchases[k].minute)))))} min; by thirds of the game ${thirds.map((n) => f(n)).join(' / ')}`,
   );
   out.push(
-    `  banked ${f(mean(runs.map((r) => r.banked)), 0)}, spent ${f(mean(runs.map((r) => r.spent)), 0)}, left in the bank ${f(mean(runs.map((r) => r.banked - r.spent)), 0)}; chambers ${f(mean(runs.map((r) => r.chambers)))}, walls ${f(mean(runs.map((r) => r.walls)))}`,
+    `  banked ${f(mean(runs.map((r) => r.banked)), 0)}, spent ${f(mean(runs.map((r) => r.spent)), 0)}, left in the bank ${f(mean(runs.map((r) => r.bank.at(-1) ?? 0)), 0)}; chambers ${f(mean(runs.map((r) => r.chambers)))}, walls ${f(mean(runs.map((r) => r.walls)))}`,
   );
   out.push(`  last bought: ${runs.map((r) => r.purchases.at(-1)?.id ?? '-').join(', ')}`);
   return out;

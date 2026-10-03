@@ -27,7 +27,7 @@ describe('the autopilot', () => {
 
   it('buys the cheapest thing in the workshop it can afford, as soon as it can', () => {
     withSeed(2, () => {
-      const game = newGame();
+      const game = gameIn('hollow');
       const pilot = new Autopilot(game, 'rusher');
       const [first, second] = game.economy
         .offers()
@@ -101,7 +101,7 @@ describe('the autopilot', () => {
   });
 
   it('leaves the drones as they were: the same machine, at its size', () => {
-    const game = newGame();
+    const game = gameIn('hollow');
     game.economy.deposit(700);
     game.economy.buy('drone');
     expect(game.bots[0].dozer.scale).toBe(BOT_SCALE);

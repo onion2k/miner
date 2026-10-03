@@ -11,9 +11,14 @@ _start over_ button.
 
 The run is five caves, one after another, and nothing refills them: the
 Hollow, then the South Gallery, the East Gallery, the North Vault and the West
-Gallery, each with dearer gems than the last. Bank nine tenths of what a cave
-holds and a stretch of its edge cracks open in a burst of rock and dust: the way
-out. It shows gold on the minimap, and the page says so. Chase the last tenth or
+Gallery, each with dearer gems than the last. Every cave with a way out has a
+toll, four tenths of what its heaps hold to the nearest hundred, and half of
+every coin banked in it goes to it until it is paid (the other half is yours, and
+the progress line reads "toll 640 of 1,000" meanwhile). Paying it, which takes
+about eight tenths of the heaps banked, or banking nine tenths of what
+the cave holds (so that nobody is stranded), cracks a stretch of its edge open in
+a burst of rock and dust: the way out. It shows gold on the minimap, and the page
+says so. Past the toll every whole coin banked is yours to spend. Chase the rest or
 leave it: drive down the way out, a cutting through the rock lit only by your
 own headlights, and the screen goes dark along it. Past the line at its end the
 cave behind is gone, with whatever was still in it (the next cave says how much),
@@ -236,7 +241,7 @@ barrels, pushing anything at all down the hole, setting barrels off, cracking ge
 up a load and tipping it out, buying things, opening the way out and going on into the next cave, saving and loading. After every
 few frames it checks the rules in `src/invariants.ts` — nothing in the rock,
 nothing not a number, the counts of what is in the cave agreeing with what is
-in it, every per-cave list the size of its cave, the way out open exactly when enough is banked, a save that comes back as it went — and
+in it, every per-cave list the size of its cave, the toll within its range and, once paid, the way out open, and the way out open when nine tenths are banked, a save that comes back as it went — and
 fails with the seed, the frame and what was done before it, to be played again
 with `--seed`. It only does what a player can: a monkey that did what no player
 can would find bugs no player will.

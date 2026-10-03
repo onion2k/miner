@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { checkInvariants } from '../src/invariants';
 import { BARREL_KIND } from '../src/physics';
 import { fuzz } from '../scripts/fuzzer';
-import { gameIn, newGame, specOf, withSeed } from './helpers';
+import { gameIn, newGame, saveIn, specOf, withSeed } from './helpers';
 
 const DT = 1 / 60;
 const still = { throttle: 0, steer: 0 };
 
 /** A new game on the first cave, and a note of every event it tells. */
-function told(json: string | null = null) {
+function told(json: string | null = saveIn('hollow')) {
   const log: string[] = [];
   const events = new Proxy(
     {},

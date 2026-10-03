@@ -114,12 +114,15 @@ export function losesToDrain(id: string, c: CurrentSpec) {
   });
 }
 
-/** A save of the cave with just over what it is cleared at lying in it, all of it coins: one coin gone clears it. */
+/**
+ * A save of the cave with just over what it is cleared at lying in it, all of it coins: one coin gone clears it. Its toll
+ * is unpaid, which is the point of it: it is nine tenths gone, and not the toll, that opens the way out.
+ */
 function nearlyCleared(id: string): string {
   const stocked = caveStock(specOf(id)).value;
   let lying = Math.floor((1 - CLEAR_SHARE) * stocked);
   while (1 - lying / stocked >= CLEAR_SHARE) lying++;
-  const fresh = JSON.parse(saveIn(id)) as { left: number[][] };
+  const fresh = JSON.parse(saveIn(id, { toll: 0 })) as { left: number[][] };
   fresh.left[0] = [lying, 0, 0, 0, 0, 0, 0, 0];
   return JSON.stringify({ ...fresh, cave: id });
 }

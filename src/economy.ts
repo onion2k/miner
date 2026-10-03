@@ -64,6 +64,8 @@ export interface Save {
   cave: string;
   /** Its way out is open. */
   open: boolean;
+  /** What has been paid of the cave's toll, in coins: from 0 to what `tollOf` says. Half of every coin banked in the cave goes to it until it is paid. */
+  toll: number;
   /** The ids of the belts bought for it. */
   belts: string[];
   /** How many of each kind from the cave, and each chamber, side room and wall, are still in it, so a reload puts back what is left and not the lot. Empty when unknown. */
@@ -121,6 +123,12 @@ export const FORMER_LAST = 'west-gallery';
 /** The share of a cave's value that has to be banked before its way out opens: the last tenth is the player's to chase or leave. */
 export const CLEAR_SHARE = 0.9;
 
+/** The share of a cave's heaps the toll asks: when it is paid the way out opens, at about eight tenths of the heaps banked. */
+export const TOLL_SHARE = 0.4;
+
+/** The share of every coin banked that goes to the toll while it is owed, and the rest is the player's. */
+export const TOLL_TAKE = 0.5;
+
 /** What a cave's heaps are worth, and how many of each kind they hold. */
 export function caveStock(spec: CaveSpec): { value: number; kinds: number[] } {
   const kinds = new Array<number>(KINDS).fill(0);
@@ -129,6 +137,12 @@ export function caveStock(spec: CaveSpec): { value: number; kinds: number[] } {
     for (const [k, n] of h.gems) kinds[k] += n;
   }
   return { value: kinds.reduce((sum, n, k) => sum + n * KIND_VALUE[k], 0), kinds };
+}
+
+/** What a cave's toll is: four tenths of its heaps to the nearest hundred, and nothing for a cave with no way out. */
+export function tollOf(spec: CaveSpec): number {
+  if (spec.exit === null) return 0;
+  return Math.round((caveStock(spec).value * TOLL_SHARE) / 100) * 100;
 }
 
 /** The bodies the machine can stand on: the bulldozer's tracks, or the Spiderdozer's eight legs. */
@@ -327,6 +341,7 @@ export class Economy {
     return {
       cave: cave.id,
       open: false,
+      toll: 0,
       belts: [] as string[],
       left: Array.from({ length: sourcesOf(cave).count }, () => [] as number[]),
       secrets: cave.secrets.map(() => false),
@@ -389,9 +404,27 @@ export class Economy {
       geodes: s.geodes === null || s.geodes === undefined ? null : numbers(s.geodes),
       drained: finite(s.drained, 0),
     });
+    save.toll = this.tollKept(cave, s, save.open || save.done);
     if (save.barrels) save.barrels = save.barrels.slice(0, save.barrels.length - (save.barrels.length % 3));
     if (save.geodes) save.geodes = save.geodes.slice(0, save.geodes.length - (save.geodes.length % 3));
     if (save.left.length !== sources) save.left = fresh.left;
+  }
+
+  /**
+   * What a save has paid of its cave's toll, held to its range. A save from before there was a toll has none
+   * to read, and nothing is to be taken back from it: it has paid half (`TOLL_TAKE`) of what has already gone from the
+   * cave's heaps, in whole coins, up to the toll, and the whole of it where its way out is open. A row of what is left that is empty
+   * or unknown means the whole cave is still lying, and so nothing paid.
+   */
+  private tollKept(cave: CaveSpec, s: Record<string, unknown>, cleared: boolean): number {
+    const due = tollOf(cave);
+    if (typeof s.toll === 'number' && Number.isFinite(s.toll)) return Math.max(0, Math.min(s.toll, due));
+    if (cleared) return due;
+    const { value } = caveStock(cave);
+    const left = this.save.left[0];
+    if (!left.length) return 0;
+    const lying = left.reduce((sum, n, k) => sum + n * (KIND_VALUE[k] ?? 0), 0);
+    return Math.max(0, Math.min(due, Math.floor((value - lying) * TOLL_TAKE)));
   }
 
   /**
@@ -439,6 +472,7 @@ export class Economy {
     // the one chamber and the one wall off the room
     const secret = OLD_SECRET_ROOM.indexOf(room),
       wall = OLD_WALL_ROOM.indexOf(room);
+    save.toll = this.tollKept(cave, s, save.open || save.done);
     if (cave.secrets.length && secret >= 0) save.secrets[0] = (s.secrets as unknown[] | undefined)?.[secret] === true;
     if (cave.walls.length && wall >= 0) {
       save.walls[0] = (s.walls as unknown[] | undefined)?.[wall] === true;
@@ -506,9 +540,38 @@ export class Economy {
     this.persist();
   }
 
+  /** The toll of the cave being cleared, in all. */
+  tollDue(): number {
+    return tollOf(this.current.spec);
+  }
+
+  /**
+   * What is still owed of the cave's toll, in coins: nought for a cave with no toll, once it is paid, and for a game
+   * that is over, whose vein goes on running coins in that are the player's.
+   */
+  owed(): number {
+    if (this.save.done) return 0;
+    return Math.max(0, this.tollDue() - this.save.toll);
+  }
+
+  /** Something banked: the toll takes what it is owed first, and the rest is the player's. The lifetime haul takes all of it. */
   deposit(value: number) {
-    this.save.bank += value;
+    // whole coins only: half of the value, and where it is odd the coin left over goes to whichever side has had the
+    // fewer, which the haul's parity says (the lifetime haul moves with every coin, so a run of single coins alternates)
+    const share = Math.floor(value * TOLL_TAKE) + (value % 2 === 1 && this.save.banked % 2 === 0 ? 1 : 0);
+    const toll = Math.min(share, this.owed());
+    this.save.toll += toll;
+    this.save.bank += value - toll;
     this.save.banked += value;
+    this.persist();
+  }
+
+  /**
+   * Money that is the player's, put straight in the bank: not banked in the cave, so not the toll's, and not counted in
+   * what has been banked in all. For the test API, which gives a machine what it needs to buy.
+   */
+  grant(value: number) {
+    this.save.bank += value;
     this.persist();
   }
 

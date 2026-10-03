@@ -16,9 +16,17 @@ declare global {
   }
 }
 
-/** The parts of a save a test might want to set; the rest start as a new game's. */
+/** More than any toll: a save that says so has paid its cave's toll, which loading clamps to the cave's own. */
+export const PAID = 1e9;
+
+/**
+ * The parts of a save a test might want to set; the rest start as a new game's. The toll starts paid, so that what
+ * a test banks is the player's bank and the cave is as the test set it; a test of the toll gives its own.
+ */
 export interface SaveSetup {
   bank?: number;
+  /** What has been paid of the cave's toll: more than it asks is all of it. */
+  toll?: number;
   /** The cave the save stands in, by its id, and whether its way out is open. */
   cave?: string;
   open?: boolean;
@@ -69,11 +77,14 @@ export async function start(
       };
     }, seed);
   if (save)
-    await page.addInitScript((s) => {
-      if (sessionStorage.getItem('pushminer-test-seeded')) return;
-      localStorage.setItem('pushminer-save-v1', JSON.stringify(s));
-      sessionStorage.setItem('pushminer-test-seeded', '1');
-    }, save);
+    await page.addInitScript(
+      (s) => {
+        if (sessionStorage.getItem('pushminer-test-seeded')) return;
+        localStorage.setItem('pushminer-save-v1', JSON.stringify(s));
+        sessionStorage.setItem('pushminer-test-seeded', '1');
+      },
+      { toll: PAID, ...save },
+    );
   const query = new URLSearchParams();
   if (coins !== null) query.set('coins', String(coins));
   if (startPaused) query.set('paused', '1');

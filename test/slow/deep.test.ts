@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { arrival, buildCave } from '../../src/cave';
-import { CLEAR_SHARE, Economy, memoryStore } from '../../src/economy';
+import { Economy, memoryStore } from '../../src/economy';
 import { Game, SETTLE_STEPS } from '../../src/game';
 import { checkInvariants } from '../../src/invariants';
 import { BAR } from '../../src/physics';
@@ -134,7 +134,8 @@ describe('saves from the West Gallery, from before it had a way out', () => {
       sendAllDown(game);
       for (let f = 0; f < 4000 && !economy.save.open; f++) game.step(DT, still);
       expect(economy.save.open, 'its way out opens').toBe(true);
-      expect(game.stock.banked()).toBeGreaterThanOrEqual(CLEAR_SHARE);
+      // opened by the toll, which the cave's coins pay first, before nine tenths of it are banked
+      expect(economy.owed()).toBe(0);
       // out through the way it now has, as a player would, and not by the save's say-so alone
       const [x0, , x1, y1] = specOf('west-gallery').exit!.tiles;
       const { grid } = game.cave;

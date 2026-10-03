@@ -32,13 +32,23 @@ export function caveOf(id: string): Cave {
 /** The ids of the run, in order. */
 export const IDS = RUN.map((c) => c.id);
 
+/** More than any toll: a save that says so has paid its cave's toll, which loading clamps to the cave's own. */
+export const PAID = 1e9;
+
 /**
  * A save, as JSON, of a new game standing in the cave `id`: whatever else is given set over it. The
- * per-cave lists come back sized to that cave when it is loaded.
+ * per-cave lists come back sized to that cave when it is loaded. The toll starts paid, so that a coin
+ * banked raises the bank as the tests that are not about the toll expect; a patch with `toll` says otherwise.
  */
 export function saveIn(id: string, patch: Partial<Save> = {}): string {
   const fresh = new Economy(memoryStore(), RUN).save;
-  return JSON.stringify({ ...fresh, ...patch, cave: id });
+  return JSON.stringify({ ...fresh, toll: PAID, ...patch, cave: id });
+}
+
+/** An economy whose cave's toll has been paid, so that what it banks is the player's: for the tests that are not about the toll. */
+export function payToll<E extends Economy>(economy: E): E {
+  economy.save.toll = economy.tollDue();
+  return economy;
 }
 
 /** An economy for the run, over a save kept in memory, from `json` if given. */

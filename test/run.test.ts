@@ -18,7 +18,7 @@ import {
   type Cave,
   type CaveSpec,
 } from '../src/cave';
-import { CLEAR_SHARE, Economy, caveStock, memoryStore } from '../src/economy';
+import { CLEAR_SHARE, Economy, caveStock, memoryStore, tollOf } from '../src/economy';
 import { Game, type GameEvents } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { onward } from '../scripts/run';
@@ -107,7 +107,7 @@ describe('the way out is rock until the cave is cleared (criterion 1)', () => {
   it('does nothing when rammed: it is not a hidden chamber', () => {
     withSeed(1, () => {
       const { log, events } = told();
-      const game = gameIn('hollow', {}, events);
+      const game = gameIn('hollow', { toll: 0 }, events);
       const cave = game.cave;
       // up against the mouth, square on, flat out
       const mouth = [...cave.cells.keys()].filter((t) => cave.cells[t] === EXIT);
@@ -127,16 +127,17 @@ describe('the way out is rock until the cave is cleared (criterion 1)', () => {
 });
 
 describe('clearing the cave opens the way out (criterion 2)', () => {
-  it('opens at CLEAR_SHARE banked, with exitOpened at the mouth, and not before', () => {
+  it('opens when the toll is paid, with exitOpened at the mouth, and not before', () => {
     withSeed(2, () => {
       const { events, named } = told();
-      const game = gameIn('hollow', {}, events);
+      const game = gameIn('hollow', { toll: 0 }, events);
       expect(game.stock.banked()).toBe(0);
       game.step(DT, still);
       expect(game.economy.save.open).toBe(false);
       expect(named('exitOpened')).toHaveLength(0);
       clear(game);
-      expect(game.stock.banked()).toBeGreaterThanOrEqual(CLEAR_SHARE);
+      // the cave's coins go down the hole at once, and the toll is the first of them: it is paid, and opens the way before nine tenths are banked
+      expect(game.economy.owed()).toBe(0);
       expect(game.economy.save.open).toBe(true);
       const opened = named('exitOpened');
       expect(opened).toHaveLength(1);
@@ -155,12 +156,12 @@ describe('clearing the cave opens the way out (criterion 2)', () => {
       const { value } = caveStock(hollow);
       // what is left, all in coins, to come to a share of the cave's worth
       const leftFor = (share: number) => [[Math.round(value * (1 - share)), 0, 0, 0, 0, 0, 0, 0]];
-      const under = gameIn('hollow', { left: leftFor(CLEAR_SHARE - 0.02) });
+      const under = gameIn('hollow', { toll: 0, left: leftFor(CLEAR_SHARE - 0.02) });
       expect(under.stock.banked()).toBeLessThan(CLEAR_SHARE);
       under.step(DT, still);
       expect(under.economy.save.open, 'a little short').toBe(false);
       const { events, named } = told();
-      const over = gameIn('hollow', { left: leftFor(CLEAR_SHARE + 0.01) }, events);
+      const over = gameIn('hollow', { toll: 0, left: leftFor(CLEAR_SHARE + 0.01) }, events);
       expect(over.stock.banked()).toBeGreaterThanOrEqual(CLEAR_SHARE);
       over.step(DT, still);
       expect(over.economy.save.open, 'enough').toBe(true);
@@ -326,6 +327,7 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
         barrels: [1, 2, 1.05],
         geodes: [3, 4, 1.6],
         drained: 12,
+        toll: tollOf(specOf('south-gallery')),
       });
       const { events } = told();
       const economy = newEconomy(json);
@@ -346,6 +348,8 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
         true,
       ]);
       expect(s.open).toBe(false);
+      expect(s.toll, 'the next cave owes its own toll afresh').toBe(0);
+      expect(economy.owed()).toBe(tollOf(east));
       expect(s.belts).toEqual([]);
       expect(s.secrets).toEqual(east.secrets.map(() => false));
       expect(s.walls).toEqual(east.walls.map(() => false));

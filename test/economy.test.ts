@@ -11,10 +11,10 @@ import {
   workshopTotal,
 } from '../src/economy';
 import { KIND_VALUE } from '../src/physics';
-import { RUN, specOf } from './helpers';
+import { RUN, payToll, specOf } from './helpers';
 
 /** An economy over the browser's storage, which these tests stand in for. */
-const newEconomy = () => new Economy(browserStore, RUN);
+const newEconomy = () => payToll(new Economy(browserStore, RUN));
 
 const KEY = 'pushminer-save-v1';
 let store: Map<string, string>;
@@ -219,7 +219,7 @@ describe('the economy', () => {
   });
 
   it('sells the Spiderdozer body once, and swaps it for the tracks and back for nothing', () => {
-    const e = new Economy(memoryStore(), RUN);
+    const e = payToll(new Economy(memoryStore(), RUN));
     expect(e.save.body).toBe('dozer');
     expect(e.save.bodies).toEqual(['dozer']);
     const spider = e.cosmetics().find((o) => o.id === 'body:spider')!;
@@ -368,7 +368,7 @@ describe('the scoop in the workshop', () => {
   });
 
   it('is offered after the blade, bought one size at a time for what that size costs, and is as wide as the size says', () => {
-    const e = new Economy(memoryStore(), RUN);
+    const e = payToll(new Economy(memoryStore(), RUN));
     const ids = e.offers().map((o) => o.id);
     expect(ids.indexOf('scoop')).toBe(ids.indexOf('blade') + 1);
     expect(e.spec().bucket, 'a blade to begin with').toBe(false);
@@ -393,7 +393,7 @@ describe('the scoop in the workshop', () => {
   });
 
   it('takes the blade’s place: the blade’s row closes, and no wider blade can be bought for a machine with none', () => {
-    const e = new Economy(memoryStore(), RUN);
+    const e = payToll(new Economy(memoryStore(), RUN));
     e.deposit(1e6);
     expect(e.buy('blade')).toBe(true);
     expect(e.spec().bladeWidth, 'a wider blade, while there is a blade').toBe(8);
@@ -409,7 +409,7 @@ describe('the scoop in the workshop', () => {
   });
 
   it('tells the game it was bought, and is part of what the whole workshop costs', () => {
-    const e = new Economy(memoryStore(), RUN);
+    const e = payToll(new Economy(memoryStore(), RUN));
     const heard: string[] = [];
     e.onChange((id) => heard.push(id));
     e.deposit(SCOOP[1].cost);

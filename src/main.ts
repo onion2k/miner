@@ -179,6 +179,9 @@ async function main() {
         hud.note(drainNote(total), DRAIN_NOTE_RUN);
       }
     },
+    tollPaid() {
+      log('tollPaid');
+    },
     exitOpened(faces, [c, s]) {
       log('exitOpened');
       sound.chime();
@@ -616,6 +619,7 @@ async function main() {
   let statsIn = 0,
     shopIn = 0;
   let lastBank = -1,
+    lastHaul = -1,
     lastOpen = false;
   let frames = 0;
 
@@ -650,6 +654,7 @@ async function main() {
     // driven out of the last cave, the camera turns with the change so the machine keeps its heading on the screen
     if (leaving) rig.turn(headingTurn(cutFrom, cave));
     lastBank = -1;
+    lastHaul = -1;
     // a workshop left open sells this cave's belts now, and not the last one's
     if (shopOpen) renderShops();
     const note = arrivalNote(spec, lost);
@@ -709,9 +714,11 @@ async function main() {
       hud.run(tally.summary());
       tally.reset();
     }
-    if (economy.bank !== lastBank || save.open !== lastOpen) {
-      if (economy.bank !== lastBank) hud.run(tally.summary());
+    // the toll takes half of a coin and may leave the bank where it was, so a coin is seen by the haul, and not by the bank
+    if (economy.bank !== lastBank || save.banked !== lastHaul || save.open !== lastOpen) {
+      if (save.banked !== lastHaul) hud.run(tally.summary());
       lastBank = economy.bank;
+      lastHaul = save.banked;
       lastOpen = save.open;
       hud.bank(economy.bank);
       hud.progress(progressText(economy, stock.banked()));

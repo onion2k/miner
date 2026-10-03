@@ -394,7 +394,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           game = new Game(economy, buildCave(economy.cave()), events);
           visited.add(economy.save.cave);
           const after = game.economy.save;
-          const same = (['bank', 'cave', 'open', 'done', 'drones', 'body', 'drained'] as const).filter(
+          const same = (['bank', 'toll', 'cave', 'open', 'done', 'drones', 'body', 'drained'] as const).filter(
             (k) => before[k] !== after[k],
           );
           const sameLists = (['secrets', 'walls', 'lampsBroken', 'belts'] as const).filter(
