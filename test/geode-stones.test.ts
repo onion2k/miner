@@ -14,7 +14,19 @@ import { checkInvariants } from '../src/invariants';
 import { BARREL_KIND, GEODE_KIND, KINDS, KIND_RADIUS, KIND_VALUE, makeWorld } from '../src/physics';
 import { NO_SOURCE, Stock, capacityOf } from '../src/stock';
 import { beltOf } from '../src/tools';
-import { IDS, RUN, TEST_BODIES, caveOf, floodIn, gameIn, saveIn, specOf, tileIn, withSeed } from './helpers';
+import {
+  IDS,
+  RUN,
+  TEST_BODIES,
+  caveOf,
+  floodIn,
+  gameIn,
+  saveIn,
+  specOf,
+  tileIn,
+  withSeed,
+  leavingRow,
+} from './helpers';
 
 const DT = 1 / 60;
 const STILL = { throttle: 0, steer: 0 };
@@ -401,7 +413,7 @@ describe('edge cases', () => {
       const game = gameIn('hollow');
       expect(game.stock.lyingAll(), 'a whole geode is nothing to lose').toBe(caveStock(game.cave.spec).value);
       game.economy.open();
-      game.economy.moveOn();
+      game.economy.moveOn(leavingRow(game.economy));
       expect(game.economy.save.geodes).toBeNull();
       const next = new Game(game.economy, caveOf(game.economy.cave().id));
       expect(next.stock.kinds[GEODE_KIND]).toBe(next.cave.geodes.length);

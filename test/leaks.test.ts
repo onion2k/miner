@@ -47,6 +47,26 @@ describe('what must stay bounded', () => {
     });
   });
 
+  it('watches the ledger’s rows, held to the run: a row a cave left, and the last cave never left', () => {
+    expect(WATCH['ledger rows']!.ceiling).toBe(RUN.length - 1);
+    expect(WATCH['ledger rows']!.ceiling, 'six in the run as it stands').toBe(6);
+    const game = gameIn('east-gallery', {
+      ledger: [
+        {
+          cave: 'hollow',
+          held: 2620,
+          taken: 1,
+          toll: 0,
+          drained: 0,
+          left: 2619,
+          finds: { chamber: 'none', sideRoom: 'none', wall: 'none', geodes: { cracked: 0, of: 1 } },
+          marks: { clean: true, everyHeap: false, everyFind: false },
+        },
+      ],
+    });
+    expect(sizes(game)['ledger rows'], 'the rows are counted').toBe(1);
+  });
+
   it('has a ceiling for every size it measures, and watches the caches for growth', () => {
     withSeed(1, () => {
       const game = newGame();

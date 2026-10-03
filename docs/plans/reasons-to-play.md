@@ -211,7 +211,9 @@ and coins are pushed out through it. The Spiderdozer's row says what it is for.
 - [x] Stage 1: the toll, landed 2026-10-03. The autopilot's run with it: thorough 83 min with 27,000 left and
       everything bought; a quick player finishes 6 of 6 in 50 min with 6,000 left. Balance baseline written again
       (rusher purchases 12 to 8.83); six pictures written again for the progress line's words.
-- [ ] Stage 2: the ledger
+- [x] Stage 2: the ledger, landed 2026-10-03. A bar a cave, with the three marks; a card on leaving, the panel
+      from the workshop's foot and once at the end, the run's line in the foot. The save gains `taken`, `cracked`
+      and `ledger`. Three pictures written again (the arrival card, the workshop's foot), two new.
 - [ ] Stage 3: the blade breaks, and refitting
 - [ ] Stage 4: sinkhole rooms
 - [ ] Stage 5: rockfalls

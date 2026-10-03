@@ -266,7 +266,8 @@ export function fuzz(seed: number, frames: number): FuzzResult {
         4,
         () => {
           const e = game.economy;
-          e.deposit(Math.floor(between(0, 3000)));
+          // money to buy with, handed over: coins banked in the cave would count in what its ledger says was brought out
+          e.grant(Math.floor(between(0, 3000)));
           const offer = pick([...e.offers(), ...e.cosmetics()].filter((o) => o.available));
           const bought = offer ? e.buy(offer.id) : false;
           if (bought && offer?.id.startsWith('belt:')) count(happened, `bought ${offer.id}`);
@@ -282,7 +283,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const unbought = game.cave.spec.belts.filter((b) => !e.save.belts.includes(b.id));
           const belt = pick(unbought);
           if (!belt) return;
-          e.deposit(belt.cost);
+          e.grant(belt.cost);
           const bought = e.buy(`belt:${belt.id}`);
           act('buy a belt', `${belt.id}: ${bought ? 'bought' : 'not'}`);
           if (bought) count(happened, `bought belt:${belt.id}`);
@@ -344,7 +345,7 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           const e = game.economy;
           const size = 1 + Math.floor(random() * 3);
           while (e.save.scoop < size) {
-            e.deposit(1e5);
+            e.grant(1e5);
             if (!e.buy('scoop')) break;
           }
           const at = somewhere();
@@ -394,10 +395,10 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           game = new Game(economy, buildCave(economy.cave()), events);
           visited.add(economy.save.cave);
           const after = game.economy.save;
-          const same = (['bank', 'toll', 'cave', 'open', 'done', 'drones', 'body', 'drained'] as const).filter(
-            (k) => before[k] !== after[k],
-          );
-          const sameLists = (['secrets', 'walls', 'lampsBroken', 'belts'] as const).filter(
+          const same = (
+            ['bank', 'toll', 'taken', 'cracked', 'cave', 'open', 'done', 'drones', 'body', 'drained'] as const
+          ).filter((k) => before[k] !== after[k]);
+          const sameLists = (['secrets', 'walls', 'lampsBroken', 'belts', 'ledger'] as const).filter(
             (k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]),
           );
           const problems = [...same, ...sameLists].map(

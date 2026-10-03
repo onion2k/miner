@@ -8,6 +8,7 @@ import { RUN } from '../src/caves';
 import type { DozerSpec } from '../src/dozer';
 import { Economy, memoryStore, type Save } from '../src/economy';
 import { Game, type GameEvents } from '../src/game';
+import { held, type Row } from '../src/ledger';
 
 export { RUN };
 
@@ -143,4 +144,23 @@ export function openGrid(cols: number, rows: number, rock: (tx: number, ty: numb
     }
   }
   return solid;
+}
+
+/**
+ * The row of the cave an economy is in, as it stands, for a test of the economy alone that moves on without a game to
+ * say what the ledger would: what the save has taken and drained, and none of what a game's stock would tell.
+ */
+export function leavingRow(economy: Economy): Row {
+  const { save } = economy;
+  const total = held(economy.cave());
+  return {
+    cave: save.cave,
+    held: total,
+    taken: save.taken,
+    toll: save.toll,
+    drained: save.drained,
+    left: Math.max(0, total - save.taken - save.drained),
+    finds: { chamber: 'none', sideRoom: 'none', wall: 'none', geodes: { cracked: save.cracked, of: 0 } },
+    marks: { clean: save.drained === 0, everyHeap: false, everyFind: false },
+  };
 }

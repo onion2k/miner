@@ -28,6 +28,7 @@ import { currentBelt } from './currents';
 import { BLADE_AT, Dozer, bucketPieces, separate } from './dozer';
 import { CLEAR_SHARE, Economy, WALL_STRENGTH } from './economy';
 import { Impacts } from './impacts';
+import { rowOf, type Row } from './ledger';
 import type { Drive } from './input';
 import { lampOn, lampsHit } from './lamps';
 import { Nav } from './nav';
@@ -53,8 +54,11 @@ export interface GameEvents {
   banked?(kind: number, value: number, x: number, y: number, heat: number): void;
   /** The cave cleared and its way out opened: the rock at its mouth, at `faces`, is down. */
   exitOpened?(faces: readonly [number, number][], heading: Heading): void;
-  /** The player has driven out through the way out of the cave `from`, leaving `lost` in coins still in it. The game is finished with. */
-  caveLeft?(from: string, lost: number): void;
+  /**
+   * The player has driven out through the way out of the cave `from`, leaving `lost` in coins still in it. `row` is what
+   * the ledger says of the cave, as it was written. The game is finished with.
+   */
+  caveLeft?(from: string, lost: number, row: Row): void;
   /** The toll of the cave paid, by the coin just banked: the way out opens with it. Raised once. */
   tollPaid?(): void;
   /** Something gone down a drain, worth `value` (nothing for a brick or a barrel), at (x, y): lost, and nothing banked. */
@@ -364,9 +368,11 @@ export class Game {
     const from = this.economy.save.cave;
     // what lay in it, and what went down its drains: both are gone with it
     const lost = this.stock.lyingAll() + this.economy.save.drained;
+    // the row is read while the cave is still its own: what lies, what is open and what was cracked
+    const row = rowOf(this);
     this.left = true;
-    this.economy.moveOn();
-    this.events.caveLeft?.(from, lost);
+    this.economy.moveOn(row);
+    this.events.caveLeft?.(from, lost, row);
   }
 
   /** The horn: everything near enough the dozer hops, which is what a horn is for. */
@@ -407,6 +413,8 @@ export class Game {
       }
       this.events.geodeCracked?.(x, y, thrown);
     }
+    // the ledger counts the stones cracked: one lost whole down a hole never was
+    this.economy.save.cracked += slots.length;
     return slots.length;
   }
 

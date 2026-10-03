@@ -21,11 +21,23 @@ a burst of rock and dust: the way out. It shows gold on the minimap, and the pag
 says so. Past the toll every whole coin banked is yours to spend. Chase the rest or
 leave it: drive down the way out, a cutting through the rock lit only by your
 own headlights, and the screen goes dark along it. Past the line at its end the
-cave behind is gone, with whatever was still in it (the next cave says how much),
+cave behind is gone, with whatever was still in it (the ledger's card says how much),
 and you come out of the far end of the next cave's way in at the speed you
 left. Only one cave is ever in play, so a run that has been worked through does
 not weigh on the frame. Clearing the last cave, which has no way out, ends the
 game with the vein running.
+
+The ledger says how a cave was done, and never how fast: what it held, what was
+brought out, what went down its drains and what was left behind, the last of that
+whether it lay, was a chamber or a wall not yet opened, or a geode lost whole. On leaving a cave a card
+under the next one's name shows it for six seconds, as a bar (gold brought out,
+blue drained, grey left) with its figures under it and three marks, each won with a
+◆ and not with a ◇: _clean_ (nothing down a drain), _every heap_ (nothing of the
+heaps left lying) and _every find_ (every hidden chamber opened, every wall down,
+every geode cracked). The workshop's foot has a _ledger_ button that opens the whole
+of it, a bar a cave with the cave being played dimmed at the end, and the foot's line
+reads "brought out 12,340 of 68,850" for the run; the ledger opens by itself once, when
+the last cave is cleared.
 
 Each cave is a world of its own. The South Gallery is jungle: mossy rock,
 ferns and trees, and mushrooms that glow in the dark with fireflies about them.
@@ -279,6 +291,8 @@ cave in one go: the Hollow cleared and driven out of with the keys, through the 
     src/economy.ts        the bank, the upgrades, which cave is being cleared, the save, the shop
     src/stock.ts          what is in the cave, from where: put back from the save, spawned, banked, left behind
     src/progress.ts       the progress line, and what the player is told on the way out and on arriving
+    src/ledger.ts         the ledger: what each cave held, brought out, drained and left, its finds and marks, and the words the card and the panel say
+    src/figure.ts         a figure of coins as the page says it, with a comma at the thousands
     src/walls.ts          the brick walls as bricks: laid, beaten, treasure set in them, coming apart
     src/lamps.ts          which lamps are lit, knocked over, and worth lighting this frame
     src/impacts.ts        what driving into a wall or a chamber's rock does

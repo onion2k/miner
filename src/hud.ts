@@ -8,6 +8,7 @@
  * map shows, and where, is worked out apart from the DOM, in `minimapView`.
  */
 import { FLOW_MAP } from './currents';
+import type { Bar, CardView, LedgerView, MarkView, RowView } from './ledger';
 import type { RunSummary } from './tally';
 import { FLOOR_LEVEL, ROCK_LEVEL, WALL_LEVEL, type FloorImage, type MinimapView } from './minimap';
 
@@ -203,8 +204,17 @@ export class Hud {
   readonly shopCosmetics = this.shopPanel.querySelector('.rows.cosmetics') as HTMLElement;
   private readonly shopButton = byId<HTMLButtonElement>('shopButton');
   private readonly options = byId('options');
+  private readonly cardPanel = byId('ledgerCard');
+  private readonly ledgerPanel = byId('ledger');
+  private readonly ledgerRows = this.ledgerPanel.querySelector('.rows') as HTMLElement;
+  private readonly ledgerTotal = this.ledgerPanel.querySelector('.total') as HTMLElement;
+  private readonly ledgerButton = byId<HTMLButtonElement>('ledgerButton');
   readonly map = new Minimap();
   private noteFor = 0;
+  /** How long the card of the cave just left has still to be shown, in game seconds. */
+  private cardFor = 0;
+  private shopOpen = false;
+  private ledgerOpen = false;
 
   /** What the boot screen says it is doing, or why it stopped. */
   booting(text: string) {
@@ -245,17 +255,73 @@ export class Hud {
     this.keepGoingLine.style.opacity = v === 0 ? '0' : v.toFixed(3);
   }
 
-  /** Time passes: the word at the top goes when its time is up. */
+  /** Time passes: the word at the top goes when its time is up, and the card under it when its. */
   tick(dt: number) {
     if (this.noteFor > 0 && (this.noteFor -= dt) <= 0) this.noteLine.hidden = true;
+    if (this.cardFor > 0 && (this.cardFor -= dt) <= 0) this.cardPanel.hidden = true;
+    if (!this.cardPanel.hidden) this.placeCard();
+  }
+
+  /**
+   * The card of the cave just left, under the word that names the next, for `seconds`. It stands under whatever the
+   * word is now, a line or two, and where the word would be when it has gone.
+   */
+  ledgerCard(card: CardView, seconds: number) {
+    this.cardPanel.querySelector('.name')!.textContent = card.name;
+    const bar = this.cardPanel.querySelector('.bar') as HTMLElement;
+    cut(bar, card.bar, card.figures);
+    this.cardPanel.querySelector('.figures')!.textContent = card.figures;
+    fillMarks(this.cardPanel.querySelector('.marks') as HTMLElement, card.marks);
+    this.cardPanel.hidden = false;
+    this.cardFor = seconds;
+    this.placeCard();
+  }
+
+  private placeCard() {
+    // under the note while there is one, and in its place when it has gone: the card is only ever shown beside the arrival's
+    this.cardPanel.style.top = this.noteLine.hidden
+      ? ''
+      : `${Math.round(this.noteLine.getBoundingClientRect().bottom + 8)}px`;
+  }
+
+  /** The whole ledger open or shut: it stands beside the workshop at a desk when that is open too, and over it on a phone. */
+  ledger(open: boolean) {
+    this.ledgerOpen = open;
+    this.ledgerPanel.hidden = !open;
+    this.ledgerButton.setAttribute('aria-expanded', String(open));
+    this.cover();
+  }
+
+  /** The rows of the whole ledger, rebuilt: the caves left, the one being played dimmed, and the line for the run. */
+  ledgerView(view: LedgerView) {
+    const rows = [...view.rows, view.now].map((r) => ledgerRow(r));
+    this.ledgerRows.replaceChildren(...rows);
+    this.ledgerTotal.textContent = view.foot;
+  }
+
+  /** The workshop's button and the ledger's own close button, which both turn it over. */
+  onLedger(toggle: () => void) {
+    this.ledgerButton.addEventListener('click', toggle);
+    byId('ledgerClose').addEventListener('click', toggle);
+  }
+
+  /** The corner's map and a phone's options are put away while either panel fills their corner. */
+  private cover() {
+    const covered = this.shopOpen || this.ledgerOpen;
+    this.map.cover(covered);
+    this.options.classList.toggle('covered', covered);
+    this.ledgerPanel.classList.toggle('beside', this.shopOpen);
+    this.shopPanel.classList.toggle('under', this.ledgerOpen);
   }
 
   bank(value: number) {
     this.bankValue.textContent = this.shopBalance.textContent = `${value}`;
   }
 
-  progress(text: string) {
-    this.progressText.textContent = this.shopProgress.textContent = text;
+  /** The progress line in the corner, and in the workshop's foot with the line for the run after it. */
+  progress(text: string, runLine?: string) {
+    this.progressText.textContent = text;
+    this.shopProgress.textContent = runLine ? `${text} · ${runLine}` : text;
   }
 
   /** The tally of a run, growing with it up to a shout, and fading once it is over. */
@@ -275,11 +341,11 @@ export class Hud {
 
   /** The workshop open or shut. */
   shop(open: boolean) {
+    this.shopOpen = open;
     this.shopPanel.hidden = !open;
     this.shopButton.textContent = open ? 'close' : 'shop';
-    this.map.cover(open);
     // the workshop fills the top of a phone's screen too, and an option half under its edge is one half pressable
-    this.options.classList.toggle('covered', open);
+    this.cover();
   }
 
   /**
@@ -304,6 +370,48 @@ export class Hud {
       }, 4000);
     });
   }
+}
+
+/** A bar cut into what was brought out, what drained and what was left, with its figures said for whoever cannot see the colours. */
+function cut(bar: HTMLElement, shares: Bar, said: string) {
+  (bar.querySelector('.out') as HTMLElement).style.width = `${shares.out.toFixed(2)}%`;
+  (bar.querySelector('.drain') as HTMLElement).style.width = `${shares.drained.toFixed(2)}%`;
+  bar.setAttribute('aria-label', said);
+}
+
+/** The marks of a cave as words: each a ◆ or a ◇ and what it is for. */
+function fillMarks(into: HTMLElement, marks: MarkView[]) {
+  into.replaceChildren(
+    ...marks.map((m) => {
+      const span = document.createElement('span');
+      span.className = m.won ? 'mark won' : 'mark';
+      span.textContent = m.text;
+      return span;
+    }),
+  );
+}
+
+/** A line of the whole ledger. */
+function ledgerRow(r: RowView): HTMLElement {
+  const row = document.createElement('div');
+  row.className = r.soFar ? 'row now' : 'row';
+  const name = document.createElement('span');
+  name.textContent = r.name;
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.setAttribute('role', 'img');
+  for (const part of ['out', 'drain']) bar.appendChild(Object.assign(document.createElement('i'), { className: part }));
+  cut(bar, r.bar, `${r.text} · ${r.detail}`);
+  const said = document.createElement('small');
+  said.textContent = `${r.text} · ${r.detail}`;
+  row.append(name, bar, said);
+  if (r.marks.length) {
+    const marks = document.createElement('small');
+    marks.className = 'marks';
+    fillMarks(marks, r.marks);
+    row.append(marks);
+  }
+  return row;
 }
 
 /** What a phone's buttons do. */

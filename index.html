@@ -16,6 +16,9 @@
     --ink: #f1eee6;
     --dim: #a39f94;
     --gold: #f2c14e;
+    /* the ledger's bars: blue for what went down a drain and grey for what was left, each with its figures beside it */
+    --drain: #5aa7e8;
+    --left: #6b6672;
   }
   * {
     box-sizing: border-box;
@@ -283,6 +286,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
+  }
+  #shop .foot .buttons {
+    display: flex;
+    gap: 6px;
+    flex: none;
   }
   #shop .foot button {
     display: inline;
@@ -293,6 +302,127 @@
     background: #c0392b;
     border-color: #e74c3c;
     color: #fff;
+  }
+  /* ---- the ledger: the card on leaving a cave, under the note that names the next, and the whole of it, which
+     stands where the workshop does (beside it at a desk, over it on a phone). Gold is what was brought out, blue what
+     went down a drain, grey what was left, and every bar has its figures written beside it. ---- */
+  .bar {
+    display: flex;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--left);
+  }
+  .bar i {
+    display: block;
+    height: 100%;
+  }
+  .bar .out {
+    background: var(--gold);
+  }
+  .bar .drain {
+    background: var(--drain);
+  }
+  .marks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    color: var(--dim);
+  }
+  .marks .won {
+    color: var(--gold);
+  }
+  #ledgerCard {
+    z-index: 7;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(340px, calc(100vw - 32px));
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  #ledgerCard .name {
+    display: block;
+    color: var(--ink);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  #ledgerCard .bar {
+    margin: 8px 0 6px;
+  }
+  #ledgerCard .figures {
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  #ledgerCard .marks {
+    margin-top: 6px;
+  }
+  #ledgerCard[hidden],
+  #ledger[hidden] {
+    display: none;
+  }
+  #ledger {
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    pointer-events: auto;
+    width: 440px;
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+    z-index: 5;
+  }
+  /* with the workshop open the ledger stands beside it, to its left */
+  #ledger.beside {
+    right: 388px;
+  }
+  #ledger h2 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 0 0 8px;
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  #ledger button {
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  #ledger .rows {
+    display: grid;
+    gap: 10px;
+  }
+  #ledger .row {
+    display: grid;
+    grid-template-columns: 7.5em 1fr;
+    gap: 4px 12px;
+    align-items: center;
+  }
+  #ledger .row small {
+    grid-column: 2;
+    color: var(--dim);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* the cave being played: dimmed, and says so */
+  #ledger .row.now {
+    opacity: 0.65;
+  }
+  #ledger .total {
+    margin-top: 10px;
+    color: var(--ink);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
   /* ---- on a phone: a slider each side for each track, a row of buttons between, and no keyboard help.
      Kept small and see-through: on a 412 by 915 phone the first version's sliders and buttons covered
@@ -530,6 +660,39 @@
   body.touch #toast {
     bottom: calc(66px + env(safe-area-inset-bottom));
   }
+  /* the ledger stands where the workshop does on a phone, over it, and scrolls as it does */
+  body.touch #ledger,
+  body.touch #ledger.beside {
+    right: 50%;
+    width: min(340px, calc(100vw - 24px));
+    top: auto;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    transform: translateX(50%);
+    max-height: calc(100vh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    touch-action: pan-y;
+    background: rgb(22, 20, 28);
+  }
+  /* the workshop is still open, and is put away while the ledger stands in its place */
+  body.touch #shop.under {
+    visibility: hidden;
+  }
+  body.touch #ledger .row {
+    grid-template-columns: 1fr;
+  }
+  body.touch #ledger .row small {
+    grid-column: 1;
+  }
+  /* the card is centred, as the note above it is, in the room the map leaves it */
+  body.touch #ledgerCard {
+    top: calc(60px + env(safe-area-inset-top));
+    left: 12px;
+    right: calc(var(--map-right) + 88px + 8px);
+    width: auto;
+    max-width: 340px;
+    transform: none;
+    margin: 0 auto;
+  }
   /* where to go: a map of the cave round the machine, turned so that up is up the screen. It is above the
      black of the fade, and fades by the same darkness itself, so it goes with the cave and not twice as fast.
      Drawn by the page and never touched: a tap on it is a tap on the cave. */
@@ -609,6 +772,12 @@
 <div class="panel" id="stats" hidden></div>
 <div class="panel" id="toast" hidden></div>
 <div class="panel" id="cameraNote" hidden></div>
+<div class="panel" id="ledgerCard" hidden>
+  <b class="name"></b>
+  <div class="bar" role="img"><i class="out"></i><i class="drain"></i></div>
+  <div class="figures"></div>
+  <div class="marks"></div>
+</div>
 <canvas class="panel" id="minimap" hidden aria-label="map"></canvas>
 <div class="panel" id="help" hidden>
   drive <span>W A S D</span> · shop <span>B</span> · camera <span>drag</span> orbit / <span>wheel</span> zoom ·
@@ -631,8 +800,16 @@
     <span
       ><span id="shopProgress"></span><span class="keys"> · press <b>B</b> to close</span></span
     >
-    <button id="reset" type="button">start over</button>
+    <span class="buttons">
+      <button id="ledgerButton" type="button" aria-controls="ledger" aria-expanded="false">ledger</button>
+      <button id="reset" type="button">start over</button>
+    </span>
   </div>
+</div>
+<div class="panel" id="ledger" hidden>
+  <h2>Ledger<button id="ledgerClose" type="button" aria-label="close the ledger">close</button></h2>
+  <div class="rows"></div>
+  <div class="total"></div>
 </div>
 <div id="options" hidden>
   <button id="muteButton" type="button" aria-label="mute">🔊</button>

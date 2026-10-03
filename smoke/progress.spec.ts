@@ -17,8 +17,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { ARRIVAL_DARK, buildCave } from '../src/cave';
 import { RUN } from '../src/caves';
+import type { Row } from '../src/ledger';
 import { runwayLights } from '../src/runway';
-import { measuring, ready, screen, start, steerTo, swapped, watch } from './pushminer';
+import { cardSays, ledgerSays, measuring, ready, screen, start, steerTo, swapped, watch } from './pushminer';
 
 /** How many runway lights a cave stands, down each cutting, as the lights work it out and the page should show. */
 function runwayOf(id: string, open: boolean) {
@@ -368,7 +369,46 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   expect(arrived.note).toContain('South Gallery');
   expect(arrived.note).toContain('rubies and emeralds');
   expect(arrived.progress).toContain('South Gallery');
+  expect(arrived.note, 'what was left behind is the card’s to say, and not the note’s').not.toContain('left behind');
   await info.attach('arriving', { body: await page.screenshot(), contentType: 'image/png' });
+
+  // the card of the cave just left, under the note: its words are the figures the ledger gave for the Hollow, said
+  // here from the numbers and not from the page's own way of saying them
+  const ledger = await page.evaluate(() => window.pushminer!.state().ledger);
+  expect(
+    ledger.rows.map((r) => r.cave),
+    'a row for the cave left, and only it',
+  ).toEqual(['hollow']);
+  const [hollow] = ledger.rows;
+  expect(hollow.taken, 'the cave gave something up').toBeGreaterThan(0);
+  expect(hollow.taken + hollow.drained + hollow.left, 'its parts add up to what it held').toBe(hollow.held);
+  const figure = (n: number) => n.toLocaleString('en-US');
+  const card = await cardSays(page);
+  expect(card.shown, 'the card is up').toBe(true);
+  expect(card.name).toBe('The Hollow');
+  expect(card.figures).toBe(
+    `${figure(hollow.taken)} brought out · ${figure(hollow.drained)} drained · ${figure(hollow.left)} left behind`,
+  );
+  expect(card.label, 'the bar says the same to whoever cannot see its colours').toBe(card.figures);
+  expect(card.marks.map((m) => m.text)).toEqual(
+    (
+      [
+        ['clean', hollow.marks.clean],
+        ['every heap', hollow.marks.everyHeap],
+        ['every find', hollow.marks.everyFind],
+      ] as const
+    ).map(([word, won]) => `${won ? '◆' : '◇'} ${word}`),
+  );
+  expect(
+    card.marks.map((m) => m.won),
+    'won ones are drawn as won',
+  ).toEqual(Object.values(hollow.marks));
+  expect(card.out, 'gold, by what was brought out').toBeCloseTo((hollow.taken / hollow.held) * 100, 1);
+  expect(card.drained, 'blue, by what drained').toBeCloseTo((hollow.drained / hollow.held) * 100, 1);
+  expect(card.note, 'the note is up with it').not.toBeNull();
+  expect(card.card.top, 'under the note').toBeGreaterThanOrEqual(card.note!.bottom);
+  expect(card.card.bottom, 'and on the screen').toBeLessThanOrEqual(800);
+  await info.attach('the card', { body: await page.screenshot(), contentType: 'image/png' });
 
   // on in, out of the dark, along the way in
   const now = await page.evaluate(() => window.pushminer!.content());
@@ -387,6 +427,61 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   // and now the South Gallery's belt is for sale
   expect(now.belts.length, 'a belt in the South Gallery').toBeGreaterThan(0);
   expect(await shopBelts(page), 'the South Gallery’s belts for sale').toEqual(now.belts.map((b) => `belt:${b.id}`));
+
+  // the card has had its six seconds, and goes with the note
+  await play(page, 6 * 60, 'the card’s six seconds');
+  expect((await cardSays(page)).shown, 'the card is gone with the note').toBe(false);
+  expect((await screen(page)).note, 'and the note').toBeNull();
+
+  // the workshop's foot carries the progress line and then the run's: what the ledger has brought out of what the mine holds
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
+  const ledgerNow = await page.evaluate(() => window.pushminer!.state().ledger);
+  expect(ledgerNow.line).toBe(`brought out ${figure(hollow.taken + ledgerNow.now.taken)} of 68,850`);
+  const foot = (await page.locator('#shopProgress').textContent())!;
+  expect(foot, 'the progress line, then the run’s').toMatch(/^South Gallery: .+ · brought out [\d,]+ of 68,850$/);
+  expect(foot.endsWith(ledgerNow.line), 'and the run’s is the ledger’s').toBe(true);
+  // the ledger's button opens the panel, beside the workshop, and its rows are read as words
+  await expect(page.locator('#ledger')).toBeHidden();
+  await page.locator('#ledgerButton').click();
+  const open = await ledgerSays(page);
+  expect(open.shown, 'the ledger is open').toBe(true);
+  expect(open.rows.map((r) => [r.name, r.now])).toEqual([
+    ['The Hollow', false],
+    ['South Gallery', true],
+  ]);
+  expect(open.rows[0].said).toBe(
+    `${figure(hollow.taken)} of ${figure(hollow.held)} · ${figure(hollow.drained)} drained · ${figure(hollow.left)} left behind`,
+  );
+  expect(open.rows[0].marks).toEqual(card.marks.map((m) => m.text));
+  expect(open.rows[1].said, 'the cave being played is “so far”').toBe(
+    `${figure(ledgerNow.now.taken)} of ${figure(ledgerNow.now.held)} so far · ${figure(ledgerNow.now.drained)} drained`,
+  );
+  expect(open.rows[1].marks, 'and has no marks yet').toEqual([]);
+  expect(open.total).toBe(`The mine: ${ledgerNow.line}`);
+  await expect(page.locator('#shop'), 'the workshop stays open under it').toBeVisible();
+  await info.attach('the ledger', { body: await page.screenshot(), contentType: 'image/png' });
+  // shut by its own close button, opened again by the button, and shut by the workshop's own key, which shuts that too
+  await page.locator('#ledgerClose').click();
+  await expect(page.locator('#ledger')).toBeHidden();
+  await page.locator('#ledgerButton').click();
+  await expect(page.locator('#ledger')).toBeVisible();
+  await page.locator('#ledgerButton').click();
+  await expect(page.locator('#ledger'), 'the button that opened it shuts it').toBeHidden();
+  await page.locator('#ledgerButton').click();
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
+  await expect(page.locator('#shop')).toBeHidden();
+  await expect(page.locator('#ledger'), 'the workshop’s key shuts the workshop and the ledger with it').toBeHidden();
+  // and opening the workshop shuts it, from the test API's hand as from the button's
+  await page.evaluate(() => window.pushminer!.ledger(true));
+  await expect(page.locator('#ledger'), 'open by itself, with the workshop shut').toBeVisible();
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
+  await expect(page.locator('#shop')).toBeVisible();
+  await expect(page.locator('#ledger'), 'opening the workshop shuts it').toBeHidden();
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
 
   // the cave's hidden chamber broken into, and its brick wall brought down, a hit short of it first
   const south = await page.evaluate(() => window.pushminer!.content());
@@ -766,6 +861,31 @@ test('the end: the last cave, the Deep, cleared, and the vein runs', async ({ pa
   expect(end.fountains, 'the vein').toBe(1);
   expect((await screen(page)).progress).toBe('the cave is cleared');
   await info.attach('done', { body: await page.screenshot(), contentType: 'image/png' });
+  // the whole ledger opens by itself once, after the note that the cave is cleared has had its six seconds, and not before
+  await expect(page.locator('#ledger'), 'not while the note is up').toBeHidden();
+  await play(page, 6 * 60, 'the note’s six seconds');
+  const closing = await ledgerSays(page);
+  expect(closing.shown, 'open by itself once the note has gone').toBe(true);
+  const { now } = await page.evaluate(() => window.pushminer!.state().ledger);
+  expect(now.vein, 'the last cave, done, with the vein running').toBe(true);
+  expect(closing.rows).toEqual([
+    {
+      name: 'The Deep',
+      said: `${now.taken.toLocaleString('en-US')} of ${now.held.toLocaleString('en-US')} · the vein runs on · ${now.drained.toLocaleString('en-US')} drained`,
+      marks: [],
+      now: true,
+    },
+  ]);
+  await info.attach('the ledger at the end', { body: await page.screenshot(), contentType: 'image/png' });
+  // shut, it stays shut, and a reload of a game that is done does not open it again
+  await page.locator('#ledgerClose').click();
+  await play(page, 6 * 60, 'a while on');
+  await expect(page.locator('#ledger')).toBeHidden();
+  await page.evaluate(() => window.pushminer!.save());
+  await page.reload();
+  await ready(page);
+  await page.evaluate(() => window.pushminer!.step(6 * 60 + 5));
+  await expect(page.locator('#ledger'), 'once, and not again after a reload').toBeHidden();
   expect(problems).toEqual([]);
 });
 
@@ -1054,12 +1174,151 @@ test.describe('the toll on a phone', () => {
     await page.locator('#shopButton').tap();
     await page.evaluate(() => window.pushminer!.step(2));
     const line = page.locator('#shopProgress');
-    await expect(line, 'the toll, in words').toHaveText('The Hollow: toll 0 of 1,000');
+    await expect(line, 'the toll, in words').toHaveText('The Hollow: toll 0 of 1,000 · brought out 0 of 68,850');
     await expect(line).toBeVisible();
     const box = (await line.boundingBox())!;
     expect(box.x, 'on the screen at the left').toBeGreaterThanOrEqual(0);
     expect(box.x + box.width, 'and not past the right').toBeLessThanOrEqual(400);
     await expect(page.locator('#shopBalance'), 'nothing banked yet').toHaveText('0');
+    expect(problems).toEqual([]);
+  });
+});
+
+/** A row of the ledger as the game writes it, for a save written by hand: what a cave held, took and drained, the rest left. */
+function rowFor(cave: string, held: number, taken: number, drained: number, won: [boolean, boolean, boolean]): Row {
+  return {
+    cave,
+    held,
+    taken,
+    toll: Math.floor(taken / 2),
+    drained,
+    left: held - taken - drained,
+    finds: { chamber: 'none', sideRoom: 'none', wall: 'none', geodes: { cracked: 0, of: 0 } },
+    marks: { clean: won[0], everyHeap: won[1], everyFind: won[2] },
+  };
+}
+
+/** The six caves a run leaves, as a player who left each in turn would have them in the ledger. */
+const SIX_ROWS: Row[] = [
+  rowFor('hollow', 2620, 2580, 0, [true, false, true]),
+  rowFor('south-gallery', 5755, 4310, 120, [false, true, false]),
+  rowFor('east-gallery', 7990, 5200, 0, [true, false, false]),
+  rowFor('north-vault', 9840, 8000, 40, [false, true, true]),
+  rowFor('warrens', 8650, 6100, 310, [false, false, false]),
+  rowFor('west-gallery', 12195, 12195, 0, [true, true, true]),
+];
+
+test.describe('the ledger on a phone', () => {
+  test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
+
+  test('is opened from the workshop’s foot, whole and on the screen with all six caves and the one being played', async ({
+    page,
+  }, info) => {
+    const problems = watch(page);
+    await start(page, { seed: 1, paused: true, save: { cave: 'deep', ledger: SIX_ROWS, taken: 1900, drained: 60 } });
+    await page.evaluate(() => window.pushminer!.pause());
+    await page.locator('#shopButton').tap();
+    await page.evaluate(() => window.pushminer!.step(2));
+    // the foot's button is where a finger gets it: after the workshop is scrolled to it, what is on top of it is itself
+    const button = page.locator('#ledgerButton');
+    await button.scrollIntoViewIfNeeded();
+    expect(await touchable(page, '#ledgerButton'), 'the ledger button in the foot').toEqual([]);
+    expect(await touchable(page, '#reset'), 'and its neighbour').toEqual([]);
+    const foot = await page.locator('#shopProgress').boundingBox();
+    expect(foot!.x + foot!.width, 'the foot’s line is not past the right').toBeLessThanOrEqual(400);
+    const taken = SIX_ROWS.reduce((n, r) => n + r.taken, 0) + 1900;
+    const figure = (n: number) => n.toLocaleString('en-US');
+    await expect(page.locator('#shopProgress')).toContainText(`brought out ${figure(taken)} of 68,850`);
+    await button.tap();
+    await page.evaluate(() => window.pushminer!.step(2));
+    const says = await ledgerSays(page);
+    expect(says.shown, 'the ledger stands where the workshop does').toBe(true);
+    expect(says.rows.map((r) => r.name)).toEqual([
+      'The Hollow',
+      'South Gallery',
+      'East Gallery',
+      'North Vault',
+      'The Warrens',
+      'West Gallery',
+      'The Deep',
+    ]);
+    expect(says.rows.map((r) => r.now)).toEqual([false, false, false, false, false, false, true]);
+    SIX_ROWS.forEach((r, k) =>
+      expect(says.rows[k].said).toBe(
+        `${figure(r.taken)} of ${figure(r.held)} · ${figure(r.drained)} drained · ${figure(r.left)} left behind`,
+      ),
+    );
+    expect(says.rows[6].said, 'the cave being played').toBe('1,900 of 21,800 so far · 60 drained');
+    expect(says.rows[0].marks).toEqual(['◆ clean', '◇ every heap', '◆ every find']);
+    expect(says.total).toBe(`The mine: brought out ${figure(taken)} of 68,850`);
+    // every figure is on the screen, and nothing runs off the side
+    const fits = await page.evaluate(() => {
+      const panel = document.getElementById('ledger')!;
+      const box = panel.getBoundingClientRect();
+      const out: string[] = [];
+      if (box.left < 0 || box.right > innerWidth) out.push(`the panel is across ${box.left} to ${box.right}`);
+      if (box.top < 0 || box.bottom > innerHeight) out.push(`the panel is down ${box.top} to ${box.bottom}`);
+      if (panel.scrollWidth > panel.clientWidth) out.push('the panel scrolls sideways');
+      if (document.documentElement.scrollWidth > innerWidth) out.push('the page scrolls sideways');
+      for (const el of Array.from(panel.querySelectorAll('.row span, .row small, .mark, .total'))) {
+        const r = el.getBoundingClientRect();
+        if (r.left < box.left - 0.5 || r.right > box.right + 0.5)
+          out.push(`${el.textContent} is across ${r.left} to ${r.right}`);
+        if (r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5) out.push(`${el.textContent} is cut off`);
+      }
+      return out;
+    });
+    expect(fits, 'every figure on the screen, and no sideways scroll').toEqual([]);
+    expect(await touchable(page, '#ledgerClose'), 'its own close button, where a finger gets it').toEqual([]);
+    await expect(page.locator('#muteButton'), 'the options step aside, as they do for the workshop').toBeHidden();
+    await info.attach('the ledger on a phone', { body: await page.screenshot(), contentType: 'image/png' });
+    await page.locator('#ledgerClose').tap();
+    await expect(page.locator('#ledger')).toBeHidden();
+    await expect(page.locator('#shop'), 'the workshop is as it was under it').toBeVisible();
+    await button.tap();
+    await expect(page.locator('#ledger')).toBeVisible();
+    // the shop's own button shuts the workshop, and the ledger with it
+    await page.locator('#shopButton').tap();
+    await page.evaluate(() => window.pushminer!.step(2));
+    await expect(page.locator('#shop')).toBeHidden();
+    await expect(page.locator('#ledger'), 'the workshop shut, and the ledger with it').toBeHidden();
+    expect(problems).toEqual([]);
+  });
+
+  test('has its card on leaving a cave under the note and clear of the map, the options and the screen’s edge', async ({
+    page,
+  }) => {
+    const problems = watch(page);
+    await start(page, { seed: 11, paused: true, save: { cave: 'hollow', open: true } });
+    await page.evaluate(() => {
+      const api = window.pushminer!;
+      api.pause();
+      api.step(30);
+      const { beyond, out } = api.content().exit!;
+      api.teleport(beyond.x, beyond.y, Math.atan2(out[1], out[0]));
+      api.step(2);
+    });
+    await swapped(page);
+    await page.evaluate(() => window.pushminer!.step(26));
+    const card = await cardSays(page);
+    expect(card.shown, 'the card is up').toBe(true);
+    const boxes = await page.evaluate(() => {
+      const box = (id: string) => {
+        const r = document.getElementById(id)!.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      };
+      return { map: box('minimap'), options: box('options'), pad: box('pad') };
+    });
+    expect(card.card.left, 'on the screen at the left').toBeGreaterThanOrEqual(0);
+    expect(card.card.right, 'and before the map begins').toBeLessThan(boxes.map.left);
+    expect(card.card.top, 'under the note').toBeGreaterThanOrEqual(card.note!.bottom);
+    expect(card.card.top, 'and under the options').toBeGreaterThanOrEqual(boxes.options.bottom);
+    expect(card.card.bottom, 'and above the controls').toBeLessThan(boxes.pad.top);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll').toBe(
+      true,
+    );
+    expect(card.name).toBe('The Hollow');
+    expect(card.figures).toContain('brought out');
     expect(problems).toEqual([]);
   });
 });
@@ -1122,6 +1381,37 @@ test.describe('the scoop on a phone', () => {
     expect(problems).toEqual([]);
   });
 });
+
+/**
+ * Whether a finger on the element `selector` names gets it: at its middle and near each of its corners, the thing on
+ * top there is the element itself, and the element is on the screen. What is in the way is said.
+ */
+async function touchable(page: Page, selector: string): Promise<string[]> {
+  return page.evaluate((selector) => {
+    const b = document.querySelector<HTMLElement>(selector)!;
+    const r = b.getBoundingClientRect();
+    const under: string[] = [];
+    if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight)
+      under.push(`${selector} is off the screen`);
+    const inset = 4;
+    for (const [x, y] of [
+      [(r.left + r.right) / 2, (r.top + r.bottom) / 2],
+      [r.left + inset, r.top + inset],
+      [r.right - inset, r.top + inset],
+      [r.left + inset, r.bottom - inset],
+      [r.right - inset, r.bottom - inset],
+    ]) {
+      const top = document.elementFromPoint(x, y);
+      if (top !== b && !b.contains(top)) {
+        under.push(
+          `${selector} is under ${top instanceof HTMLElement ? top.id || top.className || top.tagName : 'nothing'}`,
+        );
+        break;
+      }
+    }
+    return under;
+  }, selector);
+}
 
 /**
  * Whether a finger on each button of a phone gets that button: at its middle and near each of its corners, the

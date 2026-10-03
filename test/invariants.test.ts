@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { EXIT } from '../src/cave';
 import { checkInvariants } from '../src/invariants';
-import { gameIn, newGame, withSeed } from './helpers';
+import type { Row } from '../src/ledger';
+import { RUN, gameIn, newGame, withSeed } from './helpers';
 
 const DT = 1 / 60;
 const still = { throttle: 0, steer: 0 };
@@ -114,6 +115,47 @@ describe('the invariants of a run', () => {
       game.economy.save.open = true;
       expect(checkInvariants(game).join('\n')).toContain('the way out is open and its rock is not');
     });
+  });
+
+  it('notice a ledger that does not add up, has too many rows, a cave not in the run, or one twice', () => {
+    const row = (cave: string, over: Partial<Row> = {}): Row => ({
+      cave,
+      held: 100,
+      taken: 60,
+      toll: 20,
+      drained: 10,
+      left: 30,
+      finds: { chamber: 'none', sideRoom: 'none', wall: 'none', geodes: { cracked: 0, of: 0 } },
+      marks: { clean: false, everyHeap: false, everyFind: false },
+      ...over,
+    });
+    const game = gameIn('east-gallery');
+    const save = game.economy.save;
+    save.ledger = [row('hollow'), row('south-gallery')];
+    expect(checkInvariants(game), 'rows that add up').toEqual([]);
+    save.ledger = [row('hollow', { left: 31 })];
+    expect(checkInvariants(game).join('\n')).toContain('the ledger: hollow took 60, drained 10 and left 31 of 100');
+    // a row of the last cave's vein is the one allowed to pass what it held
+    save.ledger = [row('hollow', { taken: 140, left: 0, vein: true })];
+    expect(checkInvariants(game)).toEqual([]);
+    save.ledger = [row('the-moon')];
+    expect(checkInvariants(game).join('\n')).toContain('a row for the-moon, which is not in the run');
+    save.ledger = [row('hollow'), row('hollow')];
+    expect(checkInvariants(game).join('\n')).toContain('hollow twice');
+    save.ledger = RUN.map((c) => row(c.id));
+    expect(checkInvariants(game).join('\n')).toContain(`${RUN.length} rows, and a run leaves ${RUN.length - 1} caves`);
+  });
+
+  it('notice a cave that has taken less than the toll it has paid, and a count of geodes that is not a count', () => {
+    const game = gameIn('south-gallery', { toll: 0 });
+    game.economy.save.toll = 500;
+    game.economy.save.taken = 499;
+    expect(checkInvariants(game).join('\n')).toContain('the ledger: 499 taken, 500 of the toll paid');
+    game.economy.save.taken = 500;
+    game.economy.save.cracked = -1;
+    expect(checkInvariants(game).join('\n')).toContain('the ledger: -1 geodes cracked');
+    game.economy.save.cracked = 2;
+    expect(checkInvariants(game)).toEqual([]);
   });
 
   it('ask nothing of a game that has been left: its save is of the next cave', () => {

@@ -53,6 +53,10 @@ the game to whatever it happened to draw that day.
   share again, since the bank has not moved. A drain is never in `cave.holes`:
   nav, the foreman, the autopilot, the tally and the minimap's holes read that
   as where to deliver. Routes are content, and `npm run caves:map` draws them.
+- `src/ledger.ts` is the ledger, headless: `held(spec)`, `rowOf(game)` (taken,
+  toll, drained, left, finds and three marks, for the cave being played at any
+  moment), the row `Game.leave` hands `Economy.moveOn` (`save.ledger`, a row a cave
+  left, never the last), and the words the card and the panel say. Never a clock.
 - `src/debug.ts` is `window.pushminer`, the test API. `src/invariants.ts` lists
   the rules that must always hold.
 - Content (heaps, walls, barrels, lamps, the way in and the way out) is
@@ -105,6 +109,12 @@ What to copy the shape of, when building something new:
   spots are pinned by hash. How each flow looks is `FLOW_LOOK` in
   `src/currents.ts`, drawn by artshape-render's flow kinds from the game's
   clock (`renderer.time = game.t`), at `RIDE` of the current's speed.
+- **The ledger:** the model for a figure the page shows from a headless module:
+  `src/ledger.ts` works out the row, the card's bar and the panel's words
+  (`cardOf`, `ledgerOf`), `hud.ts` only draws them, `test/ledger.test.ts` holds the
+  figures, `smoke/look.spec.ts` holds the panel's words beside its picture
+  (`LEDGER_SAYS`). The fuzzer hands money over with `grant`, not `deposit`, so
+  that what a cave "took" stays what was banked in it.
 - **Tools:** the fuzzer (`scripts/fuzzer.ts`) and the drone gate
   (`scripts/sim-check.ts`). Each has unit tests of its own working parts.
 - **Test helpers:** `withSeed` in `test/helpers.ts` for chance from a seed,
@@ -170,6 +180,7 @@ For anything new in the cave, check what it does:
 - **the hole:** pushed down it, lit or moving
 - **leaving:** the cave left with it in it (lit, moving, on the way out's tiles when it opens): counted as lost, never carried over
 - **the toll:** banked while it is owed (it takes half of each coin, a find as a coin; the odd coin of an odd value), the coin that pays it (the rest of a deposit that is more than owed is the bank's), saved part paid, left with it paid (the next cave owes its own), the last cave (none), an old save without `toll` (paid by half of what has gone from the heaps)
+- **the ledger:** counted as taken, drained or left (`taken + drained + left === held`): an unopened chamber, a standing wall and a whole geode are left, and a geode lost whole was never cracked
 - **save:** saved, reloaded, and loaded from an old save without the field
 - **drones:** pushed by one, or targeted by the foreman
 - **other features:** blasts, the horn, belts, the magnet, brick walls and rubble,

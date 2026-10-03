@@ -11,7 +11,7 @@ import {
   workshopTotal,
 } from '../src/economy';
 import { KIND_VALUE } from '../src/physics';
-import { RUN, payToll, specOf } from './helpers';
+import { RUN, payToll, specOf, leavingRow } from './helpers';
 
 /** An economy over the browser's storage, which these tests stand in for. */
 const newEconomy = () => payToll(new Economy(browserStore, RUN));
@@ -75,7 +75,7 @@ describe('the economy', () => {
       expect(e.save.open).toBe(true);
       // opening again before moving on does nothing
       e.open();
-      e.moveOn();
+      e.moveOn(leavingRow(e));
       expect(e.cave()).toBe(RUN[n]);
       expect(e.save.cave).toBe(RUN[n].id);
       expect(e.index()).toBe(n);
@@ -91,12 +91,12 @@ describe('the economy', () => {
 
   it('will not move on before the way out is open, or past the last cave', () => {
     const e = newEconomy();
-    e.moveOn();
+    e.moveOn(leavingRow(e));
     expect(e.cave()).toBe(RUN[0]);
     e.save.cave = RUN[RUN.length - 1].id;
     const last = new Economy(memoryStore(JSON.stringify(e.save)), RUN);
     last.save.open = true;
-    last.moveOn();
+    last.moveOn(leavingRow(last));
     expect(last.save.cave).toBe(RUN[RUN.length - 1].id);
   });
 
@@ -108,7 +108,7 @@ describe('the economy', () => {
     e.open();
     stop();
     expect(e.listening).toBe(0);
-    e.moveOn();
+    e.moveOn(leavingRow(e));
     expect(told).toEqual(['exit']);
   });
 
@@ -130,7 +130,7 @@ describe('the economy', () => {
     a.deposit(40);
     a.breakLamp(2);
     a.open();
-    a.moveOn();
+    a.moveOn(leavingRow(a));
     const b = newEconomy();
     expect(b.save.cave).toBe(RUN[1].id);
     expect(b.save.open).toBe(false);
@@ -271,7 +271,7 @@ describe('the economy', () => {
     // the hollow has none to sell, and the next cave's are its own
     expect(new Economy(memoryStore(), RUN).offers().some((o) => o.id.startsWith('belt:'))).toBe(false);
     e.open();
-    e.moveOn();
+    e.moveOn(leavingRow(e));
     expect(e.save.belts).toEqual([]);
     expect(e.offers().find((o) => o.id === id)).toBeUndefined();
     expect(e.offers().map((o) => o.id)).toContain('belt:east-belt');

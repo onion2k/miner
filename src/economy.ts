@@ -7,6 +7,7 @@
  */
 import type { CaveSpec } from './cave';
 import type { DozerSpec } from './dozer';
+import { validRows, type Row } from './ledger';
 import { KINDS, KIND_VALUE } from './physics';
 
 /**
@@ -59,6 +60,8 @@ export interface Save {
   flag: boolean;
   /** The last cave is cleared too. */
   done: boolean;
+  /** A row of the ledger for each cave left, in the run's order: at most one fewer than the run has caves, since the last is never left. */
+  ledger: Row[];
   // What follows is the cave the player is in, and is sized to it and emptied when it is left.
   /** The id of the cave being cleared. */
   cave: string;
@@ -66,6 +69,10 @@ export interface Save {
   open: boolean;
   /** What has been paid of the cave's toll, in coins: from 0 to what `tollOf` says. Half of every coin banked in the cave goes to it until it is paid. */
   toll: number;
+  /** What has been banked in the cave, every source, the toll's half of every coin included: raised by `deposit`, and what its row of the ledger says was brought out. */
+  taken: number;
+  /** How many of its geodes have been cracked open: one lost whole down a hole was never cracked. */
+  cracked: number;
   /** The ids of the belts bought for it. */
   belts: string[];
   /** How many of each kind from the cave, and each chamber, side room and wall, are still in it, so a reload puts back what is left and not the lot. Empty when unknown. */
@@ -332,6 +339,7 @@ export class Economy {
       horn: false,
       flag: false,
       done: false,
+      ledger: [] as Row[],
       ...this.perCave(cave),
     };
   }
@@ -342,6 +350,8 @@ export class Economy {
       cave: cave.id,
       open: false,
       toll: 0,
+      taken: 0,
+      cracked: 0,
       belts: [] as string[],
       left: Array.from({ length: sourcesOf(cave).count }, () => [] as number[]),
       secrets: cave.secrets.map(() => false),
@@ -383,6 +393,7 @@ export class Economy {
     save.horn = s.horn === true;
     save.flag = s.flag === true;
     save.done = s.done === true;
+    save.ledger = validRows(s.ledger, this.run);
     if (s.cave === undefined) return this.carryOver(s);
     const cave = this.run.find((c) => c.id === s.cave);
     // a cave that is not in the run is refused by name, and the run begins again from its first
@@ -405,6 +416,8 @@ export class Economy {
       drained: finite(s.drained, 0),
     });
     save.toll = this.tollKept(cave, s, save.open || save.done);
+    save.taken = this.takenKept(cave, s);
+    save.cracked = this.crackedKept(cave, s);
     if (save.barrels) save.barrels = save.barrels.slice(0, save.barrels.length - (save.barrels.length % 3));
     if (save.geodes) save.geodes = save.geodes.slice(0, save.geodes.length - (save.geodes.length % 3));
     if (save.left.length !== sources) save.left = fresh.left;
@@ -420,11 +433,38 @@ export class Economy {
     const due = tollOf(cave);
     if (typeof s.toll === 'number' && Number.isFinite(s.toll)) return Math.max(0, Math.min(s.toll, due));
     if (cleared) return due;
-    const { value } = caveStock(cave);
+    return Math.max(0, Math.min(due, Math.floor(this.goneFromHeaps(cave) * TOLL_TAKE)));
+  }
+
+  /**
+   * What has gone from the cave's heaps, in coins, as the save's row of what is left says: the heaps' worth less what
+   * lies. A row that is empty or unknown means the whole cave is still lying, and so nothing has gone. What an old save
+   * has to go on for what was paid and what was brought out, said once.
+   */
+  private goneFromHeaps(cave: CaveSpec): number {
     const left = this.save.left[0];
     if (!left.length) return 0;
     const lying = left.reduce((sum, n, k) => sum + n * (KIND_VALUE[k] ?? 0), 0);
-    return Math.max(0, Math.min(due, Math.floor((value - lying) * TOLL_TAKE)));
+    return Math.max(0, caveStock(cave).value - lying);
+  }
+
+  /**
+   * What a save has banked in its cave, in coins. A save from before the ledger has none to read: it has brought out what
+   * has gone from the cave's heaps. Never less than the toll paid, which is part of it.
+   */
+  private takenKept(cave: CaveSpec, s: Record<string, unknown>): number {
+    const given = finite(s.taken, -1);
+    return Math.max(given >= 0 ? given : this.goneFromHeaps(cave), this.save.toll);
+  }
+
+  /**
+   * How many of the cave's geodes a save has cracked. A save from before they were counted has the ones no longer
+   * standing, which it can only say were cracked; a cave not yet begun has all of them standing.
+   */
+  private crackedKept(cave: CaveSpec, s: Record<string, unknown>): number {
+    const of = cave.geodes?.count ?? 0;
+    const standing = Array.isArray(s.geodes) ? Math.floor(numbers(s.geodes).length / 3) : of;
+    return Math.min(of, Math.floor(finite(s.cracked, Math.max(0, of - standing))));
   }
 
   /**
@@ -473,6 +513,7 @@ export class Economy {
     const secret = OLD_SECRET_ROOM.indexOf(room),
       wall = OLD_WALL_ROOM.indexOf(room);
     save.toll = this.tollKept(cave, s, save.open || save.done);
+    save.taken = this.takenKept(cave, s);
     if (cave.secrets.length && secret >= 0) save.secrets[0] = (s.secrets as unknown[] | undefined)?.[secret] === true;
     if (cave.walls.length && wall >= 0) {
       save.walls[0] = (s.walls as unknown[] | undefined)?.[wall] === true;
@@ -518,10 +559,14 @@ export class Economy {
    * The player has driven out through the way out: the next cave, and everything of the one behind
    * that belongs to it left behind. What is run-wide goes on.
    */
-  moveOn() {
+  moveOn(row: Row) {
     if (!this.save.open || this.isLast()) return;
     const old = this.current.spec;
     const next = this.run[this.index() + 1];
+    // the cave's row goes into the ledger, in the run's order, in place of any it left before (a test can travel back)
+    this.save.ledger = [...this.save.ledger.filter((r) => r.cave !== row.cave), row].sort(
+      (a, b) => this.run.findIndex((c) => c.id === a.cave) - this.run.findIndex((c) => c.id === b.cave),
+    );
     Object.assign(this.save, this.perCave(next));
     this.current = { spec: next, sources: sourcesOf(next) };
     this.persist();
@@ -563,6 +608,7 @@ export class Economy {
     this.save.toll += toll;
     this.save.bank += value - toll;
     this.save.banked += value;
+    this.save.taken += value;
     this.persist();
   }
 

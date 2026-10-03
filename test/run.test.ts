@@ -21,10 +21,11 @@ import {
 import { CLEAR_SHARE, Economy, caveStock, memoryStore, tollOf } from '../src/economy';
 import { Game, type GameEvents } from '../src/game';
 import { checkInvariants } from '../src/invariants';
+import { held, type Row } from '../src/ledger';
 import { onward } from '../scripts/run';
 import { BARREL_KIND } from '../src/physics';
 import { NO_SOURCE } from '../src/stock';
-import { RUN, caveOf, gameIn, newEconomy, saveIn, specOf, withSeed } from './helpers';
+import { RUN, caveOf, gameIn, newEconomy, saveIn, specOf, withSeed, leavingRow } from './helpers';
 
 const DT = 1 / 60;
 const still = { throttle: 0, steer: 0 };
@@ -300,9 +301,19 @@ describe('driving through the way out (criterion 3)', () => {
 });
 
 describe('what carries over, and what starts fresh (criterion 4)', () => {
-  it('keeps the bank, engine, blade, scoop, magnet, drones and cosmetics, and starts the rest of the cave afresh', () => {
+  it('keeps the bank, engine, blade, scoop, magnet, drones, cosmetics and ledger, and starts the rest of the cave afresh', () => {
     withSeed(8, () => {
       const east = specOf('east-gallery');
+      const hollowRow: Row = {
+        cave: 'hollow',
+        held: held(specOf('hollow')),
+        taken: 2500,
+        toll: 1000,
+        drained: 0,
+        left: held(specOf('hollow')) - 2500,
+        finds: { chamber: 'none', sideRoom: 'none', wall: 'none', geodes: { cracked: 0, of: 1 } },
+        marks: { clean: true, everyHeap: true, everyFind: false },
+      };
       const json = saveIn('south-gallery', {
         bank: 777,
         banked: 5000,
@@ -328,6 +339,9 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
         geodes: [3, 4, 1.6],
         drained: 12,
         toll: tollOf(specOf('south-gallery')),
+        taken: 3000,
+        cracked: 1,
+        ledger: [hollowRow],
       });
       const { events } = told();
       const economy = newEconomy(json);
@@ -359,6 +373,12 @@ describe('what carries over, and what starts fresh (criterion 4)', () => {
       expect(s.barrels).toBeNull();
       expect(s.geodes).toBeNull();
       expect(s.drained).toBe(0);
+      expect(s.taken, 'the next cave has taken nothing yet').toBe(0);
+      expect(s.cracked, 'and cracked nothing').toBe(0);
+      // what the ledger holds goes on: the row of the cave before and the row of the one just left
+      expect(s.ledger.map((r) => r.cave)).toEqual(['hollow', 'south-gallery']);
+      expect(s.ledger[0]).toEqual(hollowRow);
+      expect(s.ledger[1]).toMatchObject({ taken: 3000, toll: tollOf(specOf('south-gallery')), drained: 12 });
       expect(s.left).toHaveLength(1 + east.secrets.length + east.stashes.length + east.walls.length + 1);
       expect(s.left.every((row) => row.length === 0)).toBe(true);
       // and the next game is whole: its heaps, its barrels, nothing lost from before
@@ -406,7 +426,7 @@ describe('the last cave (criterion 5)', () => {
       for (let f = 0; f < 60 * 12; f++) game.step(DT, still);
       expect(game.world.live, 'the vein has added something to push').toBeGreaterThan(before);
       // nothing to leave by
-      game.economy.moveOn();
+      game.economy.moveOn(leavingRow(game.economy));
       expect(game.economy.save.cave).toBe(last.id);
       expect(checkInvariants(game)).toEqual([]);
     });
@@ -478,7 +498,8 @@ describe('twenty changes of cave leave nothing bigger than one does (criterion 9
         listeners: economy.listening,
         bots: game.bots.length,
         left: economy.save.left.length,
-        saveBytes: JSON.stringify(economy.save).length,
+        // the ledger is held to the run's own length and not to how long it has been played, and is counted below
+        saveBytes: JSON.stringify({ ...economy.save, ledger: [] }).length,
       });
       const seen: ReturnType<typeof sizes>[] = [];
       for (let k = 0; k < 20; k++) {
@@ -492,6 +513,7 @@ describe('twenty changes of cave leave nothing bigger than one does (criterion 9
         seen.push(sizes());
       }
       expect(economy.save.cave).toBe('cave-20');
+      expect(economy.save.ledger, 'a row a cave left, and no more than the run leaves').toHaveLength(20);
       // the save's size is a few digits of where things lie, which is not growth
       const { saveBytes: bytes19, ...last } = seen[19];
       const { saveBytes: bytes0, ...first } = seen[0];

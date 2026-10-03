@@ -11,9 +11,11 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Autopilot } from '../src/autopilot';
-import { Economy, memoryStore, tollOf } from '../src/economy';
+import { Economy, caveStock, memoryStore, tollOf } from '../src/economy';
 import { Game } from '../src/game';
 import { checkInvariants } from '../src/invariants';
+import { KIND_VALUE } from '../src/physics';
+import type { Row } from '../src/ledger';
 import { RUN, caveOf, newGame, specOf, withSeed } from './helpers';
 
 const DIR = new URL('saves/', import.meta.url);
@@ -39,6 +41,7 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '13-deep.json': { cave: 'deep', belts: ['deep-belt-north'], engine: 4 },
   '14-scoop-geodes-drained.json': { cave: 'warrens', scoop: 2, drained: 35 },
   '15-toll.json': { cave: 'warrens', scoop: 2, drained: 35, toll: 1200 },
+  '16-ledger.json': { cave: 'warrens', scoop: 2, drained: 35, toll: 1200, taken: 2950, cracked: 1 },
 };
 
 /**
@@ -63,6 +66,7 @@ const TOLLS: Record<string, number> = {
   '13-deep.json': 0,
   '14-scoop-geodes-drained.json': 975,
   '15-toll.json': 1200,
+  '16-ledger.json': 1200,
 };
 
 /**
@@ -219,11 +223,35 @@ const LANDS: Record<
     walls: [false],
     wallDamage: [0],
   },
+  '16-ledger.json': {
+    cave: 'warrens',
+    open: false,
+    left: [900, 0, 40, 20, 0, 0, 0, 0],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
 };
+
+/** The ledger a save of the shape of 16 holds: a row for each of the four caves it has left, which loading keeps whole. */
+const LEDGER_OF_16 = (JSON.parse(readFileSync(new URL('16-ledger.json', DIR), 'utf8')) as { ledger: Row[] }).ledger;
+
+/**
+ * What a save from before the ledger has taken from the cave it is in, worked out here from what it says is lying of
+ * the cave's heaps and not from the code that loads it: the heaps' worth less what lies, nothing for a save that says
+ * nothing of what lies, and never less than the toll paid.
+ */
+function takenFrom(file: string): number {
+  const land = LANDS[file];
+  const lying = land.left.reduce((sum, n, k) => sum + n * KIND_VALUE[k], 0);
+  const gone = land.left.length ? Math.max(0, caveStock(specOf(land.cave)).value - lying) : 0;
+  return Math.max(gone, TOLLS[file]);
+}
 
 describe('saves from every shape the game has written', () => {
   it('has a file for every shape, oldest first, and says where each lands', () => {
-    expect(files.length).toBeGreaterThanOrEqual(15);
+    expect(files.length).toBeGreaterThanOrEqual(16);
     expect(files).toEqual(Object.keys(KEPT).sort());
     expect(Object.keys(LANDS).sort()).toEqual(files);
   });
@@ -253,16 +281,18 @@ describe('saves from every shape the game has written', () => {
         else if (file.startsWith('13')) {
           expect(save.lampsBroken).toEqual([3, 9]);
           expect(save.barrels, 'the barrels where they stood').toHaveLength(18);
-        } else if (file.startsWith('14') || file.startsWith('15')) {
+        } else if (file.startsWith('14') || file.startsWith('15') || file.startsWith('16')) {
           expect(save.lampsBroken).toEqual([5, 11]);
           expect(save.barrels, 'the barrels where they stood').toHaveLength(9);
-          expect(save.geodes, 'the geodes where they lay').toEqual([-136, 4, 1.6, -172, -20, 1.6]);
+          expect(save.geodes, 'the geodes where they lay').toEqual(
+            file.startsWith('16') ? [-136, 4, 1.6] : [-136, 4, 1.6, -172, -20, 1.6],
+          );
         } else {
           expect(save.lampsBroken, 'lamps start afresh').toEqual([]);
           expect(save.barrels, 'barrels start afresh').toBeNull();
         }
         // a save from before the scoop, the geodes and the drains has none of them, and starts without
-        if (!file.startsWith('14') && !file.startsWith('15')) {
+        if (!file.startsWith('14') && !file.startsWith('15') && !file.startsWith('16')) {
           expect(save.scoop, 'no scoop bought').toBe(0);
           expect(save.geodes, 'geodes start afresh').toBeNull();
           expect(save.drained, 'nothing down a drain').toBe(0);
@@ -277,6 +307,24 @@ describe('saves from every shape the game has written', () => {
         expect(e.save.banked).toBe(raw.banked);
         expect(e.save.toll, 'the toll paid').toBe(TOLLS[file]);
         expect(e.owed()).toBe(tollOf(specOf(e.save.cave)) - TOLLS[file]);
+      });
+
+      it('has its ledger as it was written, or none and what it has taken worked out from its heaps if it was before the ledger', () => {
+        const e = new Economy(memoryStore(read(file)), RUN);
+        if (file.startsWith('16')) {
+          expect(e.save.ledger, 'every row kept whole').toEqual(LEDGER_OF_16);
+          expect(e.save.taken).toBe(2950);
+          expect(e.save.cracked).toBe(1);
+        } else {
+          expect(e.save.ledger, 'no row was ever written').toEqual([]);
+          expect(e.save.taken, 'the heaps’ worth less what lies').toBe(takenFrom(file));
+          // a save that was not told of the geodes counted has the ones that no longer stand cracked
+          const raw = JSON.parse(read(file)) as { geodes?: number[] | null };
+          const cave = specOf(e.save.cave);
+          const standing = Array.isArray(raw.geodes) ? raw.geodes.length / 3 : (cave.geodes?.count ?? 0);
+          expect(e.save.cracked).toBe(Math.max(0, (cave.geodes?.count ?? 0) - standing));
+        }
+        expect(e.save.taken, 'at least the toll, which is part of it').toBeGreaterThanOrEqual(e.save.toll);
       });
 
       it('plays on from where it left off, and breaks no rule', () => {
@@ -307,6 +355,9 @@ describe('saves from every shape the game has written', () => {
         if (before.geodes) expect(after.geodes).toEqual(before.geodes);
         else expect(after.geodes).toHaveLength(caveOf(before.cave).geodes.length * 3);
         expect(after.drained).toBe(before.drained);
+        expect(after.ledger, 'the ledger is as it was').toEqual(before.ledger);
+        expect(after.taken).toBe(before.taken);
+        expect(after.cracked).toBe(before.cracked);
         expect(after.toll, 'the toll worked out for an old save is kept once it is written').toBe(before.toll);
       });
     });

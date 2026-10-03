@@ -8,7 +8,7 @@ import { Economy, FORMER_LAST, TOLL_SHARE, TOLL_TAKE, caveStock, memoryStore, to
 import { Game } from '../src/game';
 import { checkInvariants } from '../src/invariants';
 import { BAR } from '../src/physics';
-import { RUN, caveOf, gameIn, newEconomy, saveIn, specOf, withSeed } from './helpers';
+import { RUN, caveOf, gameIn, newEconomy, saveIn, specOf, withSeed, leavingRow } from './helpers';
 import { opensOnTheLastCoin, told } from './current-helpers';
 
 const DT = 1 / 60;
@@ -226,7 +226,7 @@ describe('the toll, case by case', () => {
     e.deposit(2100);
     e.open();
     expect(e.owed()).toBe(0);
-    e.moveOn();
+    e.moveOn(leavingRow(e));
     expect(e.save.cave).toBe('south-gallery');
     expect([e.save.toll, e.owed(), e.tollDue()]).toEqual([0, 1200, 1200]);
     expect(e.bank, 'what the hollow left over is the player’s, and goes on').toBe(1100);

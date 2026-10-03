@@ -13,7 +13,7 @@ import { Game, SETTLE_STEPS } from '../../src/game';
 import { checkInvariants } from '../../src/invariants';
 import { BAR } from '../../src/physics';
 import { onward } from '../../scripts/run';
-import { RUN, caveOf, gameIn, newEconomy, saveIn, specOf, withSeed } from '../helpers';
+import { RUN, caveOf, gameIn, newEconomy, saveIn, specOf, withSeed, leavingRow } from '../helpers';
 
 const DT = 1 / 60;
 const still = { throttle: 0, steer: 0 };
@@ -115,7 +115,7 @@ describe('saves from the West Gallery, from before it had a way out', () => {
       for (let f = 0; f < 600; f++) game.step(DT, still);
       // nothing to be sent on by: the way out is never opened for a finished game
       economy.open();
-      economy.moveOn();
+      economy.moveOn(leavingRow(economy));
       expect(economy.save.cave).toBe('west-gallery');
       expect(economy.save.done).toBe(true);
       expect(economy.save.open).toBe(false);

@@ -3,6 +3,7 @@
  * banked, and what clearing it does.
  */
 import { CLEAR_SHARE } from './economy';
+import { figure } from './figure';
 
 /** The parts of the economy and the save the line reads. */
 export interface Progress {
@@ -21,12 +22,11 @@ export const EXIT_OPEN_NOTE = 'the way out is open';
 export const ARRIVING_FOR = 6;
 
 /**
- * The note on coming into a cave: its name and what is in it, and, when there was any, the worth of what
- * was left behind in the one before, a figure of coins.
+ * The note on coming into a cave: its name and what is in it. What was left behind in the one before is the
+ * ledger's card, shown under it for as long.
  */
-export function arrivalNote(cave: { name: string; blurb: string }, lost: number): { text: string; seconds: number } {
-  const behind = Math.round(lost) > 0 ? `\n${Math.round(lost)} left behind` : '';
-  return { text: `${cave.name}\n${cave.blurb}${behind}`, seconds: ARRIVING_FOR };
+export function arrivalNote(cave: { name: string; blurb: string }): { text: string; seconds: number } {
+  return { text: `${cave.name}\n${cave.blurb}`, seconds: ARRIVING_FOR };
 }
 
 /** What the note says of what has gone down the drains in the last few moments: a figure of coins. */
@@ -36,9 +36,6 @@ export function drainNote(lost: number): string {
 
 /** How long a run of things down a drain is added up for one note, in seconds: after that gap a new one begins. */
 export const DRAIN_NOTE_RUN = 2;
-
-/** A figure of coins with a comma at the thousands, the same in every locale. */
-const figure = (n: number) => Math.floor(n).toLocaleString('en-US');
 
 /** How far through the cave being cleared the player is, for the counters. */
 export function progressText(progress: Progress, banked: number): string {

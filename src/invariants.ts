@@ -6,7 +6,7 @@
  * holds is carried, worth something, and no more than it takes. The counts the
  * game keeps of what is in the cave agree with what is in it. The world's
  * holes are the cave's holes and then its drains. The bank is a
- * number, the toll paid is a number up to the cave's own and opens the way out, the scoop is a size the workshop sells, the save's cave is in the
+ * number, the toll paid is a number up to the cave's own and opens the way out, the ledger's rows add up and the cave has taken at least its toll, the scoop is a size the workshop sells, the save's cave is in the
  * run and every list of it is the cave's size, and the way out is open only
  * when enough is banked. The save is plain
  * data that comes back as it went.
@@ -139,6 +139,24 @@ export function checkInvariants(game: Game): string[] {
   const due = tollOf(spec);
   if (!Number.isFinite(save.toll) || save.toll < 0 || save.toll > due) out.push(`the toll: ${save.toll} of ${due}`);
   if (!Number.isFinite(save.drained) || save.drained < 0) out.push(`down the drains: ${save.drained}`);
+  // the ledger: what the cave has taken is a number, never less than the toll it has paid (the toll is part of it),
+  // and a row for each cave left is of a cave in the run, once, in a run that leaves at most all but its last
+  if (!Number.isFinite(save.taken) || save.taken < save.toll)
+    out.push(`the ledger: ${save.taken} taken, ${save.toll} of the toll paid`);
+  if (!Number.isInteger(save.cracked) || save.cracked < 0) out.push(`the ledger: ${save.cracked} geodes cracked`);
+  const ledger = save.ledger;
+  if (ledger.length > economy.run.length - 1)
+    out.push(`the ledger: ${ledger.length} rows, and a run leaves ${economy.run.length - 1} caves`);
+  const inLedger = new Set<string>();
+  for (const row of ledger) {
+    if (!economy.run.some((c) => c.id === row.cave))
+      out.push(`the ledger: a row for ${row.cave}, which is not in the run`);
+    else if (inLedger.has(row.cave)) out.push(`the ledger: ${row.cave} twice`);
+    inLedger.add(row.cave);
+    // the last cave's vein runs coins in without end, so the sum is held only to a cave that has none
+    if (!row.vein && row.taken + row.drained + row.left !== row.held)
+      out.push(`the ledger: ${row.cave} took ${row.taken}, drained ${row.drained} and left ${row.left} of ${row.held}`);
+  }
   if (!economy.run.some((c) => c.id === save.cave)) out.push(`the save's cave is not in the run: ${save.cave}`);
   else if (save.cave !== spec.id) out.push(`the game is in ${spec.id} and the save in ${save.cave}`);
   // every list of the cave is the cave's size, and nothing in it is out of the grid

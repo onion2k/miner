@@ -47,16 +47,13 @@ describe('the words on the way out and on arriving', () => {
   });
 
   it('names the cave and says what is in it, and how long the note is shown', () => {
-    const note = arrivalNote(RUN[1], 0);
+    const note = arrivalNote(RUN[1]);
     expect(note.text).toBe('South Gallery\nrubies and emeralds');
     expect(note.seconds).toBe(ARRIVING_FOR);
   });
 
-  it('says what was left behind in the cave before, when anything was', () => {
-    expect(arrivalNote(RUN[2], 1234).text).toBe('East Gallery\nrubies and sapphires\n1234 left behind');
-    // nothing left behind is not worth a line
-    expect(arrivalNote(RUN[2], 0).text).not.toContain('left behind');
-    // a figure with coins' worth, not parts of one
-    expect(arrivalNote(RUN[2], 99.6).text).toContain('100 left behind');
+  it('says nothing of what was left behind in the cave before: that is the ledger’s card, shown under it', () => {
+    expect(arrivalNote(RUN[2]).text).toBe('East Gallery\nrubies and sapphires');
+    expect(arrivalNote(RUN[2]).text).not.toContain('left behind');
   });
 });

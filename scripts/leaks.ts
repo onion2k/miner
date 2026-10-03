@@ -79,6 +79,8 @@ export const WATCH: Partial<Record<string, { ceiling: number; steady?: boolean }
   'geodes saved': { ceiling: runCapacity(RUN).kinds[GEODE_KIND] * 3 },
   'save bytes': { ceiling: 200_000 },
   'left rows': { ceiling: 400 },
+  // a row for each cave left, and the last is never left: held by its ceiling alone, since it only climbs, a cave at a time
+  'ledger rows': { ceiling: RUN.length - 1 },
   bots: { ceiling: 3 },
   // the most one lift takes; it is emptied by a tip, by being set down, and by the cave being left
   'scoop held': { ceiling: SCOOP_MOST },
@@ -110,6 +112,7 @@ export function sizes(game: Game, pilot?: Autopilot): Record<string, number> {
     'geodes saved': save.geodes?.length ?? 0,
     'save bytes': JSON.stringify(save).length,
     'left rows': save.left.reduce((n, row) => n + row.length, 0),
+    'ledger rows': save.ledger.length,
     bots: game.bots.length,
     'scoop held': game.scoop.held.length,
     fountains: game.fountains.length,

@@ -7,6 +7,7 @@
  */
 import { expect, type Page } from '@playwright/test';
 import type { PushminerApi } from '../src/debug';
+import type { Row } from '../src/ledger';
 
 declare global {
   interface Window {
@@ -40,6 +41,11 @@ export interface SaveSetup {
   /** The ids of the belts bought for the cave. */
   belts?: string[];
   barrels?: number[] | null;
+  /** What has been banked in the cave, in coins, and what has gone down its drains. */
+  taken?: number;
+  drained?: number;
+  /** The ledger: a row for each cave left, as the game writes it. */
+  ledger?: Row[];
 }
 
 /** Errors on the page, and requests that failed, collected as they happen. */
@@ -197,3 +203,48 @@ export async function steerTo(
 type GameStateLike = ReturnType<PushminerApi['state']>;
 /** A state, and the way the machine heads on the screen where `measuring` has been called. */
 export type SampleLike = GameStateLike & { heading: number | null };
+
+/** The card of the cave just left, as the page shows it: its words, the cut of its bar, and where it stands. */
+export async function cardSays(page: Page) {
+  return page.evaluate(() => {
+    const card = document.getElementById('ledgerCard')!;
+    const note = document.getElementById('cameraNote')!;
+    const bar = card.querySelector('.bar')!;
+    const width = (part: string) => parseFloat((bar.querySelector(part) as HTMLElement).style.width);
+    const box = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    };
+    return {
+      shown: !card.hidden && getComputedStyle(card).display !== 'none',
+      name: card.querySelector('.name')!.textContent,
+      figures: card.querySelector('.figures')!.textContent,
+      marks: Array.from(card.querySelectorAll('.mark')).map((m) => ({
+        text: m.textContent,
+        won: m.classList.contains('won'),
+      })),
+      out: width('.out'),
+      drained: width('.drain'),
+      label: bar.getAttribute('aria-label'),
+      card: box(card),
+      note: note.hidden ? null : box(note),
+    };
+  });
+}
+
+/** What the whole ledger says, top to bottom: each cave's name and words, its marks, whether it is dimmed, and the line for the run. */
+export async function ledgerSays(page: Page) {
+  return page.evaluate(() => {
+    const panel = document.getElementById('ledger')!;
+    return {
+      shown: !panel.hidden && getComputedStyle(panel).display !== 'none',
+      rows: Array.from(panel.querySelectorAll('.row')).map((row) => ({
+        name: row.querySelector('span')!.textContent,
+        said: row.querySelector('small')!.textContent,
+        marks: Array.from(row.querySelectorAll('.mark')).map((m) => m.textContent),
+        now: row.classList.contains('now'),
+      })),
+      total: panel.querySelector('.total')!.textContent,
+    };
+  });
+}

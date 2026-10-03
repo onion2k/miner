@@ -30,6 +30,7 @@ import { SpiderGait } from './spider';
 import { FUSE } from './barrels';
 import { DRAIN_NOTE_RUN, EXIT_OPEN_NOTE, arrivalNote, drainNote, progressText } from './progress';
 import { drainFlow } from './currents';
+import { cardOf, ledgerOf, runLine, type Row } from './ledger';
 import { cameraFacing, floorImage, minimapView, type MinimapView } from './minimap';
 import { holeLamps, lampOn } from './lamps';
 import { stashBehind, wallTiles } from './walls';
@@ -70,6 +71,8 @@ const AIR_TRIES = 4;
 const MAP_EVERY = 1 / 15;
 /** How many of the game's events the test API keeps, before the oldest go. */
 const EVENTS_KEPT = 500;
+/** How long the note that the last cave is cleared is shown, in seconds: the ledger opens when it is gone. */
+const DONE_NOTE_FOR = 6;
 
 const hud = new Hud();
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -189,17 +192,17 @@ async function main() {
       sound.smash();
       hud.note(EXIT_OPEN_NOTE, 4);
     },
-    caveLeft(from, lost) {
+    caveLeft(from, lost, row) {
       log(`caveLeft ${from} ${lost}`);
       // the game that told of it is still in the middle of its step, and its darkness is now black: that frame is
       // drawn, and the browser gets to paint it, before the next cave is built, so the build is spent behind black
       // and not behind a picture that has frozen
-      const pending = (left = { lost });
+      const pending = (left = { row });
       log('blackout');
       requestAnimationFrame(() => {
         if (left !== pending) return;
         left = null;
-        enter(game.dozer.speed, lost, true);
+        enter(game.dozer.speed, row);
       });
     },
     chamberOpened(k, faces, [c, s]) {
@@ -269,7 +272,9 @@ async function main() {
     done() {
       log('done');
       sound.chime();
-      hud.note('the cave is cleared · its vein runs on', 6);
+      hud.note('the cave is cleared · its vein runs on', DONE_NOTE_FOR);
+      // the whole ledger opens by itself once, after the note
+      ledgerIn = DONE_NOTE_FOR;
     },
     bought(id) {
       log(`bought ${id}`);
@@ -307,7 +312,9 @@ async function main() {
   };
   let game = new Game(economy, cave, events);
   /** The game has been driven out of its cave, with this much still in it: the page swaps to the next a frame after the black is drawn. */
-  let left: { lost: number } | null = null;
+  let left: { row: Row } | null = null;
+  /** Seconds, of game time, until the ledger opens by itself after the last cave is cleared; 0 when it is not waiting. */
+  let ledgerIn = 0;
   addEventListener('pagehide', () => game.persist());
   addEventListener('visibilitychange', () => {
     if (document.hidden) game.persist();
@@ -537,6 +544,7 @@ async function main() {
   hud.booted();
   hud.scoopKey(economy.save.scoop > 0);
   hud.onReset(() => economy.reset());
+  hud.onLedger(() => setLedger(!ledgerOpen));
   /** A phone's buttons, when there are any. */
   let pad: ReturnType<typeof setupPad> | null = null;
   /** Whether the pad was last told the scoop's bucket is up. */
@@ -611,13 +619,22 @@ async function main() {
   }
 
   let shopOpen = false;
+  let ledgerOpen = false;
+  /** The whole ledger open or shut, its rows read off the game as it stands. */
+  const setLedger = (open: boolean) => {
+    ledgerOpen = open;
+    hud.ledger(open);
+    if (open) renderLedger();
+  };
+  const renderLedger = () => hud.ledgerView(ledgerOf(economy, game));
   const renderShops = () => {
     renderShop(hud.shopRows, economy);
     renderShop(hud.shopCosmetics, economy, economy.cosmetics());
   };
   let smoothed = 16.7;
   let statsIn = 0,
-    shopIn = 0;
+    shopIn = 0,
+    ledgerSince = 0;
   let lastBank = -1,
     lastHaul = -1,
     lastOpen = false;
@@ -627,9 +644,11 @@ async function main() {
    * Into the cave the economy has moved on to, or made again if it is the same: its game, its rock and
    * belts, the lights of its lamps, and the camera at the dozer. What was of the last cave is let go, so
    * that twenty changes leave no more behind than one. It is timed, and logged for the test API, since it
-   * is made with the screen black and has a second to do it in.
+   * is made with the screen black and has a second to do it in. `row` is what the ledger says of the cave just
+   * left: its card is shown under the note of the one come into.
    */
-  function enter(speed: number, lost = 0, leaving = false) {
+  function enter(speed: number, row?: Row) {
+    const leaving = row !== undefined;
     const began = performance.now();
     // whatever swap was waiting on a frame is this one
     left = null;
@@ -657,8 +676,10 @@ async function main() {
     lastHaul = -1;
     // a workshop left open sells this cave's belts now, and not the last one's
     if (shopOpen) renderShops();
-    const note = arrivalNote(spec, lost);
+    const note = arrivalNote(spec);
     hud.note(note.text, note.seconds);
+    if (row) hud.ledgerCard(cardOf(row, economy.run.find((c) => c.id === row.cave)?.name ?? row.cave), note.seconds);
+    if (ledgerOpen) renderLedger();
     const ms = performance.now() - began;
     log(`swap ${spec.id} ${ms.toFixed(0)}`);
     console.info(`into ${spec.id}: ${ms.toFixed(0)} ms`);
@@ -672,7 +693,10 @@ async function main() {
       shopOpen = !shopOpen;
       hud.shop(shopOpen);
       if (shopOpen) renderShops();
+      // the workshop's key, or opening the workshop, shuts the ledger
+      if (ledgerOpen) setLedger(false);
     }
+    if (ledgerIn > 0 && (ledgerIn -= dt) <= 0) setLedger(true);
     const horn = input.takeHorn() && save.horn;
     if (horn) sound.horn();
     // tipping wins a frame both are pressed in: it is the one that cannot be taken back
@@ -721,7 +745,8 @@ async function main() {
       lastHaul = save.banked;
       lastOpen = save.open;
       hud.bank(economy.bank);
-      hud.progress(progressText(economy, stock.banked()));
+      hud.progress(progressText(economy, stock.banked()), runLine(economy, game));
+      if (ledgerOpen) renderLedger();
     }
     hud.tick(dt);
     smoothed += (dt * 1000 - smoothed) * 0.08;
@@ -732,6 +757,11 @@ async function main() {
     if (shopOpen && (shopIn -= dt) <= 0) {
       shopIn = 0.3;
       renderShops();
+    }
+    // what has gone down a drain moves the cave's row without the haul, so the open ledger is read again as the workshop is
+    if (ledgerOpen && (ledgerSince -= dt) <= 0) {
+      ledgerSince = 0.3;
+      renderLedger();
     }
   }
 
@@ -806,6 +836,7 @@ async function main() {
     setPaused: (p) => {
       paused = p;
     },
+    ledger: setLedger,
     simulate,
     draw,
     frame: () => frames,

@@ -19,7 +19,8 @@
  */
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { start, swapped, watch, type SaveSetup } from './pushminer';
+import type { Row } from '../src/ledger';
+import { ledgerSays, start, swapped, watch, type SaveSetup } from './pushminer';
 
 /** How far the pictures may differ before it is a change and not the GPU: a fiftieth of the pixels, each well off. */
 const TOLERANCE = { maxDiffPixelRatio: 0.002, threshold: 0.02 };
@@ -173,6 +174,57 @@ const EAST_BELTS: [string, string][] = [
   ['Conveyor, top of the ring', '400'],
   ['Conveyor, bottom of the ring', '450'],
 ];
+
+/**
+ * The ledger the pictures are of: two caves left and the third being played, from a save written by hand. The
+ * figures are the mock's own, made up for a run three caves in, and nothing in them is timed.
+ */
+const LEFT_TWO: Row[] = [
+  {
+    cave: 'hollow',
+    held: 2620,
+    taken: 2580,
+    toll: 1000,
+    drained: 0,
+    left: 40,
+    finds: { chamber: 'none', sideRoom: 'none', wall: 'none', geodes: { cracked: 1, of: 1 } },
+    marks: { clean: true, everyHeap: false, everyFind: true },
+  },
+  {
+    cave: 'south-gallery',
+    held: 5755,
+    taken: 4310,
+    toll: 1200,
+    drained: 120,
+    left: 1325,
+    finds: { chamber: 'found', sideRoom: 'left', wall: 'left', geodes: { cracked: 1, of: 2 } },
+    marks: { clean: false, everyHeap: true, everyFind: false },
+  },
+];
+
+/**
+ * What the ledger says of that, and for how much, written out here and not read from the game: a figure changed in
+ * the game changes this by hand, and the pictures with it. Read as words, beside the picture, since a figure in
+ * one is a few pixels and its tolerance would not notice one digit turned.
+ */
+const LEDGER_SAYS = {
+  rows: [
+    {
+      name: 'The Hollow',
+      said: '2,580 of 2,620 · 0 drained · 40 left behind',
+      marks: ['◆ clean', '◇ every heap', '◆ every find'],
+      now: false,
+    },
+    {
+      name: 'South Gallery',
+      said: '4,310 of 5,755 · 120 drained · 1,325 left behind',
+      marks: ['◇ clean', '◆ every heap', '◇ every find'],
+      now: false,
+    },
+    { name: 'East Gallery', said: '1,900 of 7,990 so far · 60 drained', marks: [], now: true },
+  ],
+  total: 'The mine: brought out 8,790 of 68,850',
+};
 
 /** The middle of the cave's heaps, so each picture is aimed at where its coins are and not at a hard-coded point. */
 async function heart(page: Page): Promise<[number, number]> {
@@ -744,6 +796,23 @@ test.describe('what it looks like', () => {
   });
 });
 
+test.describe('the ledger', () => {
+  test('open at a desk: two caves left, and the third being played, dimmed', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('east-gallery', { ledger: LEFT_TWO, taken: 1900, drained: 60 }));
+    const [x, y] = await heart(page);
+    await scene(page, { x, y, radius: 90 }, 120);
+    await page.evaluate(() => {
+      window.pushminer!.ledger(true);
+      window.pushminer!.step(1);
+    });
+    expect(await ledgerSays(page), 'every cave, figure and mark, as words').toEqual({ shown: true, ...LEDGER_SAYS });
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('ledger.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+});
+
 test.describe('what it looks like on a phone', () => {
   test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true });
 
@@ -901,6 +970,22 @@ test.describe('what it looks like on a phone', () => {
     await expect(page.locator('#pad')).toBeVisible();
     await hideStats(page);
     await expect(page).toHaveScreenshot('phone-deep.png', TOLERANCE);
+    expect(problems).toEqual([]);
+  });
+
+  test('the ledger on a phone, where the workshop stands', async ({ page }) => {
+    const problems = watch(page);
+    await begin(page, inCave('east-gallery', { ledger: LEFT_TWO, taken: 1900, drained: 60 }));
+    const [x, y] = await heart(page);
+    await scene(page, { x, y, radius: 84 }, 120);
+    await page.locator('#shopButton').click();
+    await page.evaluate(() => window.pushminer!.step(1));
+    await page.locator('#ledgerButton').scrollIntoViewIfNeeded();
+    await page.locator('#ledgerButton').click();
+    await page.evaluate(() => window.pushminer!.step(1));
+    expect(await ledgerSays(page), 'every cave, figure and mark, as words').toEqual({ shown: true, ...LEDGER_SAYS });
+    await hideStats(page);
+    await expect(page).toHaveScreenshot('phone-ledger.png', TOLERANCE);
     expect(problems).toEqual([]);
   });
 

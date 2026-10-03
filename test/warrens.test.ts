@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { OPEN, TILE, carveShapes, gridOf, type Shape } from '../src/cave';
 import { HAUL_LIMIT, haulField } from '../scripts/hauls';
-import { IDS, caveOf, gameIn, newEconomy, saveIn, specOf, withSeed } from './helpers';
+import { IDS, caveOf, gameIn, newEconomy, saveIn, specOf, withSeed, leavingRow } from './helpers';
 
 const warrens = caveOf('warrens');
 const { spec } = warrens;
@@ -207,10 +207,10 @@ describe('the run with the Warrens in it', () => {
 
   it('goes from the North Vault to the Warrens and on to the West Gallery, which is no longer the last', () => {
     const e = newEconomy(saveIn('north-vault', { open: true }));
-    e.moveOn();
+    e.moveOn(leavingRow(e));
     expect(e.cave().id).toBe('warrens');
     e.open();
-    e.moveOn();
+    e.moveOn(leavingRow(e));
     expect(e.cave().id).toBe('west-gallery');
     expect(e.isLast()).toBe(false);
   });

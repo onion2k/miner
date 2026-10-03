@@ -15,6 +15,7 @@
  */
 import { arrival, chamberCentre, exitPoints, type Cave } from './cave';
 import type { Game } from './game';
+import { rowOf, runLine, type Row } from './ledger';
 import type { MinimapView } from './minimap';
 import { checkInvariants } from './invariants';
 import { BARREL_KIND, GEODE_KIND, KIND_NAME } from './physics';
@@ -57,6 +58,8 @@ export interface GameState {
   belts: string[];
   /** What has gone down the cave's drains, in coins: lost, and counted against what is left behind. */
   drained: number;
+  /** The ledger: a row for each cave left, the row of the cave being played as it stands, and the line for the run. */
+  ledger: { rows: Row[]; now: Row; line: string };
   drones: number;
   horn: boolean;
   /** The size of scoop fitted, 0 for none, how wide its bucket is, whether it has been sent up, how many bodies it holds and how far up it is, 0 to 1. */
@@ -176,6 +179,8 @@ export interface PushminerApi {
   lightBarrel(slot: number, seconds?: number): boolean;
   /** The save written now, and what it is. */
   save(): string;
+  /** The whole ledger opened or shut, as its button in the workshop's foot does. */
+  ledger(open: boolean): void;
 
   /** The camera looking at a point, from `azimuth` round and `polar` down, `radius` away, at once. */
   look(x: number, y: number, view?: { azimuth?: number; polar?: number; radius?: number }): void;
@@ -200,6 +205,8 @@ export interface DebugHost {
   cave(): Cave;
   /** Swap to the game and scene of the cave the save is in, as a change of cave does. */
   rebuild(): void;
+  /** The whole ledger opened or shut. */
+  ledger(open: boolean): void;
   /** Where the camera is, as it was last drawn. */
   camera(): { azimuth: number; polar: number; distance: number };
   /** A point of the world, as pixels of the canvas where it is drawn: the camera's own view and projection. */
@@ -281,6 +288,7 @@ export function createApi(host: DebugHost): PushminerApi {
         lampsBroken: [...save.lampsBroken],
         belts: [...save.belts],
         drained: save.drained,
+        ledger: { rows: save.ledger.map((r) => structuredClone(r)), now: rowOf(g), line: runLine(g.economy, g) },
         drones: save.drones,
         horn: save.horn,
         scoop: {
@@ -407,6 +415,7 @@ export function createApi(host: DebugHost): PushminerApi {
       game().persist();
       return JSON.stringify(game().economy.save);
     },
+    ledger: (open) => host.ledger(open),
 
     look: (x, y, view = {}) => host.look(x, y, view),
     project: (x, y, z = 0) => host.project(x, y, z),
