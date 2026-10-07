@@ -186,8 +186,11 @@ export class Game {
     // the save keeps the live counts from here on, so it is never behind
     save.left = this.stock.left;
     this.stock.restore(saved);
-    // a moment of settling before anyone sees it, so the heaps are heaps
-    for (let i = 0; i < (cave.spec.settle ?? SETTLE_STEPS); i++) this.world.step(1 / 60, () => {});
+    // a moment of settling before anyone sees it, so the heaps are heaps. A body saved half way down a hole
+    // finishes its fall here, and is collected as it would have been, only unseen: left out, the world would free
+    // it and the stock would go on counting it.
+    for (let i = 0; i < (cave.spec.settle ?? SETTLE_STEPS); i++)
+      this.world.step(1 / 60, (kind, x, y, i, hole) => this.collect(kind, x, y, i, hole, true));
     economy.persist();
 
     this.impacts = new Impacts(cave.cells, cave.grid, cave.spec);
@@ -437,20 +440,22 @@ export class Game {
 
   /**
    * A body gone down hole number `hole` of the world's list: the cave's holes come first and the drains after,
-   * so a number past the holes is a drain.
+   * so a number past the holes is a drain. `unseen` for one that went while the cave was being built, which
+   * nobody is told of.
    */
-  private collect(kind: number, x: number, y: number, i: number, hole: number) {
+  private collect(kind: number, x: number, y: number, i: number, hole: number, unseen = false) {
     if (kind === BARREL_KIND) this.barrels.forget(i);
     const value = this.stock.collect(kind, i);
     if (hole >= this.cave.holes.length) {
       this.economy.drain(value);
       this.drainedSince = true;
-      this.events.drained?.(kind, value, x, y);
+      if (!unseen) this.events.drained?.(kind, value, x, y);
       return;
     }
     // a brick, a barrel or a whole geode down the hole is only gone: nothing banked, and nothing to show for it
     if (kind === BRICK_KIND || kind === BARREL_KIND || kind === GEODE_KIND) return;
     this.economy.deposit(value);
+    if (unseen) return;
     const glow = this.cave.holes.indexOf(nearestHole(this.cave.holes, x, y));
     const heat = this.tally.add(kind, glow);
     this.events.banked?.(kind, value, x, y, heat);

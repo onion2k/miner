@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkInvariants } from '../src/invariants';
-import { BARREL_KIND } from '../src/physics';
+import { BARREL_KIND, BRICK_KIND } from '../src/physics';
 import { fuzz } from '../scripts/fuzzer';
 import { gameIn, newGame, saveIn, specOf, withSeed } from './helpers';
 
@@ -85,6 +85,31 @@ describe('the game', () => {
       expect(again.stock.left).toEqual(game.stock.left);
       expect(again.stock.kinds[BARREL_KIND]).toBe(game.stock.kinds[BARREL_KIND]);
       expect(checkInvariants(again)).toEqual([]);
+    });
+  });
+
+  it('finishes a fall saved half way down the hole: the brick and the barrel are gone, and the counts are right', () => {
+    withSeed(5, () => {
+      // what is saved where it lies: a brick, from the South Gallery's wall, and a barrel, put under the floor over
+      // the hole, falling. A coin is saved by count and comes back on its heap.
+      const game = gameIn('south-gallery');
+      const { world, stock } = game;
+      const hole = game.cave.holes[0];
+      const barrel = [...Array(world.count).keys()].find((i) => world.alive[i] && world.kind[i] === BARREL_KIND)!;
+      world.x[barrel] = hole.x;
+      world.y[barrel] = hole.y;
+      world.z[barrel] = -hole.depth / 2;
+      world.wake(barrel);
+      expect(stock.spawnBrick(1, hole.x + 1, hole.y, -hole.depth / 2)).toBeGreaterThanOrEqual(0);
+      game.persist();
+      const bricks = stock.kinds[BRICK_KIND];
+      const barrels = stock.kinds[BARREL_KIND];
+      const again = newGame(JSON.stringify(game.economy.save));
+      expect(checkInvariants(again), 'the counts right as soon as it is built').toEqual([]);
+      for (let f = 0; f < 60; f++) again.step(DT, still);
+      expect(checkInvariants(again), 'and after the fall').toEqual([]);
+      expect(again.stock.kinds[BRICK_KIND], 'the brick is only gone').toBe(bricks - 1);
+      expect(again.stock.kinds[BARREL_KIND], 'and so is the barrel').toBe(barrels - 1);
     });
   });
 
