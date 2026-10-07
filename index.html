@@ -4,7 +4,7 @@
   name="viewport"
   content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
 />
-<title>Pushminer</title>
+<title>Super Mortgage Simulator</title>
 <!-- inline, so the browser does not go asking for a /favicon.ico there is none of -->
 <link
   rel="icon"
@@ -744,6 +744,7 @@
     display: grid;
     place-content: center;
     gap: 12px;
+    padding: 0 16px;
     text-align: center;
     background: #0b0a10;
     transition: opacity 0.5s;
@@ -753,12 +754,20 @@
     opacity: 0;
     pointer-events: none;
   }
+  /* The title is three long words, so it shrinks and wraps on a narrow
+     screen rather than running off the sides of a phone. */
   #boot h1 {
     margin: 0;
-    font-size: 26px;
+    font-size: clamp(18px, 5.5vw, 26px);
     font-weight: 700;
     letter-spacing: 0.3em;
+    line-height: 1.4;
     color: var(--gold);
+  }
+  #boot .subtitle {
+    margin: -4px 0 8px;
+    color: var(--ink);
+    font-style: italic;
   }
   #boot p {
     margin: 0;
@@ -828,7 +837,8 @@
   <div class="track across" id="steer" aria-label="steering" hidden><div class="thumb"></div></div>
 </div>
 <div id="boot">
-  <h1>PUSHMINER</h1>
+  <h1>SUPER MORTGAGE SIMULATOR</h1>
+  <p class="subtitle">Pushing money into a hole</p>
   <p id="bootMsg">starting WebGPU…</p>
 </div>
 <script type="module" src="/src/main.ts"></script>
