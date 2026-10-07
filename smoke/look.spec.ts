@@ -148,12 +148,15 @@ async function workshopSays(page: Page): Promise<[string, string][]> {
 /**
  * What the workshop sells a machine with one drone and a horn and nothing else, and for how much, written out
  * here and not read from the game: a price changed in the game changes this by hand, and the pictures with it.
- * The belts are the cave's, and go between the magnet and the drone.
+ * The belts are the cave's, and go between the magnet and the drone. The pair that fit the blade or the scoop come under the scoop's row.
  */
 const SOLD = (belts: [string, string][]): [string, string][] => [
   ['Engine Mk 2', '50'],
   ['Wider blade', '80'],
   ['Scoop', '600'],
+  // what is fitted, a pair: the blade, with no scoop to change it for
+  ['Blade', 'fitted'],
+  ['Scoop', 'locked'],
   ['Magnet Mk 2', '100'],
   ...belts,
   ['Robo-dozer 2', '1200'],

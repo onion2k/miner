@@ -43,7 +43,9 @@ export const PAID = 1e9;
  */
 export function saveIn(id: string, patch: Partial<Save> = {}): string {
   const fresh = new Economy(memoryStore(), RUN).save;
-  return JSON.stringify({ ...fresh, toll: PAID, ...patch, cave: id });
+  // a scoop given is fitted, as buying one fits it, unless the patch says otherwise
+  const fitted = patch.scoop ? 'scoop' : 'blade';
+  return JSON.stringify({ ...fresh, toll: PAID, fitted, ...patch, cave: id });
 }
 
 /** An economy whose cave's toll has been paid, so that what it banks is the player's: for the tests that are not about the toll. */

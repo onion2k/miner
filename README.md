@@ -65,8 +65,8 @@ Some walls have treasure set in them, a gold brick or a gem in the top of
 one, which comes loose with the rest. What is in a side room, or set in its
 wall, is over and above the cave, as a chamber's is, and left behind with it.
 
-The scoop, in three sizes, takes the blade's place: a bucket 9, 11.5 or 14
-across at its mouth, whatever blade the machine had, with a straight back and
+The scoop, in three sizes, goes where the blade was: a bucket 9, 11.5 or 14
+across at its mouth, whatever blade the machine has, with a straight back and
 a wall each side flaring out to the mouth, all as tall as the blade, and a
 floor lying on the ground between them. Lowered, it pushes as a blade does,
 and the walls funnel what the mouth's edge meets in to the back and hold it
@@ -86,6 +86,13 @@ in. Its walls knock over a lamp they meet, as the hull does, and light a
 barrel's fuse. A load is not saved: leave the cave with one and it is lost with the
 rest, and a reload puts it back in its heaps. The drones never take what is
 held up, and the autopilot neither buys nor works one.
+
+The blade is kept, and the workshop fits the blade or the scoop, for nothing,
+in a pair of rows under the scoop's (a wider blade can still be bought, and is
+the width the blade has when it is fitted). Only the blade breaks a brick wall
+or the rock in front of a hidden chamber: a bucket driven into one only dents
+it, which it says (a knock, and a note to fit the blade), and does it no harm.
+Fitting the blade with a load up sets the load down where it is.
 
 Barrels stand about each cave. Push one and it goes where it is pushed; hit
 one with the dozer and its fuse is lit. It flashes, faster and faster, beeping,

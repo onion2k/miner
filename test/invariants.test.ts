@@ -59,6 +59,26 @@ describe('the invariants of a run', () => {
     expect(said).toContain('down the drains: -1');
   });
 
+  it('notice what is fitted that is neither the blade nor the scoop, and a scoop fitted where there is none', () => {
+    const game = gameIn('hollow', { scoop: 1 });
+    expect(checkInvariants(game)).toEqual([]);
+    game.economy.save.fitted = 'wrench' as never;
+    expect(checkInvariants(game).join('\n')).toContain('what is fitted: wrench');
+    const bare = gameIn('hollow');
+    bare.economy.save.fitted = 'scoop';
+    expect(checkInvariants(bare).join('\n')).toContain('the scoop is fitted, and there is none');
+  });
+
+  it('notice a bucket that is not fitted and is up or holds something', () => {
+    const game = gameIn('hollow', { scoop: 1, fitted: 'blade' });
+    expect(checkInvariants(game)).toEqual([]);
+    game.scoop.up = true;
+    expect(checkInvariants(game).join('\n')).toContain('the bucket is not fitted and holds 0, up true');
+    game.scoop.up = false;
+    game.scoop.dump = 0.5;
+    expect(checkInvariants(game).join('\n')).toContain('the bucket is not fitted');
+  });
+
   it('notice a geode that is from a source, and a coin in the geodes’ gems', () => {
     withSeed(3, () => {
       const game = gameIn('hollow');

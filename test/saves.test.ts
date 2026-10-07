@@ -42,6 +42,7 @@ const KEPT: Record<string, Record<string, unknown>> = {
   '14-scoop-geodes-drained.json': { cave: 'warrens', scoop: 2, drained: 35 },
   '15-toll.json': { cave: 'warrens', scoop: 2, drained: 35, toll: 1200 },
   '16-ledger.json': { cave: 'warrens', scoop: 2, drained: 35, toll: 1200, taken: 2950, cracked: 1 },
+  '17-fitted.json': { cave: 'warrens', scoop: 2, drained: 35, toll: 1200, taken: 2950, cracked: 1, fitted: 'blade' },
 };
 
 /**
@@ -67,6 +68,7 @@ const TOLLS: Record<string, number> = {
   '14-scoop-geodes-drained.json': 975,
   '15-toll.json': 1200,
   '16-ledger.json': 1200,
+  '17-fitted.json': 1200,
 };
 
 /**
@@ -232,6 +234,15 @@ const LANDS: Record<
     walls: [false],
     wallDamage: [0],
   },
+  '17-fitted.json': {
+    cave: 'warrens',
+    open: false,
+    left: [900, 0, 40, 20, 0, 0, 0, 0],
+    belts: [],
+    secrets: [false],
+    walls: [false],
+    wallDamage: [0],
+  },
 };
 
 /** The ledger a save of the shape of 16 holds: a row for each of the four caves it has left, which loading keeps whole. */
@@ -251,7 +262,7 @@ function takenFrom(file: string): number {
 
 describe('saves from every shape the game has written', () => {
   it('has a file for every shape, oldest first, and says where each lands', () => {
-    expect(files.length).toBeGreaterThanOrEqual(16);
+    expect(files.length).toBeGreaterThanOrEqual(17);
     expect(files).toEqual(Object.keys(KEPT).sort());
     expect(Object.keys(LANDS).sort()).toEqual(files);
   });
@@ -281,23 +292,33 @@ describe('saves from every shape the game has written', () => {
         else if (file.startsWith('13')) {
           expect(save.lampsBroken).toEqual([3, 9]);
           expect(save.barrels, 'the barrels where they stood').toHaveLength(18);
-        } else if (file.startsWith('14') || file.startsWith('15') || file.startsWith('16')) {
+        } else if (['14', '15', '16', '17'].some((n) => file.startsWith(n))) {
           expect(save.lampsBroken).toEqual([5, 11]);
           expect(save.barrels, 'the barrels where they stood').toHaveLength(9);
           expect(save.geodes, 'the geodes where they lay').toEqual(
-            file.startsWith('16') ? [-136, 4, 1.6] : [-136, 4, 1.6, -172, -20, 1.6],
+            file.startsWith('16') || file.startsWith('17') ? [-136, 4, 1.6] : [-136, 4, 1.6, -172, -20, 1.6],
           );
         } else {
           expect(save.lampsBroken, 'lamps start afresh').toEqual([]);
           expect(save.barrels, 'barrels start afresh').toBeNull();
         }
         // a save from before the scoop, the geodes and the drains has none of them, and starts without
-        if (!file.startsWith('14') && !file.startsWith('15') && !file.startsWith('16')) {
+        if (!['14', '15', '16', '17'].some((n) => file.startsWith(n))) {
           expect(save.scoop, 'no scoop bought').toBe(0);
           expect(save.geodes, 'geodes start afresh').toBeNull();
           expect(save.drained, 'nothing down a drain').toBe(0);
         }
         expect(Number.isFinite(save.bank) && save.bank >= 0).toBe(true);
+      });
+
+      it('has the blade or the scoop fitted as it says, the scoop for a save that has one and says nothing, the blade for none', () => {
+        const raw = JSON.parse(read(file)) as { fitted?: string; scoop?: number };
+        const e = new Economy(memoryStore(read(file)), RUN);
+        const owned = (raw.scoop ?? 0) > 0;
+        expect(e.save.fitted).toBe(owned && raw.fitted !== 'blade' ? 'scoop' : 'blade');
+        expect(e.spec().bucket, 'the machine has what is fitted').toBe(e.save.fitted === 'scoop');
+        if (file.startsWith('17')) expect(raw.fitted, 'this is the shape that says').toBe('blade');
+        else expect(raw.fitted, 'older shapes say nothing').toBeUndefined();
       });
 
       it('keeps its bank whole and has its toll paid by what has gone from the cave, never more than the toll', () => {
@@ -311,7 +332,7 @@ describe('saves from every shape the game has written', () => {
 
       it('has its ledger as it was written, or none and what it has taken worked out from its heaps if it was before the ledger', () => {
         const e = new Economy(memoryStore(read(file)), RUN);
-        if (file.startsWith('16')) {
+        if (file.startsWith('16') || file.startsWith('17')) {
           expect(e.save.ledger, 'every row kept whole').toEqual(LEDGER_OF_16);
           expect(e.save.taken).toBe(2950);
           expect(e.save.cracked).toBe(1);
@@ -351,6 +372,7 @@ describe('saves from every shape the game has written', () => {
         expect(after.secrets).toEqual(before.secrets);
         expect(after.walls).toEqual(before.walls);
         expect(after.scoop).toBe(before.scoop);
+        expect(after.fitted).toBe(before.fitted);
         // a save with its geodes where they lay has them there again; one from before them has them where they start
         if (before.geodes) expect(after.geodes).toEqual(before.geodes);
         else expect(after.geodes).toHaveLength(caveOf(before.cave).geodes.length * 3);

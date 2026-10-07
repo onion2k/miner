@@ -494,9 +494,47 @@ test('the run: lamps, barrels, a drone, the horn, the way out, the swap, a chamb
   expect(chamber.live, 'the chamber loot').toBeGreaterThan(live);
   expect(south.walls.length, 'a wall in the South Gallery').toBeGreaterThan(0);
   expect(await page.evaluate(() => window.pushminer!.hitWall(0, 1)), 'the wall hurt').toBeLessThan(1);
-  await page.evaluate(() => window.pushminer!.hitWall(0, 1e6));
-  await play(page, 90, 'the wall');
+  // The scoop is still fitted, from where it was bought, and a bucket only dents brick: rammed flat out, the wall takes
+  // nothing more, the machine says so, and the note says what to do. The blade fitted from the workshop's row, the same
+  // run at it brings the wall down. The wall runs along y = -40 from x = 52 to 64, and is run at from the south.
+  const ram = async (what: string) => {
+    await page.evaluate(() => window.pushminer!.teleport(60, -54, Math.PI / 2));
+    await page.evaluate(() => window.pushminer!.drive(1, 0));
+    await play(page, 90, what);
+    await page.evaluate(() => window.pushminer!.release());
+  };
+  const damage = () => page.evaluate(() => window.pushminer!.state().wallDamage[0]);
+  const hurt = await damage();
+  expect(await page.evaluate(() => window.pushminer!.state().fitted), 'the scoop is what is fitted').toBe('scoop');
+  await page.evaluate(() => window.pushminer!.events());
+  await ram('ramming the wall with the scoop');
+  expect(await damage(), 'a bucket does the wall no more harm').toBe(hurt);
+  expect(await page.evaluate(() => window.pushminer!.state().walls), 'and it stands').not.toContain(true);
+  expect(await said('glanced'), 'the machine glanced off it').toContain('glanced wall');
+  await expect(page.locator('#cameraNote'), 'and the note says why, and what to do').toContainText(
+    'a bucket only dents it · fit the blade (B)',
+  );
+  // the blade fitted from the workshop, by its row: the scoop's keys go from the line of keys, and the bucket is empty
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
+  const fit = page.locator('#shop .rows:not(.cosmetics) button[data-id="fit:blade"]');
+  await expect(fit, 'its row says it can be fitted').toContainText('fit');
+  await expect(fit).not.toContainText('fitted');
+  await fit.click();
+  await expect(fit, 'and then that it is').toContainText('fitted');
+  expect(await page.evaluate(() => window.pushminer!.state().fitted)).toBe('blade');
+  await expect(page.locator('#helpScoop'), 'Space and E are gone from the line of keys').toBeHidden();
+  await page.keyboard.press('b');
+  await page.evaluate(() => window.pushminer!.step(1));
+  await ram('ramming the wall with the blade');
+  expect(await damage(), 'the blade hurts it').toBeGreaterThan(hurt);
+  for (let run = 0; run < 8 && !(await page.evaluate(() => window.pushminer!.state().walls[0])); run++)
+    await ram('ramming the wall again');
   expect(await page.evaluate(() => window.pushminer!.state().walls), 'the wall down').toContain(true);
+  expect(await said('wallDown')).toEqual(['wallDown 0']);
+  // the scoop back for what follows: its keys are listed again
+  await page.evaluate(() => window.pushminer!.buy('fit:scoop'));
+  await expect(page.locator('#helpScoop')).toBeVisible();
 
   // a reload after arriving keeps the place: in the next cave
   await page.evaluate(() => window.pushminer!.save());
@@ -1345,6 +1383,13 @@ test.describe('the scoop on a phone', () => {
     await expect(button, 'the button once it is bought').toBeVisible();
     await expect(tip, 'nothing to tip while the bucket is down').toBeHidden();
     await expect(horn).toBeVisible();
+    // fitting the blade takes the scoop's buttons from the pad, and fitting the scoop brings them back; the horn stays
+    await page.evaluate(() => window.pushminer!.buy('fit:blade'));
+    await expect(button, 'no scoop button with the blade fitted').toBeHidden();
+    await expect(tip).toBeHidden();
+    await expect(horn).toBeVisible();
+    await page.evaluate(() => window.pushminer!.buy('fit:scoop'));
+    await expect(button, 'and it is back with the scoop').toBeVisible();
     expect(await reachable(page), 'bucket down: every button is where a finger gets it').toEqual([]);
     const content = await page.evaluate(() => window.pushminer!.content());
     const held = () => page.evaluate(() => window.pushminer!.state().scoop.held);
@@ -1372,6 +1417,19 @@ test.describe('the scoop on a phone', () => {
       'tipped 6',
     ]);
     await expect(tip, 'and the bucket came down').toBeHidden();
+    // the blade fitted with a load up: it is set down, and both buttons go, the tip's with the scoop's
+    await layInMouth(page, content.hole.x, content.hole.y - 24, 6);
+    await button.tap();
+    await page.evaluate(() => window.pushminer!.step(40));
+    await expect(tip, 'up again').toBeVisible();
+    await page.evaluate(() => window.pushminer!.buy('fit:blade'));
+    await page.evaluate(() => window.pushminer!.step(2));
+    await expect(button).toBeHidden();
+    await expect(tip, 'the tip button goes with the bucket').toBeHidden();
+    expect(await held(), 'the load was set down').toBe(0);
+    await page.evaluate(() => window.pushminer!.buy('fit:scoop'));
+    await expect(button).toBeVisible();
+    await expect(tip, 'a bucket just refitted is down').toBeHidden();
     expect(await page.evaluate(() => window.pushminer!.invariants())).toEqual([]);
     // a reload with the scoop bought shows the button from the start
     await page.evaluate(() => window.pushminer!.save());

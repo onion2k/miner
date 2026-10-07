@@ -189,6 +189,27 @@ export class Scoop {
     return n;
   }
 
+  /**
+   * The bucket taken off, or put away, in whatever state it is in: what it holds is set down where it is, loose and
+   * on its way to the floor, and the bucket is down, level and empty. For refitting, which can come at any moment of
+   * the lift or the pour. How many it set down.
+   */
+  setDown(): number {
+    const { world } = this;
+    const n = this.held.length;
+    for (const i of this.held) {
+      if (!world.alive[i] || !world.carried[i]) continue;
+      world.carried[i] = 0;
+      if (world.asleep[i]) world.wake(i);
+      world.vx[i] = world.vy[i] = world.vz[i] = 0;
+    }
+    this.clear();
+    this.up = false;
+    this.lift = 0;
+    this.dump = 0;
+    return n;
+  }
+
   /** Let go of the book-keeping, not the bodies: they were let go, or are gone. */
   private clear() {
     this.held.length = 0;

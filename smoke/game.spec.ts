@@ -235,7 +235,7 @@ test('shows the whole workshop at a desk with nothing to scroll, in the cave wit
     const scrolls = (e: Element) => e.scrollHeight > e.clientHeight + 1;
     const rows = Array.from(shop.querySelectorAll('.rows button')).map((b) => {
       const r = b.getBoundingClientRect();
-      return { id: (b as HTMLElement).dataset.id, top: r.top, bottom: r.bottom, height: r.height };
+      return { id: (b as HTMLElement).dataset.id, top: r.top, bottom: r.bottom, left: r.left, height: r.height };
     });
     return {
       rows,
@@ -250,6 +250,12 @@ test('shows the whole workshop at a desk with nothing to scroll, in the cave wit
   ).toHaveLength(7);
   expect(seen.rows.length, 'and the paint shop under it').toBeGreaterThan(7);
   expect(seen.scrolling, 'no list of it scrolls, and nor does the panel').toBe(0);
+  // what is fitted is a pair, side by side, as the paints are, and not two rows more
+  const [blade, scoop] = ['fit:blade', 'fit:scoop'].map((id) => seen.rows.find((r) => r.id === id)!);
+  expect(blade, 'a row to fit the blade').toBeDefined();
+  expect(scoop, 'and one to fit the scoop').toBeDefined();
+  expect(scoop.top, 'side by side').toBeCloseTo(blade.top, 0);
+  expect(scoop.left, 'the scoop’s to the right of the blade’s').toBeGreaterThan(blade.left);
   expect(seen.panel.top, 'the panel is on the screen').toBeGreaterThanOrEqual(0);
   expect(seen.panel.bottom).toBeLessThanOrEqual(seen.height);
   for (const r of seen.rows) {

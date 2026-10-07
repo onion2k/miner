@@ -15,6 +15,7 @@
  */
 import { arrival, chamberCentre, exitPoints, type Cave } from './cave';
 import type { Game } from './game';
+import { SCOOP } from './economy';
 import { rowOf, runLine, type Row } from './ledger';
 import type { MinimapView } from './minimap';
 import { checkInvariants } from './invariants';
@@ -62,7 +63,9 @@ export interface GameState {
   ledger: { rows: Row[]; now: Row; line: string };
   drones: number;
   horn: boolean;
-  /** The size of scoop fitted, 0 for none, how wide its bucket is, whether it has been sent up, how many bodies it holds and how far up it is, 0 to 1. */
+  /** What is on the machine's front: 'blade' or 'scoop'. */
+  fitted: string;
+  /** The size of scoop owned, 0 for none, how wide its bucket is, whether it has been sent up, how many bodies it holds and how far up it is, 0 to 1. */
   scoop: { size: number; width: number; up: boolean; held: number; lift: number };
   /** The body the machine stands on: 'dozer' on its tracks, or 'spider'. */
   body: string;
@@ -291,9 +294,10 @@ export function createApi(host: DebugHost): PushminerApi {
         ledger: { rows: save.ledger.map((r) => structuredClone(r)), now: rowOf(g), line: runLine(g.economy, g) },
         drones: save.drones,
         horn: save.horn,
+        fitted: save.fitted,
         scoop: {
           size: save.scoop,
-          width: save.scoop ? g.economy.spec().bladeWidth : 0,
+          width: SCOOP[save.scoop].width,
           up: g.scoop.up,
           held: g.scoop.held.length,
           lift: g.scoop.lift,

@@ -3,7 +3,8 @@
  * at random and made to do at random everything a player can make happen —
  * charging walls, chambers, lamps and barrels; pushing anything at all down
  * the hole, or onto a current or down a drain; raising the scoop with what is in it,
- * carrying it, setting it down and tipping it out; setting barrels off; buying things; opening the way out and
+ * carrying it, setting it down and tipping it out; changing from the blade to the scoop and
+ * back, whatever it holds; setting barrels off; buying things; opening the way out and
  * driving out through it, on into the next cave; honking; saving and
  * loading — and checked after every few frames for anything that must always
  * hold and does not (`invariants.ts`), and for anything thrown.
@@ -158,6 +159,8 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           // at something, flat out
           const at = somewhere();
           if (!at) return;
+          // with either fitted, if there is a scoop to fit: the blade breaks what it charges, and a bucket only dents it
+          if (game.economy.save.scoop && random() < 0.5) game.economy.buy(random() < 0.5 ? 'fit:blade' : 'fit:scoop');
           const a = between(0, Math.PI * 2);
           const [x, y] = openNear(at[0] - Math.cos(a) * 10, at[1] - Math.sin(a) * 10);
           Object.assign(game.dozer, { x, y, yaw: Math.atan2(at[1] - y, at[0] - x), speed: between(0, 14) });
@@ -348,6 +351,8 @@ export function fuzz(seed: number, frames: number): FuzzResult {
             e.grant(1e5);
             if (!e.buy('scoop')) break;
           }
+          // bought, it is fitted; one owned already may have been put away, and a bucket not fitted is not worked
+          e.buy('fit:scoop');
           const at = somewhere();
           if (!at) return;
           const [x, y] = openNear(at[0] + between(-4, 4), at[1] + between(-4, 4));
@@ -362,6 +367,20 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           presses.set(frame + busy + 1, either());
           if (random() < 0.5) presses.set(frame + busy + 30 + Math.floor(between(0, 200)), either());
           act('scoop', `size ${e.save.scoop} at ${at[0].toFixed(1)},${at[1].toFixed(1)}`);
+        },
+      ],
+      [
+        3,
+        () => {
+          // the blade or the scoop put on, for nothing, wherever the bucket is and whatever it holds: a scoop is bought first
+          // if there is none, as it would be to have one to fit
+          const e = game.economy;
+          if (!e.save.scoop) {
+            e.grant(1e5);
+            if (!e.buy('scoop')) return;
+          }
+          e.buy(random() < 0.5 ? 'fit:blade' : 'fit:scoop');
+          act('refit', `${e.save.fitted}, ${game.scoop.held.length} held`);
         },
       ],
       [
@@ -396,7 +415,20 @@ export function fuzz(seed: number, frames: number): FuzzResult {
           visited.add(economy.save.cave);
           const after = game.economy.save;
           const same = (
-            ['bank', 'toll', 'taken', 'cracked', 'cave', 'open', 'done', 'drones', 'body', 'drained'] as const
+            [
+              'bank',
+              'toll',
+              'taken',
+              'cracked',
+              'cave',
+              'open',
+              'done',
+              'drones',
+              'body',
+              'drained',
+              'scoop',
+              'fitted',
+            ] as const
           ).filter((k) => before[k] !== after[k]);
           const sameLists = (['secrets', 'walls', 'lampsBroken', 'belts', 'ledger'] as const).filter(
             (k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]),

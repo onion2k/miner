@@ -214,6 +214,10 @@ and coins are pushed out through it. The Spiderdozer's row says what it is for.
 - [x] Stage 2: the ledger, landed 2026-10-03. A bar a cave, with the three marks; a card on leaving, the panel
       from the workshop's foot and once at the end, the run's line in the foot. The save gains `taken`, `cracked`
       and `ledger`. Three pictures written again (the arrival card, the workshop's foot), two new.
-- [ ] Stage 3: the blade breaks, and refitting
+- [x] Stage 3: the blade breaks, and refitting, built 2026-10-03. Only the blade breaks walls and chambers
+      (`breaks` in `impacts.ts`, the `glanced` event and its note); the save gains `fitted`; a pair of free rows
+      fits either; a refit sets a raised load down. Three workshop pictures written again for the pair of rows.
+      Found on the way and fixed: a body saved half way down a hole was freed in the next game's settling without
+      the stock being told (`Game`'s settling now collects, unseen).
 - [ ] Stage 4: sinkhole rooms
 - [ ] Stage 5: rockfalls

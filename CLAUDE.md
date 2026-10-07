@@ -88,14 +88,14 @@ What to copy the shape of, when building something new:
   body kind that is `NO_SOURCE` and spawns others: it needs `spawn…`/`remove…`/
   `…Record` in `stock.ts`, a `capacityOf` entry, a case in `Stock.collect` and
   `Game.collect`, a place in `scene-dynamic.ts` and a source of its own, last.
-- **A workshop action worked by a button:** the scoop (`src/scoop.ts`, headless;
-  `test/scoop.test.ts`, and `test/slow/scoop.test.ts` for how well it pushes),
-  through the horn's road end to end: a key in `input.ts`, `Controls` into
-  `Game.step`, a pad button in `hud.ts` and `index.html`, an event for the
-  page, a fuzzer action, a smoke step by the keys and another by the pad's
-  buttons, and pictures. What it holds is `world.carried`, which the physics
-  leaves alone, so a new thing that reads bodies skips `carried` as the
-  foreman, the autopilot, the horn and the map do.
+- **A workshop action worked by a button:** the scoop (`src/scoop.ts`,
+  `test/scoop.test.ts`, `test/slow/`), through the horn's road end to end: a key
+  in `input.ts`, `Controls` into `Game.step`, a pad button in `hud.ts` and
+  `index.html`, an event, a fuzzer action, smoke steps and pictures. Fitted in
+  the blade's place (`save.fitted`, `fit:` rows, `test/refit.test.ts`), only the
+  blade breaks walls and chambers (`breaks` in `impacts.ts`); a refit sets its
+  load down. What it holds is `world.carried`, which the physics leaves alone: a
+  new thing that reads bodies skips it, as the foreman, autopilot, horn and map do.
 - **What the machine pushes with:** the blade's pieces or the bucket's
   (`bladePieces`, `bucketPieces` in `dozer.ts`), chosen by `DozerSpec.bucket`.
   The physics pushes with them and the picture is drawn from them, so what
@@ -186,7 +186,7 @@ For anything new in the cave, check what it does:
 - **other features:** blasts, the horn, belts, the magnet, brick walls and rubble,
   hidden chambers, lamps, the scoop (a body raised in it is carried: skipped, never
   banked, never in the rock, counted lost on leaving, and back in its heap on a reload;
-  set down in it, it is on the floor like any other),
+  set down in it, or by a refit, it is on the floor like any other),
   geodes (a blast cracks one within `CRACK_RADIUS`; its gems are a bonus source,
   never toward `CLEAR_SHARE`, though they pay the toll), currents (a body carried onto one, and down a drain:
   a lit barrel, a brick, a gem, a geode; saved and reloaded with `drained`; the last

@@ -50,6 +50,8 @@ export interface Save {
   magnet: number;
   /** The size of scoop the dozer has, from 1, or 0 for none. */
   scoop: number;
+  /** What the machine has on its front: the blade, or the scoop's bucket, which is only ever fitted where a scoop is owned. */
+  fitted: Fitting;
   /** Which paint the dozer wears, and which it owns. */
   paint: string;
   paints: string[];
@@ -101,11 +103,14 @@ export interface Save {
   drained: number;
 }
 
+/** What the machine pushes with: the blade, which breaks brick, or the scoop's bucket, which lifts, carries and tips. */
+export type Fitting = 'blade' | 'scoop';
+
 /**
  * The scoop: how wide the bucket of size 0 (none) to 3 is at its mouth, and what the next size up costs. It
- * takes the blade's place, whatever blade was bought, and is worked with Space and E, or the pad's buttons.
+ * can be fitted in the blade's place, and the blade kept, and is worked with Space and E, or the pad's buttons.
  *
- * Priced against the blades it replaces. Over a long push the first keeps hold of what a blade 10 across
+ * Priced against the blades it pushes as well as. Over a long push the first keeps hold of what a blade 10 across
  * does, which is 380 of blades, and the second of what the widest does, which is 1,180; each costs about half
  * as much again as those, for the lifting and carrying a blade cannot do. The third pushes more than any
  * blade made, and its step is as much again as the second's, as the steps of the engine and the magnet grow.
@@ -212,6 +217,7 @@ const MAGNET: { radius: number; strength: number; cost: number }[] = [
   { radius: 14, strength: 28, cost: 1400 },
   { radius: 18, strength: 38, cost: 2600 },
 ];
+const FIT_WORDS = { on: 'fitted', off: 'fit' };
 export const MAX_DRONES = 3;
 const DRONE_COST = [600, 1200, 2200];
 
@@ -225,6 +231,8 @@ export interface Offer {
   available: boolean;
   /** For a thing that is worn: whether it is worn now. Owned and not active means clicking puts it on. */
   active?: boolean;
+  /** What its row says in place of the cost: when it is on, and when it is owned and could be put on. A paint's are "worn" and "wear". */
+  words?: { on: string; off: string };
 }
 
 /** Where the save is kept: the browser's storage, or, for the game run without a page, anywhere. */
@@ -332,6 +340,7 @@ export class Economy {
       drones: 0,
       magnet: 0,
       scoop: 0,
+      fitted: 'blade',
       paint: 'yellow',
       paints: ['yellow'],
       body: 'dozer',
@@ -384,6 +393,8 @@ export class Economy {
     save.magnet = Math.floor(finite(s.magnet, 0, MAGNET.length - 1));
     save.drones = Math.floor(finite(s.drones, 0, MAX_DRONES));
     save.scoop = Math.floor(finite(s.scoop, 0, SCOOP_SIZES));
+    // a save from before there was a choice, with a scoop, has it fitted, as it played; and a scoop that is not owned cannot be
+    save.fitted = save.scoop > 0 && (s.fitted === undefined || s.fitted === 'scoop') ? 'scoop' : 'blade';
     const paints = Array.isArray(s.paints) ? s.paints.filter((p) => PAINTS.some((q) => q.id === p)) : [];
     save.paints = paints.length ? (paints as string[]) : ['yellow'];
     save.paint = PAINTS.some((p) => p.id === s.paint) ? (s.paint as string) : 'yellow';
@@ -631,17 +642,22 @@ export class Economy {
   spec(): DozerSpec {
     const e = ENGINE[this.save.engine];
     const m = MAGNET[this.save.magnet];
-    // a scoop takes the blade's place: the machine pushes with a bucket of the scoop's own width, whatever blade it had
-    const scoop = this.save.scoop > 0;
+    // a bucket fitted pushes at the scoop's own width, whatever blade it has; the blade, at the blade's
+    const bucket = this.bucketFitted();
     return {
       maxSpeed: e.maxSpeed,
       accel: e.accel,
       turnRate: e.turnRate,
-      bladeWidth: scoop ? SCOOP[this.save.scoop].width : BLADE[this.save.blade].width,
+      bladeWidth: bucket ? SCOOP[this.save.scoop].width : BLADE[this.save.blade].width,
       magnetRadius: m.radius,
       magnetStrength: m.strength,
-      bucket: scoop,
+      bucket,
     };
+  }
+
+  /** Whether the front of the machine is the scoop's bucket: fitted, and a scoop there to fit. */
+  bucketFitted(): boolean {
+    return this.save.fitted === 'scoop' && this.save.scoop > 0;
   }
 
   /** How much a hit at this speed does to a brick wall, with the engine fitted now; 0 for too slow to count. */
@@ -711,16 +727,12 @@ export class Economy {
       owned: !e,
       available: !!e,
     });
-    // a wider blade is no use to a machine that has a scoop where its blade was: the row is closed
-    const b = !s.scoop && s.blade + 1 < BLADE.length ? BLADE[s.blade + 1] : null;
+    // the blade is kept when there is a scoop, and a wider one is as much use as ever: it is the width the blade has when fitted
+    const b = s.blade + 1 < BLADE.length ? BLADE[s.blade + 1] : null;
     out.push({
       id: 'blade',
-      title: s.scoop ? 'Blade' : `Wider blade${b ? '' : ' (maxed)'}`,
-      sub: s.scoop
-        ? 'replaced by the scoop'
-        : b
-          ? `${b.width} across, up from ${BLADE[s.blade].width}`
-          : `${BLADE[s.blade].width} across: the widest made`,
+      title: `Wider blade${b ? '' : ' (maxed)'}`,
+      sub: b ? `${b.width} across, up from ${BLADE[s.blade].width}` : `${BLADE[s.blade].width} across: the widest made`,
       cost: b?.cost ?? 0,
       owned: !b,
       available: !!b,
@@ -733,10 +745,31 @@ export class Economy {
         ? `${SCOOP[s.scoop].width} across: the widest made`
         : s.scoop
           ? `${c.width} across, up from ${SCOOP[s.scoop].width}`
-          : `takes the blade's place, ${c.width} across: lifts what is in it, carries it and tips it out`,
+          : `${c.width} across: lifts what is in it, carries it and tips it out`,
       cost: c?.cost ?? 0,
       owned: !c,
       available: !!c,
+    });
+    // what is on the front, changed for nothing: a pair of rows, drawn side by side
+    out.push({
+      id: 'fit:blade',
+      title: 'Blade',
+      sub: 'pushes, and breaks brick walls and chambers',
+      cost: 0,
+      owned: true,
+      available: true,
+      active: s.fitted === 'blade',
+      words: FIT_WORDS,
+    });
+    out.push({
+      id: 'fit:scoop',
+      title: 'Scoop',
+      sub: 'lifts, carries and tips; only dents a wall',
+      cost: 0,
+      owned: s.scoop > 0,
+      available: s.scoop > 0,
+      active: s.fitted === 'scoop',
+      words: FIT_WORDS,
     });
     const m = s.magnet + 1 < MAGNET.length ? MAGNET[s.magnet + 1] : null;
     out.push({
@@ -850,6 +883,12 @@ export class Economy {
         for (const fn of [...this.listeners]) fn(id);
         return true;
       }
+      if (id.startsWith('fit:') && !offer.active) {
+        this.save.fitted = id.slice(4) as Fitting;
+        this.persist();
+        for (const fn of [...this.listeners]) fn(id);
+        return true;
+      }
       if (id.startsWith('body:') && !offer.active) {
         this.save.body = id.slice(5) as Body;
         this.persist();
@@ -863,8 +902,10 @@ export class Economy {
     const s = this.save;
     if (id === 'engine') s.engine++;
     else if (id === 'blade') s.blade++;
-    else if (id === 'scoop') s.scoop++;
-    else if (id === 'drone') s.drones++;
+    else if (id === 'scoop') {
+      s.scoop++;
+      s.fitted = 'scoop';
+    } else if (id === 'drone') s.drones++;
     else if (id === 'magnet') s.magnet++;
     else if (id === 'horn') s.horn = true;
     else if (id === 'flag') s.flag = true;
@@ -911,10 +952,12 @@ export function renderShop(rows: HTMLElement, economy: Economy, offers = economy
     const wearable = o.owned && o.active === false;
     btn.disabled = !wearable && (o.owned || !o.available || bank < o.cost);
     btn.className = o.active ? 'owned active' : o.owned ? 'owned' : '';
-    const cost = o.active ? 'worn' : o.owned ? (wearable ? 'wear' : '✓') : !o.available ? 'locked' : `${o.cost}`;
+    const words = o.words ?? { on: 'worn', off: 'wear' };
+    const cost = o.active ? words.on : o.owned ? (wearable ? words.off : '✓') : !o.available ? 'locked' : `${o.cost}`;
     btn.innerHTML = `<span>${o.title}<small>${o.sub}</small></span><span class="cost">${cost}</span>`;
-    // the paint shop's rows are drawn small at a desk, their second line left out: it is here for the pointer to ask for
-    if (rows.classList.contains('cosmetics')) btn.title = o.sub;
+    // a row of a pair (the paint shop's, and what is fitted) is drawn small at a desk, its second line left out: it is here for the pointer to ask for
+    btn.classList.toggle('pair', o.id.startsWith('fit:'));
+    if (rows.classList.contains('cosmetics') || o.id.startsWith('fit:')) btn.title = o.sub;
   });
   while (rows.children.length > offers.length) rows.lastChild!.remove();
 }

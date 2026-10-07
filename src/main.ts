@@ -73,6 +73,8 @@ const MAP_EVERY = 1 / 15;
 const EVENTS_KEPT = 500;
 /** How long the note that the last cave is cleared is shown, in seconds: the ledger opens when it is gone. */
 const DONE_NOTE_FOR = 6;
+/** The least game time between one note that a bucket only dents brick and the next, in seconds. */
+const GLANCE_NOTE_EVERY = 5;
 
 const hud = new Hud();
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -164,6 +166,8 @@ async function main() {
   let blastShake = 0;
   /** What has gone down the drains in the run just now, and when (game time): for the one note that adds it up. */
   let drainRun = { total: 0, at: -Infinity };
+  /** When the note that a bucket only dents brick was last shown, in the game's seconds. */
+  let glancedAt = -Infinity;
   const events: GameEvents = {
     banked(kind, value, x, y, heat) {
       if (kind > 0) sound.thunk(value);
@@ -240,6 +244,15 @@ async function main() {
       log('knock');
       sound.knock();
     },
+    glanced(what) {
+      log(`glanced ${what}`);
+      sound.knock();
+      // said now and then: a bucket held against a wall is told of every moment, and the words would never leave the screen
+      if (game.t - glancedAt >= GLANCE_NOTE_EVERY || game.t < glancedAt) {
+        glancedAt = game.t;
+        hud.note('a bucket only dents it · fit the blade (B)', 3);
+      }
+    },
     lampBroken(k, lit, [c, s]) {
       log(`lampBroken ${k}`);
       const l = cave.lamps[k];
@@ -280,16 +293,11 @@ async function main() {
       log(`bought ${id}`);
       sound.chime();
       if (id === 'blade') scene.setBlade(economy.spec().bladeWidth);
+      else if (id.startsWith('fit:')) showFitted();
       else if (id.startsWith('paint:')) scene.setPaint(economy.paint());
       else if (id.startsWith('body:')) standOn();
       else if (id === 'horn') pad?.showHorn(true);
-      else if (id === 'scoop') {
-        // each size is a bucket of its own width, in the blade's place
-        scene.setScoop(true);
-        scene.setBlade(economy.spec().bladeWidth);
-        pad?.showScoop(true);
-        hud.scoopKey(true);
-      }
+      else if (id === 'scoop') showFitted();
     },
     scooped(count) {
       log(`scooped ${count}`);
@@ -359,13 +367,21 @@ async function main() {
     botScale: BOT_SCALE,
     botBladeWidth: BOT_SPEC.bladeWidth,
     bladeWidth: economy.spec().bladeWidth,
-    scoop: save.scoop > 0,
+    scoop: economy.bucketFitted(),
     paint: economy.paint(),
     trackPages: tracks.matrices,
   });
   // the Spiderdozer's legs, walked from where the dozer is; a foot landing prints the floor
   const gait = new SpiderGait();
   gait.onStep = (_, x, y) => tracks.mark(x, y, game.dozer.yaw + Math.PI / 4, 0.55);
+  /** What the save says is on the machine's front, drawn and offered: the bucket or the blade, at its width, and the scoop's buttons if it is the bucket. */
+  function showFitted() {
+    const bucket = economy.bucketFitted();
+    scene.setScoop(bucket);
+    scene.setBlade(economy.spec().bladeWidth);
+    pad?.showScoop(bucket);
+    hud.scoopKey(bucket);
+  }
   /** The body the save says the machine stands on, drawn: the feet set down afresh, the tracks' run forgotten. */
   function standOn() {
     scene.setBody(save.body);
@@ -542,7 +558,7 @@ async function main() {
   // ---- the page round the cave ----
 
   hud.booted();
-  hud.scoopKey(economy.save.scoop > 0);
+  hud.scoopKey(economy.bucketFitted());
   hud.onReset(() => economy.reset());
   hud.onLedger(() => setLedger(!ledgerOpen));
   /** A phone's buttons, when there are any. */
@@ -574,7 +590,7 @@ async function main() {
       controls.scheme,
     );
     pad.showHorn(save.horn);
-    pad.showScoop(save.scoop > 0);
+    pad.showScoop(economy.bucketFitted());
   }
 
   /**
@@ -700,8 +716,9 @@ async function main() {
     const horn = input.takeHorn() && save.horn;
     if (horn) sound.horn();
     // tipping wins a frame both are pressed in: it is the one that cannot be taken back
-    const lifted = input.takeScoop() && save.scoop > 0,
-      tipped = input.takeTip() && save.scoop > 0;
+    const bucket = economy.bucketFitted();
+    const lifted = input.takeScoop() && bucket,
+      tipped = input.takeTip() && bucket;
     const scoop = tipped ? ('tip' as const) : lifted ? ('lift' as const) : undefined;
     if (input.takeRecentre()) rig.recentre();
     if (input.takeCamera()) hud.note(`camera: ${rig.cycle()}`);

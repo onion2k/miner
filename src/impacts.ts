@@ -7,6 +7,9 @@
  * smashes; any other knock on it sounds hollow, which is all that gives it
  * away. Anything else is rock, the way out included, until the cave is cleared.
  *
+ * Only a blade does any of that. A bucket driven into a wall or a chamber's rock does it nothing, and is told
+ * it glanced off, as often as a hollow knock is told.
+ *
  * This decides which, and remembers when each was last hit, so a blade held
  * against a wall is not a hit every frame. What follows — the damage, the
  * noise, the dust — is the caller's.
@@ -26,18 +29,24 @@ export type Impact =
   /** The rock in front of a hidden chamber, smashed. */
   | { type: 'reveal'; chamber: number }
   /** The same rock knocked, not hard enough: it sounds hollow. */
-  | { type: 'knock'; chamber: number };
+  | { type: 'knock'; chamber: number }
+  /** A wall or a chamber's rock driven into hard enough to have mattered, by a machine that does not break them. */
+  | { type: 'glance'; what: 'wall' | 'chamber' };
 
 export interface ImpactState {
   wallsDown: readonly boolean[];
   secretsOpen: readonly boolean[];
   /** How much a hit at a speed does to a wall with the engine fitted now; 0 for too slow to count. */
   ram(speed: number): number;
+  /** Whether what is fitted breaks brick and smashes into chambers: a blade does, a bucket only dents. */
+  breaks: boolean;
 }
 
 export class Impacts {
   private readonly knockedAt: number[];
   private readonly hitAt: number[];
+  private readonly glancedAtWall: number[];
+  private readonly glancedAtChamber: number[];
 
   /** `cells` are the cave's, over `grid`; `spec` says how many chambers and walls there are to remember. */
   constructor(
@@ -47,6 +56,8 @@ export class Impacts {
   ) {
     this.knockedAt = spec.secrets.map(() => -Infinity);
     this.hitAt = spec.walls.map(() => -Infinity);
+    this.glancedAtWall = spec.walls.map(() => -Infinity);
+    this.glancedAtChamber = spec.secrets.map(() => -Infinity);
   }
 
   /**
@@ -63,17 +74,27 @@ export class Impacts {
       if (state.wallsDown[wall] || square < SMASH_SQUARE || t - this.hitAt[wall] < WALL_EVERY) return null;
       const damage = state.ram(speed);
       if (!damage) return null;
+      if (!state.breaks) return this.glance(this.glancedAtWall, wall, 'wall', t);
       this.hitAt[wall] = t;
       const [x, y] = tileCentre(this.grid, tx, ty);
       return { type: 'wall', wall, damage, x, y };
     }
     if (cell < SECRET || state.secretsOpen[cell - SECRET]) return null;
     const chamber = cell - SECRET;
-    if (square >= SMASH_SQUARE && speed >= SMASH_SPEED) return { type: 'reveal', chamber };
+    if (square >= SMASH_SQUARE && speed >= SMASH_SPEED) {
+      return state.breaks ? { type: 'reveal', chamber } : this.glance(this.glancedAtChamber, chamber, 'chamber', t);
+    }
     if (square > 0.2 && speed > 1.5 && t - this.knockedAt[chamber] > KNOCK_EVERY) {
       this.knockedAt[chamber] = t;
       return { type: 'knock', chamber };
     }
     return null;
+  }
+
+  /** A glance off `what` number `k`, unless it was told of a moment ago: a bucket held against a wall is not a glance every frame. */
+  private glance(at: number[], k: number, what: 'wall' | 'chamber', t: number): Impact | null {
+    if (t - at[k] < KNOCK_EVERY) return null;
+    at[k] = t;
+    return { type: 'glance', what };
   }
 }

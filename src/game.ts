@@ -71,6 +71,8 @@ export interface GameEvents {
   wallDown?(wall: number, heading: Heading): void;
   /** The rock in front of a chamber knocked, not hard enough: it sounds hollow. */
   knock?(): void;
+  /** A wall or a chamber's rock driven into by a bucket, which only dents them: said as often as a knock is. */
+  glanced?(what: 'wall' | 'chamber'): void;
   /** A lamp knocked over, lit or not. */
   lampBroken?(lamp: number, lit: boolean, heading: Heading): void;
   /** A barrel's fuse lit by the player. */
@@ -259,7 +261,7 @@ export class Game {
     if (controls.horn && save.horn) this.honk();
 
     const spec = economy.spec();
-    if (controls.scoop && save.scoop) {
+    if (controls.scoop && economy.bucketFitted()) {
       const { scoop } = this;
       if (controls.scoop === 'tip') {
         const tipped = scoop.tip(dozer);
@@ -522,10 +524,12 @@ export class Game {
       wallsDown: save.walls,
       secretsOpen: save.secrets,
       ram: (speed) => economy.ram(speed),
+      breaks: !economy.bucketFitted(),
     });
     if (!hit) return;
     if (hit.type === 'reveal') economy.reveal(hit.chamber);
     else if (hit.type === 'knock') this.events.knock?.();
+    else if (hit.type === 'glance') this.events.glanced?.(hit.what);
     else {
       const wall = this.cave.spec.walls[hit.wall];
       const gone = economy.hitWall(hit.wall, hit.damage);
@@ -562,7 +566,11 @@ export class Game {
       this.fountains.push(new Fountain(this.cave.spec));
       this.events.done?.();
     } else {
-      if (id.startsWith('belt:')) {
+      if (id.startsWith('fit:')) {
+        // a bucket taken off sets down what it holds where it is, and is empty and down when it is put back
+        const setDown = this.scoop.setDown();
+        if (setDown) this.events.setDown?.(setDown);
+      } else if (id.startsWith('belt:')) {
         this.runBelts();
         this.events.staticChanged?.();
       } else if (id === 'drone') {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  BLADE,
   Economy,
   SCOOP,
   SCOOP_SIZES,
@@ -392,20 +393,118 @@ describe('the scoop in the workshop', () => {
     expect(e.save.scoop).toBe(SCOOP_SIZES);
   });
 
-  it('takes the blade’s place: the blade’s row closes, and no wider blade can be bought for a machine with none', () => {
+  it('keeps the blade: its row stays open for a wider one, which is the width the blade has when it is fitted', () => {
     const e = payToll(new Economy(memoryStore(), RUN));
     e.deposit(1e6);
     expect(e.buy('blade')).toBe(true);
-    expect(e.spec().bladeWidth, 'a wider blade, while there is a blade').toBe(8);
+    expect(e.spec().bladeWidth, 'a wider blade, while there is a blade').toBe(BLADE[1].width);
     expect(e.buy('scoop')).toBe(true);
-    // its own width, whatever the blade was
+    // its own width, whatever the blade was, while it is fitted
     expect(e.spec().bladeWidth).toBe(SCOOP[1].width);
-    const blade = e.offers().find((o) => o.id === 'blade')!;
-    expect(blade).toMatchObject({ title: 'Blade', sub: 'replaced by the scoop', owned: true, available: false });
+    const row = () => e.offers().find((o) => o.id === 'blade')!;
+    expect(row(), 'still for sale').toMatchObject({
+      title: 'Wider blade',
+      owned: false,
+      available: true,
+      cost: BLADE[2].cost,
+    });
+    expect(row().sub).not.toContain('replaced');
     const bank = e.bank;
-    expect(e.buy('blade'), 'nothing to buy').toBe(false);
-    expect(e.bank).toBe(bank);
-    expect(e.save.blade, 'the blade it had is still on the books, for nothing').toBe(1);
+    expect(e.buy('blade'), 'a wider blade, with a scoop owned').toBe(true);
+    expect(e.bank).toBe(bank - BLADE[2].cost);
+    expect(e.save.blade).toBe(2);
+    expect(e.spec(), 'the scoop is still fitted, at its own width').toMatchObject({
+      bladeWidth: SCOOP[1].width,
+      bucket: true,
+    });
+    expect(e.buy('fit:blade')).toBe(true);
+    expect(e.spec(), 'fitted, the blade has the width bought').toMatchObject({
+      bladeWidth: BLADE[2].width,
+      bucket: false,
+    });
+    e.buy('blade');
+    expect(e.spec().bladeWidth).toBe(BLADE[3].width);
+    expect(row()).toMatchObject({ owned: true, available: false });
+    expect(e.buy('fit:scoop')).toBe(true);
+    expect(e.spec().bladeWidth, 'the scoop’s width is its own, and the blade’s is not added to it').toBe(
+      SCOOP[1].width,
+    );
+  });
+
+  it('fits the scoop when one is bought, as it has always been', () => {
+    const e = payToll(new Economy(memoryStore(), RUN));
+    e.deposit(1e6);
+    expect(e.save.fitted, 'a new game has the blade').toBe('blade');
+    e.buy('scoop');
+    expect(e.save.fitted).toBe('scoop');
+    e.buy('fit:blade');
+    e.buy('scoop');
+    expect(e.save.fitted, 'a bigger scoop is fitted too').toBe('scoop');
+    expect(e.save.scoop).toBe(2);
+  });
+
+  it('has two rows to fit one or the other, under the scoop’s, saying which is fitted', () => {
+    const e = payToll(new Economy(memoryStore(), RUN));
+    const ids = e.offers().map((o) => o.id);
+    expect(ids.slice(ids.indexOf('scoop') + 1, ids.indexOf('scoop') + 3)).toEqual(['fit:blade', 'fit:scoop']);
+    const rows = () => ({
+      blade: e.offers().find((o) => o.id === 'fit:blade')!,
+      scoop: e.offers().find((o) => o.id === 'fit:scoop')!,
+    });
+    expect(rows().blade).toMatchObject({ title: 'Blade', cost: 0, active: true, available: true, owned: true });
+    expect(rows().blade.sub).toBe('pushes, and breaks brick walls and chambers');
+    expect(rows().blade.words).toEqual({ on: 'fitted', off: 'fit' });
+    expect(rows().scoop, 'no scoop to fit yet').toMatchObject({
+      title: 'Scoop',
+      cost: 0,
+      available: false,
+      owned: false,
+    });
+    expect(rows().scoop.sub).toBe('lifts, carries and tips; only dents a wall');
+    e.deposit(SCOOP[1].cost);
+    e.buy('scoop');
+    expect(rows().scoop).toMatchObject({ active: true, available: true, owned: true });
+    expect(rows().blade).toMatchObject({ active: false, available: true, owned: true });
+    e.buy('fit:blade');
+    expect(rows().scoop).toMatchObject({ active: false, available: true, owned: true });
+    expect(rows().blade.active).toBe(true);
+  });
+
+  it('fits for nothing, at once, changing the bucket and the width, and is refused only for a scoop not owned', () => {
+    const e = payToll(new Economy(memoryStore(), RUN));
+    e.deposit(5000);
+    const heard: string[] = [];
+    e.onChange((id) => heard.push(id));
+    expect(e.buy('fit:scoop'), 'no scoop to fit').toBe(false);
+    expect(e.save.fitted).toBe('blade');
+    expect(e.buy('fit:blade'), 'already fitted').toBe(false);
+    expect(heard).toEqual([]);
+    e.buy('scoop');
+    heard.length = 0;
+    const bank = e.bank;
+    expect(e.spec()).toMatchObject({ bladeWidth: SCOOP[1].width, bucket: true });
+    expect(e.buy('fit:blade')).toBe(true);
+    expect(e.spec()).toMatchObject({ bladeWidth: BLADE[0].width, bucket: false });
+    expect(e.buy('fit:scoop')).toBe(true);
+    expect(e.spec()).toMatchObject({ bladeWidth: SCOOP[1].width, bucket: true });
+    expect(e.bank, 'for nothing').toBe(bank);
+    expect(heard, 'the game is told which').toEqual(['fit:blade', 'fit:scoop']);
+    expect(e.buy('fit:scoop'), 'it is fitted already').toBe(false);
+  });
+
+  it('keeps what is fitted in the save, and a save that says a scoop is fitted with none owned has the blade', () => {
+    const e = payToll(new Economy(memoryStore(), RUN));
+    e.deposit(5000);
+    e.buy('scoop');
+    e.buy('fit:blade');
+    const store = memoryStore(JSON.stringify(e.save));
+    expect(new Economy(store, RUN).save.fitted).toBe('blade');
+    e.buy('fit:scoop');
+    expect(new Economy(memoryStore(JSON.stringify(e.save)), RUN).save.fitted).toBe('scoop');
+    const lie = { ...e.save, scoop: 0, fitted: 'scoop' };
+    const loaded = new Economy(memoryStore(JSON.stringify(lie)), RUN);
+    expect(loaded.save.fitted).toBe('blade');
+    expect(loaded.spec().bucket).toBe(false);
   });
 
   it('tells the game it was bought, and is part of what the whole workshop costs', () => {
@@ -419,11 +518,23 @@ describe('the scoop in the workshop', () => {
     expect(workshopTotal(RUN)).toBe(17_280 + SCOOP.reduce((n, s) => n + s.cost, 0));
   });
 
-  it('loads from a save made before it with a blade, and keeps the scoop a save has', () => {
+  it('loads from a save made before it with a blade, and keeps the scoop a save has, fitted if the save says so or says nothing', () => {
     const old = new Economy(memoryStore(JSON.stringify({ bank: 12, engine: 2, blade: 2 })), RUN);
     expect(old.save.scoop).toBe(0);
+    expect(old.save.fitted).toBe('blade');
     expect(old.spec()).toMatchObject({ bladeWidth: 10, bucket: false });
+    // before there was a choice, a scoop was fitted: it still is
     const bought = new Economy(memoryStore(JSON.stringify({ scoop: 2, blade: 3 })), RUN);
+    expect(bought.save.fitted).toBe('scoop');
     expect(bought.spec()).toMatchObject({ bladeWidth: SCOOP[2].width, bucket: true });
+    const blade = new Economy(memoryStore(JSON.stringify({ scoop: 2, blade: 3, fitted: 'blade' })), RUN);
+    expect(blade.spec()).toMatchObject({ bladeWidth: BLADE[3].width, bucket: false });
+    const none = new Economy(memoryStore(JSON.stringify({ scoop: 0, fitted: 'scoop' })), RUN);
+    expect(none.save.fitted, 'a scoop that is not owned is not fitted').toBe('blade');
+    // anything else is refused by name, and the blade is what the machine has
+    for (const nonsense of ['wrench', 3, null, ['scoop']]) {
+      const e = new Economy(memoryStore(JSON.stringify({ scoop: 1, fitted: nonsense })), RUN);
+      expect(e.save.fitted, JSON.stringify(nonsense)).toBe('blade');
+    }
   });
 });

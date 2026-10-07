@@ -17,6 +17,7 @@ const state = (over: Partial<ImpactState> = {}): ImpactState => ({
   wallsDown: WALLS.map(() => false),
   secretsOpen: SECRETS.map(() => false),
   ram: (speed) => (speed > 4 ? speed * 5 : 0),
+  breaks: true,
   ...over,
 });
 
@@ -51,5 +52,52 @@ describe('driving into the rock', () => {
   it('takes the way out for rock: driven into square and flat out, it does nothing, open or not', () => {
     const impacts = new Impacts(cells, GRID, SPEC);
     for (let t = 0; t < 4; t++) expect(impacts.hit(40, 40, 1, 14, t, state())).toBeNull();
+  });
+});
+
+describe('a machine that does not break brick (a bucket fitted)', () => {
+  const dent = state({ breaks: false });
+
+  it('does a wall no damage at any speed, square on, and says it glanced, now and then', () => {
+    const impacts = new Impacts(cells, GRID, SPEC);
+    for (const speed of [5, 8, 11, 30]) {
+      const hit = impacts.hit(10, 10, 1, speed, speed, dent);
+      expect(hit, `at ${speed}`).toEqual({ type: 'glance', what: 'wall' });
+    }
+    // the same hit, a moment after, is not told again
+    expect(impacts.hit(10, 10, 1, 8, 100, dent)).toEqual({ type: 'glance', what: 'wall' });
+    expect(impacts.hit(10, 10, 1, 8, 100.2, dent)).toBeNull();
+    expect(impacts.hit(10, 10, 1, 8, 100.7, dent)).toEqual({ type: 'glance', what: 'wall' });
+  });
+
+  it('says nothing of a wall touched slowly, at a slant, or already down: there was no hit to glance off', () => {
+    const impacts = new Impacts(cells, GRID, SPEC);
+    expect(impacts.hit(10, 10, 0.3, 8, 0, dent)).toBeNull();
+    expect(impacts.hit(10, 10, 1, 3, 1, dent)).toBeNull();
+    expect(impacts.hit(10, 10, 1, 8, 2, state({ breaks: false, wallsDown: WALLS.map(() => true) }))).toBeNull();
+  });
+
+  it('does not open a chamber driven square into flat out, and says it glanced; a hollow knock is as it was', () => {
+    const impacts = new Impacts(cells, GRID, SPEC);
+    expect(impacts.hit(20, 20, 1, 30, 0, dent)).toEqual({ type: 'glance', what: 'chamber' });
+    expect(impacts.hit(20, 20, 1, SMASH_SPEED, 0.2, dent), 'not told again at once').toBeNull();
+    expect(impacts.hit(20, 20, 1, SMASH_SPEED, 1, dent)).toEqual({ type: 'glance', what: 'chamber' });
+    const again = new Impacts(cells, GRID, SPEC);
+    expect(again.hit(20, 20, 0.5, 3, 0, dent)).toEqual({ type: 'knock', chamber: 0 });
+    expect(
+      again.hit(20, 20, 1, SMASH_SPEED, 5, state({ breaks: false, secretsOpen: SECRETS.map(() => true) })),
+    ).toBeNull();
+  });
+
+  it('is still only rock at the way out and anywhere else', () => {
+    const impacts = new Impacts(cells, GRID, SPEC);
+    expect(impacts.hit(40, 40, 1, 14, 0, dent)).toBeNull();
+    expect(impacts.hit(30, 30, 1, 20, 0, dent)).toBeNull();
+  });
+
+  it('keeps a wall’s glance and a chamber’s apart: one does not hold the other back', () => {
+    const impacts = new Impacts(cells, GRID, SPEC);
+    expect(impacts.hit(10, 10, 1, 8, 0, dent)).toEqual({ type: 'glance', what: 'wall' });
+    expect(impacts.hit(20, 20, 1, SMASH_SPEED, 0.1, dent)).toEqual({ type: 'glance', what: 'chamber' });
   });
 });

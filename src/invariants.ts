@@ -6,7 +6,7 @@
  * holds is carried, worth something, and no more than it takes. The counts the
  * game keeps of what is in the cave agree with what is in it. The world's
  * holes are the cave's holes and then its drains. The bank is a
- * number, the toll paid is a number up to the cave's own and opens the way out, the ledger's rows add up and the cave has taken at least its toll, the scoop is a size the workshop sells, the save's cave is in the
+ * number, the toll paid is a number up to the cave's own and opens the way out, the ledger's rows add up and the cave has taken at least its toll, the scoop is a size the workshop sells and fitted only where there is one, the save's cave is in the
  * run and every list of it is the cave's size, and the way out is open only
  * when enough is banked. The save is plain
  * data that comes back as it went.
@@ -95,6 +95,12 @@ export function checkInvariants(game: Game): string[] {
   }
   if (holds.size !== game.scoop.held.length) misheld.push('a body is held twice');
   if (game.scoop.held.length && !save.scoop) misheld.push(`${game.scoop.held.length} held, and there is no scoop`);
+  // a bucket not fitted is down, level and empty: refitting set its load down
+  const bucket = game.economy.bucketFitted();
+  if (!bucket && (game.scoop.held.length || game.scoop.up || game.scoop.lift > 0 || game.scoop.dump > 0))
+    misheld.push(
+      `the bucket is not fitted and holds ${game.scoop.held.length}, up ${game.scoop.up}, lift ${game.scoop.lift}`,
+    );
   if (game.scoop.held.length > SCOOP_MOST)
     misheld.push(`${game.scoop.held.length} held, and a lift takes ${SCOOP_MOST}`);
   if (game.scoop.held.length !== game.scoop.places.length) misheld.push('a held body with no place in the bucket');
@@ -136,6 +142,10 @@ export function checkInvariants(game: Game): string[] {
   // the bank, and where the player has got to
   if (!Number.isFinite(save.bank) || save.bank < 0) out.push(`the bank: ${save.bank}`);
   if (!Number.isInteger(save.scoop) || save.scoop < 0 || save.scoop > SCOOP_SIZES) out.push(`the scoop: ${save.scoop}`);
+  // what is fitted is one of the two, and a bucket needs a scoop to be one
+  const fitted: string = save.fitted;
+  if (fitted !== 'blade' && fitted !== 'scoop') out.push(`what is fitted: ${fitted}`);
+  else if (fitted === 'scoop' && !(save.scoop > 0)) out.push('the scoop is fitted, and there is none');
   const due = tollOf(spec);
   if (!Number.isFinite(save.toll) || save.toll < 0 || save.toll > due) out.push(`the toll: ${save.toll} of ${due}`);
   if (!Number.isFinite(save.drained) || save.drained < 0) out.push(`down the drains: ${save.drained}`);

@@ -279,6 +279,19 @@
   body:not(.touch) #shop .rows.cosmetics small {
     display: none;
   }
+  /* what is fitted, blade or scoop, is a pair in the workshop's own list: two to a line, as the paints are */
+  body:not(.touch) #shop .rows:not(.cosmetics) {
+    grid-template-columns: 1fr 1fr;
+  }
+  body:not(.touch) #shop .rows:not(.cosmetics) button {
+    grid-column: 1 / -1;
+  }
+  body:not(.touch) #shop .rows:not(.cosmetics) button.pair {
+    grid-column: auto;
+  }
+  body:not(.touch) #shop button.pair small {
+    display: none;
+  }
   #shop .foot {
     margin-top: 8px;
     color: var(--dim);

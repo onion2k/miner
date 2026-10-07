@@ -467,7 +467,7 @@ describe('the scoop in the game (criteria 2 to 7)', () => {
     });
   });
 
-  it('7: three sizes, each wider, and the machine has a bucket and no blade once one is bought', () => {
+  it('7: three sizes, each wider, and the machine has a bucket in the blade’s place once one is bought', () => {
     expect(SCOOP.map((s) => s.width)).toEqual([0, 9, 11.5, 14]);
     for (const size of [1, 2, 3]) {
       // whatever blade was bought, the bucket is its own width
